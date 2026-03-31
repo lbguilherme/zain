@@ -1,0 +1,5 @@
+/target
+/.whatsapp
+/.dados_abertos
+.cubos_sql/
+.env
