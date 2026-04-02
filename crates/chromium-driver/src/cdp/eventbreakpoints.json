@@ -1,0 +1,33 @@
+{
+    "domain": "EventBreakpoints",
+    "description": "EventBreakpoints permits setting JavaScript breakpoints on operations and events\noccurring in native code invoked from JavaScript. Once breakpoint is hit, it is\nreported through Debugger domain, similarly to regular breakpoints being hit.",
+    "experimental": true,
+    "commands": [
+        {
+            "name": "setInstrumentationBreakpoint",
+            "description": "Sets breakpoint on particular native event.",
+            "parameters": [
+                {
+                    "name": "eventName",
+                    "description": "Instrumentation name to stop on.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "removeInstrumentationBreakpoint",
+            "description": "Removes breakpoint on particular native event.",
+            "parameters": [
+                {
+                    "name": "eventName",
+                    "description": "Instrumentation name to stop on.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Removes all breakpoints"
+        }
+    ]
+}

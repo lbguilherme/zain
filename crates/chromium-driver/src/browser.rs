@@ -1,7 +1,7 @@
 use crate::cdp::browser::{BrowserCommands, GetVersionReturn};
 use crate::cdp::target::{
-    AttachedToTargetEvent, CreateTargetParams, DetachedFromTargetEvent, TargetCommands,
-    TargetCreatedEvent, TargetDestroyedEvent, TargetInfoChangedEvent,
+    AttachedToTargetEvent, CreateTargetParams, DetachedFromTargetEvent, GetTargetsParams,
+    TargetCommands, TargetCreatedEvent, TargetDestroyedEvent, TargetInfoChangedEvent,
 };
 use crate::error::Result;
 use crate::session::{CdpEventStream, CdpSession};
@@ -141,7 +141,11 @@ impl Browser {
     ///
     /// Each [`TargetInfo`] contains the target's type, URL, title and attachment state.
     pub async fn get_targets(&self) -> Result<Vec<TargetInfo>> {
-        self.session.target_get_targets().await
+        let ret = self
+            .session
+            .target_get_targets(&GetTargetsParams::default())
+            .await?;
+        Ok(ret.target_infos)
     }
 
     /// Creates a new tab (page target) and navigates it to the given URL.

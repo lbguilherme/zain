@@ -1,0 +1,40 @@
+{
+    "domain": "Schema",
+    "description": "This domain is deprecated.",
+    "deprecated": true,
+    "types": [
+        {
+            "id": "Domain",
+            "description": "Description of the protocol domain.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "Domain name.",
+                    "type": "string"
+                },
+                {
+                    "name": "version",
+                    "description": "Domain version.",
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "getDomains",
+            "description": "Returns supported domains.",
+            "returns": [
+                {
+                    "name": "domains",
+                    "description": "List of supported domains.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Domain"
+                    }
+                }
+            ]
+        }
+    ]
+}

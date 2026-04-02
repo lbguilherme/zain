@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use tokio::sync::OnceCell;
-
-use crate::cdp::dom::DomCommands;
+use crate::cdp::dom::{DomCommands, EnableParams};
 use crate::cdp::emulation::EmulationCommands;
 use base64::Engine;
 use crate::cdp::page::{
@@ -114,7 +112,6 @@ pub struct PageSession {
     session: CdpSession,
     session_id: SessionId,
     target: Arc<TargetInner>,
-    dom: OnceCell<Dom>,
 }
 
 impl PageSession {
@@ -127,7 +124,6 @@ impl PageSession {
             session,
             session_id,
             target,
-            dom: OnceCell::new(),
         }
     }
 
@@ -136,7 +132,7 @@ impl PageSession {
     ///
     /// Must be called before listening to events via [`events`](Self::events).
     pub async fn enable(&self) -> Result<()> {
-        self.session.page_enable().await
+        self.session.page_enable(&crate::cdp::page::EnableParams::default()).await
     }
 
     /// Disables the Page domain, stopping page event emission for this session.
@@ -229,11 +225,21 @@ impl PageSession {
     }
 
     /// Returns the DOM handle, enabling the DOM domain on first call.
+    ///
+    /// The DOM is shared across all sessions attached to the same target.
     pub async fn dom(&self) -> Result<&Dom> {
-        self.dom
+        self.target
+            .dom
             .get_or_try_init(|| async {
-                self.session.dom_enable().await?;
-                self.session.emulation_set_touch_enabled(true).await?;
+                self.session.dom_enable(&EnableParams::default()).await?;
+                self.session
+                    .emulation_set_touch_emulation_enabled(
+                        &crate::cdp::emulation::SetTouchEmulationEnabledParams {
+                            enabled: true,
+                            max_touch_points: None,
+                        },
+                    )
+                    .await?;
                 Ok(Dom::new(self.session.clone()))
             })
             .await
@@ -252,12 +258,21 @@ impl PageSession {
         runtime::evaluate_value(&self.session, expression).await
     }
 
+    /// Evaluates an async JavaScript expression (or one returning a Promise)
+    /// and returns the resolved result by value.
+    ///
+    /// Uses `awaitPromise: true` — required for `async` IIFEs and any
+    /// expression that returns a Promise.
+    pub async fn eval_value_async(&self, expression: &str) -> Result<serde_json::Value> {
+        runtime::evaluate_value_async(&self.session, expression).await
+    }
+
     /// Takes a PNG screenshot of the full visible page and returns raw bytes.
     pub async fn capture_screenshot(&self) -> Result<Vec<u8>> {
         let ret = self
             .session
             .page_capture_screenshot(&CaptureScreenshotParams {
-                format: Some("png".into()),
+                format: Some(crate::cdp::page::CaptureScreenshotFormat::Png),
                 ..Default::default()
             })
             .await?;
@@ -358,14 +373,9 @@ impl PageSession {
 
 impl Drop for PageSession {
     fn drop(&mut self) {
-        let session = self.session.clone();
         let target = self.target.clone();
         let session_id = self.session_id.clone();
-        let had_dom = self.dom.get().is_some();
         tokio::spawn(async move {
-            if had_dom {
-                let _ = session.dom_disable().await;
-            }
             let _ = target
                 .browser_session
                 .target_detach_from_target(&session_id)

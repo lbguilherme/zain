@@ -1,0 +1,96 @@
+{
+    "domain": "HeadlessExperimental",
+    "description": "This domain provides experimental commands only supported in headless mode.",
+    "experimental": true,
+    "dependencies": [
+        "Page",
+        "Runtime"
+    ],
+    "types": [
+        {
+            "id": "ScreenshotParams",
+            "description": "Encoding options for a screenshot.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "format",
+                    "description": "Image compression format (defaults to png).",
+                    "optional": true,
+                    "type": "string",
+                    "enum": [
+                        "jpeg",
+                        "png",
+                        "webp"
+                    ]
+                },
+                {
+                    "name": "quality",
+                    "description": "Compression quality from range [0..100] (jpeg and webp only).",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "optimizeForSpeed",
+                    "description": "Optimize image encoding for speed, not for resulting size (defaults to false)",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "beginFrame",
+            "description": "Sends a BeginFrame to the target and returns when the frame was completed. Optionally captures a\nscreenshot from the resulting frame. Requires that the target was created with enabled\nBeginFrameControl. Designed for use with --run-all-compositor-stages-before-draw, see also\nhttps://goo.gle/chrome-headless-rendering for more background.",
+            "parameters": [
+                {
+                    "name": "frameTimeTicks",
+                    "description": "Timestamp of this BeginFrame in Renderer TimeTicks (milliseconds of uptime). If not set,\nthe current time will be used.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "interval",
+                    "description": "The interval between BeginFrames that is reported to the compositor, in milliseconds.\nDefaults to a 60 frames/second interval, i.e. about 16.666 milliseconds.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "noDisplayUpdates",
+                    "description": "Whether updates should not be committed and drawn onto the display. False by default. If\ntrue, only side effects of the BeginFrame will be run, such as layout and animations, but\nany visual updates may not be visible on the display or in screenshots.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "screenshot",
+                    "description": "If set, a screenshot of the frame will be captured and returned in the response. Otherwise,\nno screenshot will be captured. Note that capturing a screenshot can fail, for example,\nduring renderer initialization. In such a case, no screenshot data will be returned.",
+                    "optional": true,
+                    "$ref": "ScreenshotParams"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "hasDamage",
+                    "description": "Whether the BeginFrame resulted in damage and, thus, a new frame was committed to the\ndisplay. Reported for diagnostic uses, may be removed in the future.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "screenshotData",
+                    "description": "Base64-encoded image data of the screenshot, if one was requested and successfully taken. (Encoded as a base64 string when passed over JSON)",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Disables headless events for the target.",
+            "deprecated": true
+        },
+        {
+            "name": "enable",
+            "description": "Enables headless events for the target.",
+            "deprecated": true
+        }
+    ]
+}

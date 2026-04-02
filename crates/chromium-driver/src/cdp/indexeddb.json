@@ -1,0 +1,517 @@
+{
+    "domain": "IndexedDB",
+    "experimental": true,
+    "dependencies": [
+        "Runtime",
+        "Storage"
+    ],
+    "types": [
+        {
+            "id": "DatabaseWithObjectStores",
+            "description": "Database with an array of object stores.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "Database name.",
+                    "type": "string"
+                },
+                {
+                    "name": "version",
+                    "description": "Database version (type is not 'integer', as the standard\nrequires the version number to be 'unsigned long long')",
+                    "type": "number"
+                },
+                {
+                    "name": "objectStores",
+                    "description": "Object stores in this database.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ObjectStore"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "ObjectStore",
+            "description": "Object store.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "Object store name.",
+                    "type": "string"
+                },
+                {
+                    "name": "keyPath",
+                    "description": "Object store key path.",
+                    "$ref": "KeyPath"
+                },
+                {
+                    "name": "autoIncrement",
+                    "description": "If true, object store has auto increment flag set.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "indexes",
+                    "description": "Indexes in this object store.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ObjectStoreIndex"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "ObjectStoreIndex",
+            "description": "Object store index.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "Index name.",
+                    "type": "string"
+                },
+                {
+                    "name": "keyPath",
+                    "description": "Index key path.",
+                    "$ref": "KeyPath"
+                },
+                {
+                    "name": "unique",
+                    "description": "If true, index is unique.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "multiEntry",
+                    "description": "If true, index allows multiple entries for a key.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "id": "Key",
+            "description": "Key.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "type",
+                    "description": "Key type.",
+                    "type": "string",
+                    "enum": [
+                        "number",
+                        "string",
+                        "date",
+                        "array"
+                    ]
+                },
+                {
+                    "name": "number",
+                    "description": "Number value.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "string",
+                    "description": "String value.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "date",
+                    "description": "Date value.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "array",
+                    "description": "Array value.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "Key"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "KeyRange",
+            "description": "Key range.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "lower",
+                    "description": "Lower bound.",
+                    "optional": true,
+                    "$ref": "Key"
+                },
+                {
+                    "name": "upper",
+                    "description": "Upper bound.",
+                    "optional": true,
+                    "$ref": "Key"
+                },
+                {
+                    "name": "lowerOpen",
+                    "description": "If true lower bound is open.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "upperOpen",
+                    "description": "If true upper bound is open.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "id": "DataEntry",
+            "description": "Data entry.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "key",
+                    "description": "Key object.",
+                    "$ref": "Runtime.RemoteObject"
+                },
+                {
+                    "name": "primaryKey",
+                    "description": "Primary key object.",
+                    "$ref": "Runtime.RemoteObject"
+                },
+                {
+                    "name": "value",
+                    "description": "Value object.",
+                    "$ref": "Runtime.RemoteObject"
+                }
+            ]
+        },
+        {
+            "id": "KeyPath",
+            "description": "Key path.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "type",
+                    "description": "Key path type.",
+                    "type": "string",
+                    "enum": [
+                        "null",
+                        "string",
+                        "array"
+                    ]
+                },
+                {
+                    "name": "string",
+                    "description": "String value.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "array",
+                    "description": "Array value.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "clearObjectStore",
+            "description": "Clears all entries from an object store.",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, or storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                },
+                {
+                    "name": "databaseName",
+                    "description": "Database name.",
+                    "type": "string"
+                },
+                {
+                    "name": "objectStoreName",
+                    "description": "Object store name.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "deleteDatabase",
+            "description": "Deletes a database.",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, or storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                },
+                {
+                    "name": "databaseName",
+                    "description": "Database name.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "deleteObjectStoreEntries",
+            "description": "Delete a range of entries from an object store",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, or storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                },
+                {
+                    "name": "databaseName",
+                    "type": "string"
+                },
+                {
+                    "name": "objectStoreName",
+                    "type": "string"
+                },
+                {
+                    "name": "keyRange",
+                    "description": "Range of entry keys to delete",
+                    "$ref": "KeyRange"
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Disables events from backend."
+        },
+        {
+            "name": "enable",
+            "description": "Enables events from backend."
+        },
+        {
+            "name": "requestData",
+            "description": "Requests data from object store or index.",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, or storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                },
+                {
+                    "name": "databaseName",
+                    "description": "Database name.",
+                    "type": "string"
+                },
+                {
+                    "name": "objectStoreName",
+                    "description": "Object store name.",
+                    "type": "string"
+                },
+                {
+                    "name": "indexName",
+                    "description": "Index name. If not specified, it performs an object store data request.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "skipCount",
+                    "description": "Number of records to skip.",
+                    "type": "integer"
+                },
+                {
+                    "name": "pageSize",
+                    "description": "Number of records to fetch.",
+                    "type": "integer"
+                },
+                {
+                    "name": "keyRange",
+                    "description": "Key range.",
+                    "optional": true,
+                    "$ref": "KeyRange"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "objectStoreDataEntries",
+                    "description": "Array of object store data entries.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "DataEntry"
+                    }
+                },
+                {
+                    "name": "hasMore",
+                    "description": "If true, there are more entries to fetch in the given range.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "getMetadata",
+            "description": "Gets metadata of an object store.",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, or storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                },
+                {
+                    "name": "databaseName",
+                    "description": "Database name.",
+                    "type": "string"
+                },
+                {
+                    "name": "objectStoreName",
+                    "description": "Object store name.",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "entriesCount",
+                    "description": "the entries count",
+                    "type": "number"
+                },
+                {
+                    "name": "keyGeneratorValue",
+                    "description": "the current value of key generator, to become the next inserted\nkey into the object store. Valid if objectStore.autoIncrement\nis true.",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "requestDatabase",
+            "description": "Requests database with given name in given frame.",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, or storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                },
+                {
+                    "name": "databaseName",
+                    "description": "Database name.",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "databaseWithObjectStores",
+                    "description": "Database with an array of object stores.",
+                    "$ref": "DatabaseWithObjectStores"
+                }
+            ]
+        },
+        {
+            "name": "requestDatabaseNames",
+            "description": "Requests database names for given security origin.",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, or storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "databaseNames",
+                    "description": "Database names for origin.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        }
+    ]
+}

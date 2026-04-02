@@ -1,0 +1,277 @@
+{
+    "domain": "CacheStorage",
+    "experimental": true,
+    "dependencies": [
+        "Storage"
+    ],
+    "types": [
+        {
+            "id": "CacheId",
+            "description": "Unique identifier of the Cache object.",
+            "type": "string"
+        },
+        {
+            "id": "CachedResponseType",
+            "description": "type of HTTP response cached",
+            "type": "string",
+            "enum": [
+                "basic",
+                "cors",
+                "default",
+                "error",
+                "opaqueResponse",
+                "opaqueRedirect"
+            ]
+        },
+        {
+            "id": "DataEntry",
+            "description": "Data entry.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "requestURL",
+                    "description": "Request URL.",
+                    "type": "string"
+                },
+                {
+                    "name": "requestMethod",
+                    "description": "Request method.",
+                    "type": "string"
+                },
+                {
+                    "name": "requestHeaders",
+                    "description": "Request headers",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Header"
+                    }
+                },
+                {
+                    "name": "responseTime",
+                    "description": "Number of seconds since epoch.",
+                    "type": "number"
+                },
+                {
+                    "name": "responseStatus",
+                    "description": "HTTP response status code.",
+                    "type": "integer"
+                },
+                {
+                    "name": "responseStatusText",
+                    "description": "HTTP response status text.",
+                    "type": "string"
+                },
+                {
+                    "name": "responseType",
+                    "description": "HTTP response type",
+                    "$ref": "CachedResponseType"
+                },
+                {
+                    "name": "responseHeaders",
+                    "description": "Response headers",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Header"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "Cache",
+            "description": "Cache identifier.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "cacheId",
+                    "description": "An opaque unique id of the cache.",
+                    "$ref": "CacheId"
+                },
+                {
+                    "name": "securityOrigin",
+                    "description": "Security origin of the cache.",
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key of the cache.",
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket of the cache.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                },
+                {
+                    "name": "cacheName",
+                    "description": "The name of the cache.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "Header",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "CachedResponse",
+            "description": "Cached response",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "body",
+                    "description": "Entry content, base64-encoded. (Encoded as a base64 string when passed over JSON)",
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "deleteCache",
+            "description": "Deletes a cache.",
+            "parameters": [
+                {
+                    "name": "cacheId",
+                    "description": "Id of cache for deletion.",
+                    "$ref": "CacheId"
+                }
+            ]
+        },
+        {
+            "name": "deleteEntry",
+            "description": "Deletes a cache entry.",
+            "parameters": [
+                {
+                    "name": "cacheId",
+                    "description": "Id of cache where the entry will be deleted.",
+                    "$ref": "CacheId"
+                },
+                {
+                    "name": "request",
+                    "description": "URL spec of the request.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "requestCacheNames",
+            "description": "Requests cache names.",
+            "parameters": [
+                {
+                    "name": "securityOrigin",
+                    "description": "At least and at most one of securityOrigin, storageKey, storageBucket must be specified.\nSecurity origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageKey",
+                    "description": "Storage key.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "storageBucket",
+                    "description": "Storage bucket. If not specified, it uses the default bucket.",
+                    "optional": true,
+                    "$ref": "Storage.StorageBucket"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "caches",
+                    "description": "Caches for the security origin.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Cache"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "requestCachedResponse",
+            "description": "Fetches cache entry.",
+            "parameters": [
+                {
+                    "name": "cacheId",
+                    "description": "Id of cache that contains the entry.",
+                    "$ref": "CacheId"
+                },
+                {
+                    "name": "requestURL",
+                    "description": "URL spec of the request.",
+                    "type": "string"
+                },
+                {
+                    "name": "requestHeaders",
+                    "description": "headers of the request.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Header"
+                    }
+                }
+            ],
+            "returns": [
+                {
+                    "name": "response",
+                    "description": "Response read from the cache.",
+                    "$ref": "CachedResponse"
+                }
+            ]
+        },
+        {
+            "name": "requestEntries",
+            "description": "Requests data from cache.",
+            "parameters": [
+                {
+                    "name": "cacheId",
+                    "description": "ID of cache to get entries from.",
+                    "$ref": "CacheId"
+                },
+                {
+                    "name": "skipCount",
+                    "description": "Number of records to skip.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "pageSize",
+                    "description": "Number of records to fetch.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "pathFilter",
+                    "description": "If present, only return the entries containing this substring in the path",
+                    "optional": true,
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "cacheDataEntries",
+                    "description": "Array of object store data entries.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "DataEntry"
+                    }
+                },
+                {
+                    "name": "returnCount",
+                    "description": "Count of returned entries from this storage. If pathFilter is empty, it\nis the count of all entries from this storage.",
+                    "type": "number"
+                }
+            ]
+        }
+    ]
+}

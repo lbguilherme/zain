@@ -1,0 +1,726 @@
+{
+    "domain": "Target",
+    "description": "Supports additional targets discovery and allows to attach to them.",
+    "types": [
+        {
+            "id": "TargetID",
+            "type": "string"
+        },
+        {
+            "id": "SessionID",
+            "description": "Unique identifier of attached debugging session.",
+            "type": "string"
+        },
+        {
+            "id": "TargetInfo",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                },
+                {
+                    "name": "type",
+                    "description": "List of types: https://source.chromium.org/chromium/chromium/src/+/main:content/browser/devtools/devtools_agent_host_impl.cc?ss=chromium&q=f:devtools%20-f:out%20%22::kTypeTab%5B%5D%22",
+                    "type": "string"
+                },
+                {
+                    "name": "title",
+                    "type": "string"
+                },
+                {
+                    "name": "url",
+                    "type": "string"
+                },
+                {
+                    "name": "attached",
+                    "description": "Whether the target has an attached client.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "openerId",
+                    "description": "Opener target Id",
+                    "optional": true,
+                    "$ref": "TargetID"
+                },
+                {
+                    "name": "canAccessOpener",
+                    "description": "Whether the target has access to the originating window.",
+                    "experimental": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "openerFrameId",
+                    "description": "Frame id of originating window (is only set if target has an opener).",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                },
+                {
+                    "name": "parentFrameId",
+                    "description": "Id of the parent frame, only present for the \"iframe\" targets.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                },
+                {
+                    "name": "browserContextId",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "Browser.BrowserContextID"
+                },
+                {
+                    "name": "subtype",
+                    "description": "Provides additional details for specific target types. For example, for\nthe type of \"page\", this may be set to \"prerender\".",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "FilterEntry",
+            "description": "A filter used by target query/discovery/auto-attach operations.",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "exclude",
+                    "description": "If set, causes exclusion of matching targets from the list.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "type",
+                    "description": "If not present, matches any type.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "TargetFilter",
+            "description": "The entries in TargetFilter are matched sequentially against targets and\nthe first entry that matches determines if the target is included or not,\ndepending on the value of `exclude` field in the entry.\nIf filter is not specified, the one assumed is\n[{type: \"browser\", exclude: true}, {type: \"tab\", exclude: true}, {}]\n(i.e. include everything but `browser` and `tab`).",
+            "experimental": true,
+            "type": "array",
+            "items": {
+                "$ref": "FilterEntry"
+            }
+        },
+        {
+            "id": "RemoteLocation",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "host",
+                    "type": "string"
+                },
+                {
+                    "name": "port",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "id": "WindowState",
+            "description": "The state of the target window.",
+            "experimental": true,
+            "type": "string",
+            "enum": [
+                "normal",
+                "minimized",
+                "maximized",
+                "fullscreen"
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "activateTarget",
+            "description": "Activates (focuses) the target.",
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "attachToTarget",
+            "description": "Attaches to the target with given id.",
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                },
+                {
+                    "name": "flatten",
+                    "description": "Enables \"flat\" access to the session via specifying sessionId attribute in the commands.\nWe plan to make this the default, deprecate non-flattened mode,\nand eventually retire it. See crbug.com/991325.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "sessionId",
+                    "description": "Id assigned to the session.",
+                    "$ref": "SessionID"
+                }
+            ]
+        },
+        {
+            "name": "attachToBrowserTarget",
+            "description": "Attaches to the browser target, only uses flat sessionId mode.",
+            "experimental": true,
+            "returns": [
+                {
+                    "name": "sessionId",
+                    "description": "Id assigned to the session.",
+                    "$ref": "SessionID"
+                }
+            ]
+        },
+        {
+            "name": "closeTarget",
+            "description": "Closes the target. If the target is a page that gets closed too.",
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "success",
+                    "description": "Always set to true. If an error occurs, the response indicates protocol error.",
+                    "deprecated": true,
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "exposeDevToolsProtocol",
+            "description": "Inject object to the target's main frame that provides a communication\nchannel with browser target.\n\nInjected object will be available as `window[bindingName]`.\n\nThe object has the following API:\n- `binding.send(json)` - a method to send messages over the remote debugging protocol\n- `binding.onmessage = json => handleMessage(json)` - a callback that will be called for the protocol notifications and command responses.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                },
+                {
+                    "name": "bindingName",
+                    "description": "Binding name, 'cdp' if not specified.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "inheritPermissions",
+                    "description": "If true, inherits the current root session's permissions (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "createBrowserContext",
+            "description": "Creates a new empty BrowserContext. Similar to an incognito profile but you can have more than\none.",
+            "parameters": [
+                {
+                    "name": "disposeOnDetach",
+                    "description": "If specified, disposes this context when debugging session disconnects.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "proxyServer",
+                    "description": "Proxy server, similar to the one passed to --proxy-server",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "proxyBypassList",
+                    "description": "Proxy bypass list, similar to the one passed to --proxy-bypass-list",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "originsWithUniversalNetworkAccess",
+                    "description": "An optional list of origins to grant unlimited cross-origin access to.\nParts of the URL other than those constituting origin are ignored.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ],
+            "returns": [
+                {
+                    "name": "browserContextId",
+                    "description": "The id of the context created.",
+                    "$ref": "Browser.BrowserContextID"
+                }
+            ]
+        },
+        {
+            "name": "getBrowserContexts",
+            "description": "Returns all browser contexts created with `Target.createBrowserContext` method.",
+            "returns": [
+                {
+                    "name": "browserContextIds",
+                    "description": "An array of browser context ids.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Browser.BrowserContextID"
+                    }
+                },
+                {
+                    "name": "defaultBrowserContextId",
+                    "description": "The id of the default browser context if available.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "Browser.BrowserContextID"
+                }
+            ]
+        },
+        {
+            "name": "createTarget",
+            "description": "Creates a new page.",
+            "parameters": [
+                {
+                    "name": "url",
+                    "description": "The initial URL the page will be navigated to. An empty string indicates about:blank.",
+                    "type": "string"
+                },
+                {
+                    "name": "left",
+                    "description": "Frame left origin in DIP (requires newWindow to be true or headless shell).",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "top",
+                    "description": "Frame top origin in DIP (requires newWindow to be true or headless shell).",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "width",
+                    "description": "Frame width in DIP (requires newWindow to be true or headless shell).",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "Frame height in DIP (requires newWindow to be true or headless shell).",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "windowState",
+                    "description": "Frame window state (requires newWindow to be true or headless shell).\nDefault is normal.",
+                    "optional": true,
+                    "$ref": "WindowState"
+                },
+                {
+                    "name": "browserContextId",
+                    "description": "The browser context to create the page in.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "Browser.BrowserContextID"
+                },
+                {
+                    "name": "enableBeginFrameControl",
+                    "description": "Whether BeginFrames for this target will be controlled via DevTools (headless shell only,\nnot supported on MacOS yet, false by default).",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "newWindow",
+                    "description": "Whether to create a new Window or Tab (false by default, not supported by headless shell).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "background",
+                    "description": "Whether to create the target in background or foreground (false by default, not supported\nby headless shell).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "forTab",
+                    "description": "Whether to create the target of type \"tab\".",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "hidden",
+                    "description": "Whether to create a hidden target. The hidden target is observable via protocol, but not\npresent in the tab UI strip. Cannot be created with `forTab: true`, `newWindow: true` or\n`background: false`. The life-time of the tab is limited to the life-time of the session.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "focus",
+                    "description": "If specified, the option is used to determine if the new target should\nbe focused or not. By default, the focus behavior depends on the\nvalue of the background field. For example, background=false and focus=false\nwill result in the target tab being opened but the browser window remain\nunchanged (if it was in the background, it will remain in the background)\nand background=false with focus=undefined will result in the window being focused.\nUsing background: true and focus: true is not supported and will result in an error.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "targetId",
+                    "description": "The id of the page opened.",
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "detachFromTarget",
+            "description": "Detaches session with given id.",
+            "parameters": [
+                {
+                    "name": "sessionId",
+                    "description": "Session to detach.",
+                    "optional": true,
+                    "$ref": "SessionID"
+                },
+                {
+                    "name": "targetId",
+                    "description": "Deprecated.",
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "disposeBrowserContext",
+            "description": "Deletes a BrowserContext. All the belonging pages will be closed without calling their\nbeforeunload hooks.",
+            "parameters": [
+                {
+                    "name": "browserContextId",
+                    "$ref": "Browser.BrowserContextID"
+                }
+            ]
+        },
+        {
+            "name": "getTargetInfo",
+            "description": "Returns information about a target.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "optional": true,
+                    "$ref": "TargetID"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "targetInfo",
+                    "$ref": "TargetInfo"
+                }
+            ]
+        },
+        {
+            "name": "getTargets",
+            "description": "Retrieves a list of available targets.",
+            "parameters": [
+                {
+                    "name": "filter",
+                    "description": "Only targets matching filter will be reported. If filter is not specified\nand target discovery is currently enabled, a filter used for target discovery\nis used for consistency.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "TargetFilter"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "targetInfos",
+                    "description": "The list of targets.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "TargetInfo"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "sendMessageToTarget",
+            "description": "Sends protocol message over session with given id.\nConsider using flat mode instead; see commands attachToTarget, setAutoAttach,\nand crbug.com/991325.",
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "message",
+                    "type": "string"
+                },
+                {
+                    "name": "sessionId",
+                    "description": "Identifier of the session.",
+                    "optional": true,
+                    "$ref": "SessionID"
+                },
+                {
+                    "name": "targetId",
+                    "description": "Deprecated.",
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "setAutoAttach",
+            "description": "Controls whether to automatically attach to new targets which are considered\nto be directly related to this one (for example, iframes or workers).\nWhen turned on, attaches to all existing related targets as well. When turned off,\nautomatically detaches from all currently attached targets.\nThis also clears all targets added by `autoAttachRelated` from the list of targets to watch\nfor creation of related targets.\nYou might want to call this recursively for auto-attached targets to attach\nto all available targets.",
+            "parameters": [
+                {
+                    "name": "autoAttach",
+                    "description": "Whether to auto-attach to related targets.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "waitForDebuggerOnStart",
+                    "description": "Whether to pause new targets when attaching to them. Use `Runtime.runIfWaitingForDebugger`\nto run paused targets.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "flatten",
+                    "description": "Enables \"flat\" access to the session via specifying sessionId attribute in the commands.\nWe plan to make this the default, deprecate non-flattened mode,\nand eventually retire it. See crbug.com/991325.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "filter",
+                    "description": "Only targets matching filter will be attached.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "TargetFilter"
+                }
+            ]
+        },
+        {
+            "name": "autoAttachRelated",
+            "description": "Adds the specified target to the list of targets that will be monitored for any related target\ncreation (such as child frames, child workers and new versions of service worker) and reported\nthrough `attachedToTarget`. The specified target is also auto-attached.\nThis cancels the effect of any previous `setAutoAttach` and is also cancelled by subsequent\n`setAutoAttach`. Only available at the Browser target.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                },
+                {
+                    "name": "waitForDebuggerOnStart",
+                    "description": "Whether to pause new targets when attaching to them. Use `Runtime.runIfWaitingForDebugger`\nto run paused targets.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "filter",
+                    "description": "Only targets matching filter will be attached.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "TargetFilter"
+                }
+            ]
+        },
+        {
+            "name": "setDiscoverTargets",
+            "description": "Controls whether to discover available targets and notify via\n`targetCreated/targetInfoChanged/targetDestroyed` events.",
+            "parameters": [
+                {
+                    "name": "discover",
+                    "description": "Whether to discover available targets.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "filter",
+                    "description": "Only targets matching filter will be attached. If `discover` is false,\n`filter` must be omitted or empty.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "TargetFilter"
+                }
+            ]
+        },
+        {
+            "name": "setRemoteLocations",
+            "description": "Enables target discovery for the specified locations, when `setDiscoverTargets` was set to\n`true`.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "locations",
+                    "description": "List of remote locations.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "RemoteLocation"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getDevToolsTarget",
+            "description": "Gets the targetId of the DevTools page target opened for the given target\n(if any).",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "description": "Page or tab target ID.",
+                    "$ref": "TargetID"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "targetId",
+                    "description": "The targetId of DevTools page target if exists.",
+                    "optional": true,
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "openDevTools",
+            "description": "Opens a DevTools window for the target.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "description": "This can be the page or tab target ID.",
+                    "$ref": "TargetID"
+                },
+                {
+                    "name": "panelId",
+                    "description": "The id of the panel we want DevTools to open initially. Currently\nsupported panels are elements, console, network, sources, resources\nand performance.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "targetId",
+                    "description": "The targetId of DevTools page target.",
+                    "$ref": "TargetID"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "attachedToTarget",
+            "description": "Issued when attached to target because of auto-attach or `attachToTarget` command.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "sessionId",
+                    "description": "Identifier assigned to the session used to send/receive messages.",
+                    "$ref": "SessionID"
+                },
+                {
+                    "name": "targetInfo",
+                    "$ref": "TargetInfo"
+                },
+                {
+                    "name": "waitingForDebugger",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "detachedFromTarget",
+            "description": "Issued when detached from target for any reason (including `detachFromTarget` command). Can be\nissued multiple times per target if multiple sessions have been attached to it.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "sessionId",
+                    "description": "Detached session identifier.",
+                    "$ref": "SessionID"
+                },
+                {
+                    "name": "targetId",
+                    "description": "Deprecated.",
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "receivedMessageFromTarget",
+            "description": "Notifies about a new protocol message received from the session (as reported in\n`attachedToTarget` event).",
+            "parameters": [
+                {
+                    "name": "sessionId",
+                    "description": "Identifier of a session which sends a message.",
+                    "$ref": "SessionID"
+                },
+                {
+                    "name": "message",
+                    "type": "string"
+                },
+                {
+                    "name": "targetId",
+                    "description": "Deprecated.",
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "targetCreated",
+            "description": "Issued when a possible inspection target is created.",
+            "parameters": [
+                {
+                    "name": "targetInfo",
+                    "$ref": "TargetInfo"
+                }
+            ]
+        },
+        {
+            "name": "targetDestroyed",
+            "description": "Issued when a target is destroyed.",
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                }
+            ]
+        },
+        {
+            "name": "targetCrashed",
+            "description": "Issued when a target has crashed.",
+            "parameters": [
+                {
+                    "name": "targetId",
+                    "$ref": "TargetID"
+                },
+                {
+                    "name": "status",
+                    "description": "Termination status type.",
+                    "type": "string"
+                },
+                {
+                    "name": "errorCode",
+                    "description": "Termination error code.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "targetInfoChanged",
+            "description": "Issued when some information about a target has changed. This only happens between\n`targetCreated` and `targetDestroyed`.",
+            "parameters": [
+                {
+                    "name": "targetInfo",
+                    "$ref": "TargetInfo"
+                }
+            ]
+        }
+    ]
+}

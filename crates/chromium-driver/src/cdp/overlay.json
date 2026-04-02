@@ -1,0 +1,1180 @@
+{
+    "domain": "Overlay",
+    "description": "This domain provides various functionality related to drawing atop the inspected page.",
+    "experimental": true,
+    "dependencies": [
+        "DOM",
+        "Page",
+        "Runtime"
+    ],
+    "types": [
+        {
+            "id": "SourceOrderConfig",
+            "description": "Configuration data for drawing the source order of an elements children.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "parentOutlineColor",
+                    "description": "the color to outline the given element in.",
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "childOutlineColor",
+                    "description": "the color to outline the child elements in.",
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "id": "GridHighlightConfig",
+            "description": "Configuration data for the highlighting of Grid elements.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "showGridExtensionLines",
+                    "description": "Whether the extension lines from grid cells to the rulers should be shown (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showPositiveLineNumbers",
+                    "description": "Show Positive line number labels (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showNegativeLineNumbers",
+                    "description": "Show Negative line number labels (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showAreaNames",
+                    "description": "Show area name labels (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showLineNames",
+                    "description": "Show line name labels (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showTrackSizes",
+                    "description": "Show track size labels (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "gridBorderColor",
+                    "description": "The grid container border highlight color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "cellBorderColor",
+                    "description": "The cell border color (default: transparent). Deprecated, please use rowLineColor and columnLineColor instead.",
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "rowLineColor",
+                    "description": "The row line color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "columnLineColor",
+                    "description": "The column line color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "gridBorderDash",
+                    "description": "Whether the grid border is dashed (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "cellBorderDash",
+                    "description": "Whether the cell border is dashed (default: false). Deprecated, please us rowLineDash and columnLineDash instead.",
+                    "deprecated": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "rowLineDash",
+                    "description": "Whether row lines are dashed (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "columnLineDash",
+                    "description": "Whether column lines are dashed (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "rowGapColor",
+                    "description": "The row gap highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "rowHatchColor",
+                    "description": "The row gap hatching fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "columnGapColor",
+                    "description": "The column gap highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "columnHatchColor",
+                    "description": "The column gap hatching fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "areaBorderColor",
+                    "description": "The named grid areas border color (Default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "gridBackgroundColor",
+                    "description": "The grid container background color (Default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "id": "FlexContainerHighlightConfig",
+            "description": "Configuration data for the highlighting of Flex container elements.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "containerBorder",
+                    "description": "The style of the container border",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                },
+                {
+                    "name": "lineSeparator",
+                    "description": "The style of the separator between lines",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                },
+                {
+                    "name": "itemSeparator",
+                    "description": "The style of the separator between items",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                },
+                {
+                    "name": "mainDistributedSpace",
+                    "description": "Style of content-distribution space on the main axis (justify-content).",
+                    "optional": true,
+                    "$ref": "BoxStyle"
+                },
+                {
+                    "name": "crossDistributedSpace",
+                    "description": "Style of content-distribution space on the cross axis (align-content).",
+                    "optional": true,
+                    "$ref": "BoxStyle"
+                },
+                {
+                    "name": "rowGapSpace",
+                    "description": "Style of empty space caused by row gaps (gap/row-gap).",
+                    "optional": true,
+                    "$ref": "BoxStyle"
+                },
+                {
+                    "name": "columnGapSpace",
+                    "description": "Style of empty space caused by columns gaps (gap/column-gap).",
+                    "optional": true,
+                    "$ref": "BoxStyle"
+                },
+                {
+                    "name": "crossAlignment",
+                    "description": "Style of the self-alignment line (align-items).",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                }
+            ]
+        },
+        {
+            "id": "FlexItemHighlightConfig",
+            "description": "Configuration data for the highlighting of Flex item elements.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "baseSizeBox",
+                    "description": "Style of the box representing the item's base size",
+                    "optional": true,
+                    "$ref": "BoxStyle"
+                },
+                {
+                    "name": "baseSizeBorder",
+                    "description": "Style of the border around the box representing the item's base size",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                },
+                {
+                    "name": "flexibilityArrow",
+                    "description": "Style of the arrow representing if the item grew or shrank",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                }
+            ]
+        },
+        {
+            "id": "LineStyle",
+            "description": "Style information for drawing a line.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "color",
+                    "description": "The color of the line (default: transparent)",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "pattern",
+                    "description": "The line pattern (default: solid)",
+                    "optional": true,
+                    "type": "string",
+                    "enum": [
+                        "dashed",
+                        "dotted"
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "BoxStyle",
+            "description": "Style information for drawing a box.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "fillColor",
+                    "description": "The background color for the box (default: transparent)",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "hatchColor",
+                    "description": "The hatching color for the box (default: transparent)",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "id": "ContrastAlgorithm",
+            "type": "string",
+            "enum": [
+                "aa",
+                "aaa",
+                "apca"
+            ]
+        },
+        {
+            "id": "HighlightConfig",
+            "description": "Configuration data for the highlighting of page elements.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "showInfo",
+                    "description": "Whether the node info tooltip should be shown (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showStyles",
+                    "description": "Whether the node styles in the tooltip (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showRulers",
+                    "description": "Whether the rulers should be shown (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showAccessibilityInfo",
+                    "description": "Whether the a11y info should be shown (default: true).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "showExtensionLines",
+                    "description": "Whether the extension lines from node to the rulers should be shown (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "contentColor",
+                    "description": "The content box highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "paddingColor",
+                    "description": "The padding highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "borderColor",
+                    "description": "The border highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "marginColor",
+                    "description": "The margin highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "eventTargetColor",
+                    "description": "The event target element highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "shapeColor",
+                    "description": "The shape outside fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "shapeMarginColor",
+                    "description": "The shape margin fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "cssGridColor",
+                    "description": "The grid layout color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "colorFormat",
+                    "description": "The color format used to format color styles (default: hex).",
+                    "optional": true,
+                    "$ref": "ColorFormat"
+                },
+                {
+                    "name": "gridHighlightConfig",
+                    "description": "The grid layout highlight configuration (default: all transparent).",
+                    "optional": true,
+                    "$ref": "GridHighlightConfig"
+                },
+                {
+                    "name": "flexContainerHighlightConfig",
+                    "description": "The flex container highlight configuration (default: all transparent).",
+                    "optional": true,
+                    "$ref": "FlexContainerHighlightConfig"
+                },
+                {
+                    "name": "flexItemHighlightConfig",
+                    "description": "The flex item highlight configuration (default: all transparent).",
+                    "optional": true,
+                    "$ref": "FlexItemHighlightConfig"
+                },
+                {
+                    "name": "contrastAlgorithm",
+                    "description": "The contrast algorithm to use for the contrast ratio (default: aa).",
+                    "optional": true,
+                    "$ref": "ContrastAlgorithm"
+                },
+                {
+                    "name": "containerQueryContainerHighlightConfig",
+                    "description": "The container query container highlight configuration (default: all transparent).",
+                    "optional": true,
+                    "$ref": "ContainerQueryContainerHighlightConfig"
+                }
+            ]
+        },
+        {
+            "id": "ColorFormat",
+            "type": "string",
+            "enum": [
+                "rgb",
+                "hsl",
+                "hwb",
+                "hex"
+            ]
+        },
+        {
+            "id": "GridNodeHighlightConfig",
+            "description": "Configurations for Persistent Grid Highlight",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "gridHighlightConfig",
+                    "description": "A descriptor for the highlight appearance.",
+                    "$ref": "GridHighlightConfig"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to highlight.",
+                    "$ref": "DOM.NodeId"
+                }
+            ]
+        },
+        {
+            "id": "FlexNodeHighlightConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "flexContainerHighlightConfig",
+                    "description": "A descriptor for the highlight appearance of flex containers.",
+                    "$ref": "FlexContainerHighlightConfig"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to highlight.",
+                    "$ref": "DOM.NodeId"
+                }
+            ]
+        },
+        {
+            "id": "ScrollSnapContainerHighlightConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "snapportBorder",
+                    "description": "The style of the snapport border (default: transparent)",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                },
+                {
+                    "name": "snapAreaBorder",
+                    "description": "The style of the snap area border (default: transparent)",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                },
+                {
+                    "name": "scrollMarginColor",
+                    "description": "The margin highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "scrollPaddingColor",
+                    "description": "The padding highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "id": "ScrollSnapHighlightConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "scrollSnapContainerHighlightConfig",
+                    "description": "A descriptor for the highlight appearance of scroll snap containers.",
+                    "$ref": "ScrollSnapContainerHighlightConfig"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to highlight.",
+                    "$ref": "DOM.NodeId"
+                }
+            ]
+        },
+        {
+            "id": "HingeConfig",
+            "description": "Configuration for dual screen hinge",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "rect",
+                    "description": "A rectangle represent hinge",
+                    "$ref": "DOM.Rect"
+                },
+                {
+                    "name": "contentColor",
+                    "description": "The content box highlight fill color (default: a dark color).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "outlineColor",
+                    "description": "The content box highlight outline color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "id": "WindowControlsOverlayConfig",
+            "description": "Configuration for Window Controls Overlay",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "showCSS",
+                    "description": "Whether the title bar CSS should be shown when emulating the Window Controls Overlay.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "selectedPlatform",
+                    "description": "Selected platforms to show the overlay.",
+                    "type": "string"
+                },
+                {
+                    "name": "themeColor",
+                    "description": "The theme color defined in app manifest.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "ContainerQueryHighlightConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "containerQueryContainerHighlightConfig",
+                    "description": "A descriptor for the highlight appearance of container query containers.",
+                    "$ref": "ContainerQueryContainerHighlightConfig"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the container node to highlight.",
+                    "$ref": "DOM.NodeId"
+                }
+            ]
+        },
+        {
+            "id": "ContainerQueryContainerHighlightConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "containerBorder",
+                    "description": "The style of the container border.",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                },
+                {
+                    "name": "descendantBorder",
+                    "description": "The style of the descendants' borders.",
+                    "optional": true,
+                    "$ref": "LineStyle"
+                }
+            ]
+        },
+        {
+            "id": "IsolatedElementHighlightConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "isolationModeHighlightConfig",
+                    "description": "A descriptor for the highlight appearance of an element in isolation mode.",
+                    "$ref": "IsolationModeHighlightConfig"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the isolated element to highlight.",
+                    "$ref": "DOM.NodeId"
+                }
+            ]
+        },
+        {
+            "id": "IsolationModeHighlightConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "resizerColor",
+                    "description": "The fill color of the resizers (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "resizerHandleColor",
+                    "description": "The fill color for resizer handles (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "maskColor",
+                    "description": "The fill color for the mask covering non-isolated elements (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "id": "InspectMode",
+            "type": "string",
+            "enum": [
+                "searchForNode",
+                "searchForUAShadowDOM",
+                "captureAreaScreenshot",
+                "none"
+            ]
+        },
+        {
+            "id": "InspectedElementAnchorConfig",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to highlight.",
+                    "optional": true,
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node to highlight.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "disable",
+            "description": "Disables domain notifications."
+        },
+        {
+            "name": "enable",
+            "description": "Enables domain notifications."
+        },
+        {
+            "name": "getHighlightObjectForTest",
+            "description": "For testing.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to get highlight object for.",
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "includeDistance",
+                    "description": "Whether to include distance info.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "includeStyle",
+                    "description": "Whether to include style info.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "colorFormat",
+                    "description": "The color format to get config with (default: hex).",
+                    "optional": true,
+                    "$ref": "ColorFormat"
+                },
+                {
+                    "name": "showAccessibilityInfo",
+                    "description": "Whether to show accessibility info (default: true).",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "highlight",
+                    "description": "Highlight data for the node.",
+                    "type": "object"
+                }
+            ]
+        },
+        {
+            "name": "getGridHighlightObjectsForTest",
+            "description": "For Persistent Grid testing.",
+            "parameters": [
+                {
+                    "name": "nodeIds",
+                    "description": "Ids of the node to get highlight object for.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "DOM.NodeId"
+                    }
+                }
+            ],
+            "returns": [
+                {
+                    "name": "highlights",
+                    "description": "Grid Highlight data for the node ids provided.",
+                    "type": "object"
+                }
+            ]
+        },
+        {
+            "name": "getSourceOrderHighlightObjectForTest",
+            "description": "For Source Order Viewer testing.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to highlight.",
+                    "$ref": "DOM.NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "highlight",
+                    "description": "Source order highlight data for the node id provided.",
+                    "type": "object"
+                }
+            ]
+        },
+        {
+            "name": "hideHighlight",
+            "description": "Hides any highlight."
+        },
+        {
+            "name": "highlightFrame",
+            "description": "Highlights owner element of the frame with given id.\nDeprecated: Doesn't work reliably and cannot be fixed due to process\nseparation (the owner node might be in a different process). Determine\nthe owner node in the client and use highlightNode.",
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "frameId",
+                    "description": "Identifier of the frame to highlight.",
+                    "$ref": "Page.FrameId"
+                },
+                {
+                    "name": "contentColor",
+                    "description": "The content box highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "contentOutlineColor",
+                    "description": "The content box highlight outline color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "name": "highlightNode",
+            "description": "Highlights DOM node with given id or with the given JavaScript object wrapper. Either nodeId or\nobjectId must be specified.",
+            "parameters": [
+                {
+                    "name": "highlightConfig",
+                    "description": "A descriptor for the highlight appearance.",
+                    "$ref": "HighlightConfig"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to highlight.",
+                    "optional": true,
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node to highlight.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node to be highlighted.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                },
+                {
+                    "name": "selector",
+                    "description": "Selectors to highlight relevant nodes.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "highlightQuad",
+            "description": "Highlights given quad. Coordinates are absolute with respect to the main frame viewport.",
+            "parameters": [
+                {
+                    "name": "quad",
+                    "description": "Quad to highlight",
+                    "$ref": "DOM.Quad"
+                },
+                {
+                    "name": "color",
+                    "description": "The highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "outlineColor",
+                    "description": "The highlight outline color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "name": "highlightRect",
+            "description": "Highlights given rectangle. Coordinates are absolute with respect to the main frame viewport.\nIssue: the method does not handle device pixel ratio (DPR) correctly.\nThe coordinates currently have to be adjusted by the client\nif DPR is not 1 (see crbug.com/437807128).",
+            "parameters": [
+                {
+                    "name": "x",
+                    "description": "X coordinate",
+                    "type": "integer"
+                },
+                {
+                    "name": "y",
+                    "description": "Y coordinate",
+                    "type": "integer"
+                },
+                {
+                    "name": "width",
+                    "description": "Rectangle width",
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "Rectangle height",
+                    "type": "integer"
+                },
+                {
+                    "name": "color",
+                    "description": "The highlight fill color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                },
+                {
+                    "name": "outlineColor",
+                    "description": "The highlight outline color (default: transparent).",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "name": "highlightSourceOrder",
+            "description": "Highlights the source order of the children of the DOM node with given id or with the given\nJavaScript object wrapper. Either nodeId or objectId must be specified.",
+            "parameters": [
+                {
+                    "name": "sourceOrderConfig",
+                    "description": "A descriptor for the appearance of the overlay drawing.",
+                    "$ref": "SourceOrderConfig"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to highlight.",
+                    "optional": true,
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node to highlight.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node to be highlighted.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ]
+        },
+        {
+            "name": "setInspectMode",
+            "description": "Enters the 'inspect' mode. In this mode, elements that user is hovering over are highlighted.\nBackend then generates 'inspectNodeRequested' event upon element selection.",
+            "parameters": [
+                {
+                    "name": "mode",
+                    "description": "Set an inspection mode.",
+                    "$ref": "InspectMode"
+                },
+                {
+                    "name": "highlightConfig",
+                    "description": "A descriptor for the highlight appearance of hovered-over nodes. May be omitted if `enabled\n== false`.",
+                    "optional": true,
+                    "$ref": "HighlightConfig"
+                }
+            ]
+        },
+        {
+            "name": "setShowAdHighlights",
+            "description": "Highlights owner element of all frames detected to be ads.",
+            "parameters": [
+                {
+                    "name": "show",
+                    "description": "True for showing ad highlights",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setPausedInDebuggerMessage",
+            "parameters": [
+                {
+                    "name": "message",
+                    "description": "The message to display, also triggers resume and step over controls.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "setShowDebugBorders",
+            "description": "Requests that backend shows debug borders on layers",
+            "parameters": [
+                {
+                    "name": "show",
+                    "description": "True for showing debug borders",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowFPSCounter",
+            "description": "Requests that backend shows the FPS counter",
+            "parameters": [
+                {
+                    "name": "show",
+                    "description": "True for showing the FPS counter",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowGridOverlays",
+            "description": "Highlight multiple elements with the CSS Grid overlay.",
+            "parameters": [
+                {
+                    "name": "gridNodeHighlightConfigs",
+                    "description": "An array of node identifiers and descriptors for the highlight appearance.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "GridNodeHighlightConfig"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setShowFlexOverlays",
+            "parameters": [
+                {
+                    "name": "flexNodeHighlightConfigs",
+                    "description": "An array of node identifiers and descriptors for the highlight appearance.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "FlexNodeHighlightConfig"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setShowScrollSnapOverlays",
+            "parameters": [
+                {
+                    "name": "scrollSnapHighlightConfigs",
+                    "description": "An array of node identifiers and descriptors for the highlight appearance.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ScrollSnapHighlightConfig"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setShowContainerQueryOverlays",
+            "parameters": [
+                {
+                    "name": "containerQueryHighlightConfigs",
+                    "description": "An array of node identifiers and descriptors for the highlight appearance.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ContainerQueryHighlightConfig"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setShowInspectedElementAnchor",
+            "parameters": [
+                {
+                    "name": "inspectedElementAnchorConfig",
+                    "description": "Node identifier for which to show an anchor for.",
+                    "$ref": "InspectedElementAnchorConfig"
+                }
+            ]
+        },
+        {
+            "name": "setShowPaintRects",
+            "description": "Requests that backend shows paint rectangles",
+            "parameters": [
+                {
+                    "name": "result",
+                    "description": "True for showing paint rectangles",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowLayoutShiftRegions",
+            "description": "Requests that backend shows layout shift regions",
+            "parameters": [
+                {
+                    "name": "result",
+                    "description": "True for showing layout shift regions",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowScrollBottleneckRects",
+            "description": "Requests that backend shows scroll bottleneck rects",
+            "parameters": [
+                {
+                    "name": "show",
+                    "description": "True for showing scroll bottleneck rects",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowHitTestBorders",
+            "description": "Deprecated, no longer has any effect.",
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "show",
+                    "description": "True for showing hit-test borders",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowWebVitals",
+            "description": "Deprecated, no longer has any effect.",
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "show",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowViewportSizeOnResize",
+            "description": "Paints viewport size upon main frame resize.",
+            "parameters": [
+                {
+                    "name": "show",
+                    "description": "Whether to paint size or not.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setShowHinge",
+            "description": "Add a dual screen device hinge",
+            "parameters": [
+                {
+                    "name": "hingeConfig",
+                    "description": "hinge data, null means hideHinge",
+                    "optional": true,
+                    "$ref": "HingeConfig"
+                }
+            ]
+        },
+        {
+            "name": "setShowIsolatedElements",
+            "description": "Show elements in isolation mode with overlays.",
+            "parameters": [
+                {
+                    "name": "isolatedElementHighlightConfigs",
+                    "description": "An array of node identifiers and descriptors for the highlight appearance.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "IsolatedElementHighlightConfig"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setShowWindowControlsOverlay",
+            "description": "Show Window Controls Overlay for PWA",
+            "parameters": [
+                {
+                    "name": "windowControlsOverlayConfig",
+                    "description": "Window Controls Overlay data, null means hide Window Controls Overlay",
+                    "optional": true,
+                    "$ref": "WindowControlsOverlayConfig"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "inspectNodeRequested",
+            "description": "Fired when the node should be inspected. This happens after call to `setInspectMode` or when\nuser manually inspects an element.",
+            "parameters": [
+                {
+                    "name": "backendNodeId",
+                    "description": "Id of the node to inspect.",
+                    "$ref": "DOM.BackendNodeId"
+                }
+            ]
+        },
+        {
+            "name": "nodeHighlightRequested",
+            "description": "Fired when the node should be highlighted. This happens after call to `setInspectMode`.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "$ref": "DOM.NodeId"
+                }
+            ]
+        },
+        {
+            "name": "screenshotRequested",
+            "description": "Fired when user asks to capture screenshot of some area on the page.",
+            "parameters": [
+                {
+                    "name": "viewport",
+                    "description": "Viewport to capture, in device independent pixels (dip).",
+                    "$ref": "Page.Viewport"
+                }
+            ]
+        },
+        {
+            "name": "inspectPanelShowRequested",
+            "description": "Fired when user asks to show the Inspect panel.",
+            "parameters": [
+                {
+                    "name": "backendNodeId",
+                    "description": "Id of the node to show in the panel.",
+                    "$ref": "DOM.BackendNodeId"
+                }
+            ]
+        },
+        {
+            "name": "inspectedElementWindowRestored",
+            "description": "Fired when user asks to restore the Inspected Element floating window.",
+            "parameters": [
+                {
+                    "name": "backendNodeId",
+                    "description": "Id of the node to restore the floating window for.",
+                    "$ref": "DOM.BackendNodeId"
+                }
+            ]
+        },
+        {
+            "name": "inspectModeCanceled",
+            "description": "Fired when user cancels the inspect mode."
+        }
+    ]
+}

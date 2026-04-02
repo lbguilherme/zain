@@ -1,0 +1,176 @@
+{
+    "domain": "Log",
+    "description": "Provides access to log entries.",
+    "dependencies": [
+        "Runtime",
+        "Network"
+    ],
+    "types": [
+        {
+            "id": "LogEntry",
+            "description": "Log entry.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "source",
+                    "description": "Log entry source.",
+                    "type": "string",
+                    "enum": [
+                        "xml",
+                        "javascript",
+                        "network",
+                        "storage",
+                        "appcache",
+                        "rendering",
+                        "security",
+                        "deprecation",
+                        "worker",
+                        "violation",
+                        "intervention",
+                        "recommendation",
+                        "other"
+                    ]
+                },
+                {
+                    "name": "level",
+                    "description": "Log entry severity.",
+                    "type": "string",
+                    "enum": [
+                        "verbose",
+                        "info",
+                        "warning",
+                        "error"
+                    ]
+                },
+                {
+                    "name": "text",
+                    "description": "Logged text.",
+                    "type": "string"
+                },
+                {
+                    "name": "category",
+                    "optional": true,
+                    "type": "string",
+                    "enum": [
+                        "cors"
+                    ]
+                },
+                {
+                    "name": "timestamp",
+                    "description": "Timestamp when this entry was added.",
+                    "$ref": "Runtime.Timestamp"
+                },
+                {
+                    "name": "url",
+                    "description": "URL of the resource if known.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "lineNumber",
+                    "description": "Line number in the resource.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "stackTrace",
+                    "description": "JavaScript stack trace.",
+                    "optional": true,
+                    "$ref": "Runtime.StackTrace"
+                },
+                {
+                    "name": "networkRequestId",
+                    "description": "Identifier of the network request associated with this entry.",
+                    "optional": true,
+                    "$ref": "Network.RequestId"
+                },
+                {
+                    "name": "workerId",
+                    "description": "Identifier of the worker associated with this entry.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "args",
+                    "description": "Call arguments.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "Runtime.RemoteObject"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "ViolationSetting",
+            "description": "Violation configuration setting.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "Violation type.",
+                    "type": "string",
+                    "enum": [
+                        "longTask",
+                        "longLayout",
+                        "blockedEvent",
+                        "blockedParser",
+                        "discouragedAPIUse",
+                        "handler",
+                        "recurringHandler"
+                    ]
+                },
+                {
+                    "name": "threshold",
+                    "description": "Time threshold to trigger upon.",
+                    "type": "number"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "clear",
+            "description": "Clears the log."
+        },
+        {
+            "name": "disable",
+            "description": "Disables log domain, prevents further log entries from being reported to the client."
+        },
+        {
+            "name": "enable",
+            "description": "Enables log domain, sends the entries collected so far to the client by means of the\n`entryAdded` notification."
+        },
+        {
+            "name": "startViolationsReport",
+            "description": "start violation reporting.",
+            "parameters": [
+                {
+                    "name": "config",
+                    "description": "Configuration for violations.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ViolationSetting"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "stopViolationsReport",
+            "description": "Stop violation reporting."
+        }
+    ],
+    "events": [
+        {
+            "name": "entryAdded",
+            "description": "Issued when new message was logged.",
+            "parameters": [
+                {
+                    "name": "entry",
+                    "description": "The entry.",
+                    "$ref": "LogEntry"
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,40 @@
+{
+    "domain": "Inspector",
+    "experimental": true,
+    "commands": [
+        {
+            "name": "disable",
+            "description": "Disables inspector domain notifications."
+        },
+        {
+            "name": "enable",
+            "description": "Enables inspector domain notifications."
+        }
+    ],
+    "events": [
+        {
+            "name": "detached",
+            "description": "Fired when remote debugging connection is about to be terminated. Contains detach reason.",
+            "parameters": [
+                {
+                    "name": "reason",
+                    "description": "The reason why connection has been terminated.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "targetCrashed",
+            "description": "Fired when debugging target has crashed"
+        },
+        {
+            "name": "targetReloadedAfterCrash",
+            "description": "Fired when debugging target has reloaded after crash"
+        },
+        {
+            "name": "workerScriptLoaded",
+            "description": "Fired on worker targets when main worker script and any imported scripts have been evaluated.",
+            "experimental": true
+        }
+    ]
+}

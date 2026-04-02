@@ -1,0 +1,83 @@
+{
+    "domain": "IO",
+    "description": "Input/Output operations for streams produced by DevTools.",
+    "types": [
+        {
+            "id": "StreamHandle",
+            "description": "This is either obtained from another method or specified as `blob:<uuid>` where\n`<uuid>` is an UUID of a Blob.",
+            "type": "string"
+        }
+    ],
+    "commands": [
+        {
+            "name": "close",
+            "description": "Close the stream, discard any temporary backing storage.",
+            "parameters": [
+                {
+                    "name": "handle",
+                    "description": "Handle of the stream to close.",
+                    "$ref": "StreamHandle"
+                }
+            ]
+        },
+        {
+            "name": "read",
+            "description": "Read a chunk of the stream",
+            "parameters": [
+                {
+                    "name": "handle",
+                    "description": "Handle of the stream to read.",
+                    "$ref": "StreamHandle"
+                },
+                {
+                    "name": "offset",
+                    "description": "Seek to the specified offset before reading (if not specified, proceed with offset\nfollowing the last read). Some types of streams may only support sequential reads.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "size",
+                    "description": "Maximum number of bytes to read (left upon the agent discretion if not specified).",
+                    "optional": true,
+                    "type": "integer"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "base64Encoded",
+                    "description": "Set if the data is base64-encoded",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "data",
+                    "description": "Data that were read.",
+                    "type": "string"
+                },
+                {
+                    "name": "eof",
+                    "description": "Set if the end-of-file condition occurred while reading.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "resolveBlob",
+            "description": "Return UUID of Blob object specified by a remote object id.",
+            "parameters": [
+                {
+                    "name": "objectId",
+                    "description": "Object id of a Blob object wrapper.",
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "uuid",
+                    "description": "UUID of the specified Blob.",
+                    "type": "string"
+                }
+            ]
+        }
+    ]
+}

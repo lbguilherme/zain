@@ -1,0 +1,97 @@
+{
+    "domain": "Console",
+    "description": "This domain is deprecated - use Runtime or Log instead.",
+    "deprecated": true,
+    "dependencies": [
+        "Runtime"
+    ],
+    "types": [
+        {
+            "id": "ConsoleMessage",
+            "description": "Console message.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "source",
+                    "description": "Message source.",
+                    "type": "string",
+                    "enum": [
+                        "xml",
+                        "javascript",
+                        "network",
+                        "console-api",
+                        "storage",
+                        "appcache",
+                        "rendering",
+                        "security",
+                        "other",
+                        "deprecation",
+                        "worker"
+                    ]
+                },
+                {
+                    "name": "level",
+                    "description": "Message severity.",
+                    "type": "string",
+                    "enum": [
+                        "log",
+                        "warning",
+                        "error",
+                        "debug",
+                        "info"
+                    ]
+                },
+                {
+                    "name": "text",
+                    "description": "Message text.",
+                    "type": "string"
+                },
+                {
+                    "name": "url",
+                    "description": "URL of the message origin.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "line",
+                    "description": "Line number in the resource that generated this message (1-based).",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "column",
+                    "description": "Column number in the resource that generated this message (1-based).",
+                    "optional": true,
+                    "type": "integer"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "clearMessages",
+            "description": "Does nothing."
+        },
+        {
+            "name": "disable",
+            "description": "Disables console domain, prevents further console messages from being reported to the client."
+        },
+        {
+            "name": "enable",
+            "description": "Enables console domain, sends the messages collected so far to the client by means of the\n`messageAdded` notification."
+        }
+    ],
+    "events": [
+        {
+            "name": "messageAdded",
+            "description": "Issued when new console message is added.",
+            "parameters": [
+                {
+                    "name": "message",
+                    "description": "Console message that has been added.",
+                    "$ref": "ConsoleMessage"
+                }
+            ]
+        }
+    ]
+}

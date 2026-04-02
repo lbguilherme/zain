@@ -1,0 +1,2027 @@
+{
+    "domain": "DOM",
+    "description": "This domain exposes DOM read/write operations. Each DOM Node is represented with its mirror object\nthat has an `id`. This `id` can be used to get additional information on the Node, resolve it into\nthe JavaScript object wrapper, etc. It is important that client receives DOM events only for the\nnodes that are known to the client. Backend keeps track of the nodes that were sent to the client\nand never sends the same node twice. It is client's responsibility to collect information about\nthe nodes that were sent to the client. Note that `iframe` owner elements will return\ncorresponding document elements as their child nodes.",
+    "dependencies": [
+        "Runtime",
+        "Network"
+    ],
+    "types": [
+        {
+            "id": "NodeId",
+            "description": "Unique DOM node identifier.",
+            "type": "integer"
+        },
+        {
+            "id": "BackendNodeId",
+            "description": "Unique DOM node identifier used to reference a node that may not have been pushed to the\nfront-end.",
+            "type": "integer"
+        },
+        {
+            "id": "StyleSheetId",
+            "description": "Unique identifier for a CSS stylesheet.",
+            "type": "string"
+        },
+        {
+            "id": "BackendNode",
+            "description": "Backend node with a friendly name.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "nodeType",
+                    "description": "`Node`'s nodeType.",
+                    "type": "integer"
+                },
+                {
+                    "name": "nodeName",
+                    "description": "`Node`'s nodeName.",
+                    "type": "string"
+                },
+                {
+                    "name": "backendNodeId",
+                    "$ref": "BackendNodeId"
+                }
+            ]
+        },
+        {
+            "id": "PseudoType",
+            "description": "Pseudo element type.",
+            "type": "string",
+            "enum": [
+                "first-line",
+                "first-letter",
+                "checkmark",
+                "before",
+                "after",
+                "expand-icon",
+                "picker-icon",
+                "interest-hint",
+                "marker",
+                "backdrop",
+                "column",
+                "selection",
+                "search-text",
+                "target-text",
+                "spelling-error",
+                "grammar-error",
+                "highlight",
+                "first-line-inherited",
+                "scroll-marker",
+                "scroll-marker-group",
+                "scroll-button",
+                "scrollbar",
+                "scrollbar-thumb",
+                "scrollbar-button",
+                "scrollbar-track",
+                "scrollbar-track-piece",
+                "scrollbar-corner",
+                "resizer",
+                "input-list-button",
+                "view-transition",
+                "view-transition-group",
+                "view-transition-image-pair",
+                "view-transition-group-children",
+                "view-transition-old",
+                "view-transition-new",
+                "placeholder",
+                "file-selector-button",
+                "details-content",
+                "picker",
+                "permission-icon",
+                "overscroll-area-parent"
+            ]
+        },
+        {
+            "id": "ShadowRootType",
+            "description": "Shadow root type.",
+            "type": "string",
+            "enum": [
+                "user-agent",
+                "open",
+                "closed"
+            ]
+        },
+        {
+            "id": "CompatibilityMode",
+            "description": "Document compatibility mode.",
+            "type": "string",
+            "enum": [
+                "QuirksMode",
+                "LimitedQuirksMode",
+                "NoQuirksMode"
+            ]
+        },
+        {
+            "id": "PhysicalAxes",
+            "description": "ContainerSelector physical axes",
+            "type": "string",
+            "enum": [
+                "Horizontal",
+                "Vertical",
+                "Both"
+            ]
+        },
+        {
+            "id": "LogicalAxes",
+            "description": "ContainerSelector logical axes",
+            "type": "string",
+            "enum": [
+                "Inline",
+                "Block",
+                "Both"
+            ]
+        },
+        {
+            "id": "ScrollOrientation",
+            "description": "Physical scroll orientation",
+            "type": "string",
+            "enum": [
+                "horizontal",
+                "vertical"
+            ]
+        },
+        {
+            "id": "Node",
+            "description": "DOM interaction is implemented in terms of mirror objects that represent the actual DOM nodes.\nDOMNode is a base node mirror type.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "nodeId",
+                    "description": "Node identifier that is passed into the rest of the DOM messages as the `nodeId`. Backend\nwill only push node with given `id` once. It is aware of all requested nodes and will only\nfire DOM events for nodes known to the client.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "parentId",
+                    "description": "The id of the parent node if any.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "The BackendNodeId for this node.",
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "nodeType",
+                    "description": "`Node`'s nodeType.",
+                    "type": "integer"
+                },
+                {
+                    "name": "nodeName",
+                    "description": "`Node`'s nodeName.",
+                    "type": "string"
+                },
+                {
+                    "name": "localName",
+                    "description": "`Node`'s localName.",
+                    "type": "string"
+                },
+                {
+                    "name": "nodeValue",
+                    "description": "`Node`'s nodeValue.",
+                    "type": "string"
+                },
+                {
+                    "name": "childNodeCount",
+                    "description": "Child count for `Container` nodes.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "children",
+                    "description": "Child nodes of this node when requested with children.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "Node"
+                    }
+                },
+                {
+                    "name": "attributes",
+                    "description": "Attributes of the `Element` node in the form of flat array `[name1, value1, name2, value2]`.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                {
+                    "name": "documentURL",
+                    "description": "Document URL that `Document` or `FrameOwner` node points to.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "baseURL",
+                    "description": "Base URL that `Document` or `FrameOwner` node uses for URL completion.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "publicId",
+                    "description": "`DocumentType`'s publicId.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "systemId",
+                    "description": "`DocumentType`'s systemId.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "internalSubset",
+                    "description": "`DocumentType`'s internalSubset.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "xmlVersion",
+                    "description": "`Document`'s XML version in case of XML documents.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "name",
+                    "description": "`Attr`'s name.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "description": "`Attr`'s value.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "pseudoType",
+                    "description": "Pseudo element type for this node.",
+                    "optional": true,
+                    "$ref": "PseudoType"
+                },
+                {
+                    "name": "pseudoIdentifier",
+                    "description": "Pseudo element identifier for this node. Only present if there is a\nvalid pseudoType.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "shadowRootType",
+                    "description": "Shadow root type.",
+                    "optional": true,
+                    "$ref": "ShadowRootType"
+                },
+                {
+                    "name": "frameId",
+                    "description": "Frame ID for frame owner elements.",
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                },
+                {
+                    "name": "contentDocument",
+                    "description": "Content document for frame owner elements.",
+                    "optional": true,
+                    "$ref": "Node"
+                },
+                {
+                    "name": "shadowRoots",
+                    "description": "Shadow root list for given element host.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "Node"
+                    }
+                },
+                {
+                    "name": "templateContent",
+                    "description": "Content document fragment for template elements.",
+                    "optional": true,
+                    "$ref": "Node"
+                },
+                {
+                    "name": "pseudoElements",
+                    "description": "Pseudo elements associated with this node.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "Node"
+                    }
+                },
+                {
+                    "name": "importedDocument",
+                    "description": "Deprecated, as the HTML Imports API has been removed (crbug.com/937746).\nThis property used to return the imported document for the HTMLImport links.\nThe property is always undefined now.",
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "Node"
+                },
+                {
+                    "name": "distributedNodes",
+                    "description": "Distributed nodes for given insertion point.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "BackendNode"
+                    }
+                },
+                {
+                    "name": "isSVG",
+                    "description": "Whether the node is SVG.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "compatibilityMode",
+                    "optional": true,
+                    "$ref": "CompatibilityMode"
+                },
+                {
+                    "name": "assignedSlot",
+                    "optional": true,
+                    "$ref": "BackendNode"
+                },
+                {
+                    "name": "isScrollable",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "affectedByStartingStyles",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "adoptedStyleSheets",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "StyleSheetId"
+                    }
+                },
+                {
+                    "name": "adProvenance",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "Network.AdProvenance"
+                }
+            ]
+        },
+        {
+            "id": "DetachedElementInfo",
+            "description": "A structure to hold the top-level node of a detached tree and an array of its retained descendants.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "treeNode",
+                    "$ref": "Node"
+                },
+                {
+                    "name": "retainedNodeIds",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "RGBA",
+            "description": "A structure holding an RGBA color.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "r",
+                    "description": "The red component, in the [0-255] range.",
+                    "type": "integer"
+                },
+                {
+                    "name": "g",
+                    "description": "The green component, in the [0-255] range.",
+                    "type": "integer"
+                },
+                {
+                    "name": "b",
+                    "description": "The blue component, in the [0-255] range.",
+                    "type": "integer"
+                },
+                {
+                    "name": "a",
+                    "description": "The alpha component, in the [0-1] range (default: 1).",
+                    "optional": true,
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "id": "Quad",
+            "description": "An array of quad vertices, x immediately followed by y for each point, points clock-wise.",
+            "type": "array",
+            "items": {
+                "type": "number"
+            }
+        },
+        {
+            "id": "BoxModel",
+            "description": "Box model.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "content",
+                    "description": "Content box",
+                    "$ref": "Quad"
+                },
+                {
+                    "name": "padding",
+                    "description": "Padding box",
+                    "$ref": "Quad"
+                },
+                {
+                    "name": "border",
+                    "description": "Border box",
+                    "$ref": "Quad"
+                },
+                {
+                    "name": "margin",
+                    "description": "Margin box",
+                    "$ref": "Quad"
+                },
+                {
+                    "name": "width",
+                    "description": "Node width",
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "Node height",
+                    "type": "integer"
+                },
+                {
+                    "name": "shapeOutside",
+                    "description": "Shape outside coordinates",
+                    "optional": true,
+                    "$ref": "ShapeOutsideInfo"
+                }
+            ]
+        },
+        {
+            "id": "ShapeOutsideInfo",
+            "description": "CSS Shape Outside details.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "bounds",
+                    "description": "Shape bounds",
+                    "$ref": "Quad"
+                },
+                {
+                    "name": "shape",
+                    "description": "Shape coordinate details",
+                    "type": "array",
+                    "items": {
+                        "type": "any"
+                    }
+                },
+                {
+                    "name": "marginShape",
+                    "description": "Margin shape bounds",
+                    "type": "array",
+                    "items": {
+                        "type": "any"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "Rect",
+            "description": "Rectangle.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "x",
+                    "description": "X coordinate",
+                    "type": "number"
+                },
+                {
+                    "name": "y",
+                    "description": "Y coordinate",
+                    "type": "number"
+                },
+                {
+                    "name": "width",
+                    "description": "Rectangle width",
+                    "type": "number"
+                },
+                {
+                    "name": "height",
+                    "description": "Rectangle height",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "id": "CSSComputedStyleProperty",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "Computed style property name.",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "description": "Computed style property value.",
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "collectClassNamesFromSubtree",
+            "description": "Collects class names for the node with given id and all of it's child nodes.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to collect class names.",
+                    "$ref": "NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "classNames",
+                    "description": "Class name list.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "copyTo",
+            "description": "Creates a deep copy of the specified node and places it into the target container before the\ngiven anchor.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to copy.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "targetNodeId",
+                    "description": "Id of the element to drop the copy into.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "insertBeforeNodeId",
+                    "description": "Drop the copy before this node (if absent, the copy becomes the last child of\n`targetNodeId`).",
+                    "optional": true,
+                    "$ref": "NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node clone.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "describeNode",
+            "description": "Describes node given its id, does not require domain to be enabled. Does not start tracking any\nobjects, can be used for automation.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node.",
+                    "optional": true,
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                },
+                {
+                    "name": "depth",
+                    "description": "The maximum depth at which children should be retrieved, defaults to 1. Use -1 for the\nentire subtree or provide an integer larger than 0.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "pierce",
+                    "description": "Whether or not iframes and shadow roots should be traversed when returning the subtree\n(default is false).",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "node",
+                    "description": "Node description.",
+                    "$ref": "Node"
+                }
+            ]
+        },
+        {
+            "name": "scrollIntoViewIfNeeded",
+            "description": "Scrolls the specified rect of the given node into view if not already visible.\nNote: exactly one between nodeId, backendNodeId and objectId should be passed\nto identify the node.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node.",
+                    "optional": true,
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                },
+                {
+                    "name": "rect",
+                    "description": "The rect to be scrolled into view, relative to the node's border box, in CSS pixels.\nWhen omitted, center of the node will be used, similar to Element.scrollIntoView.",
+                    "optional": true,
+                    "$ref": "Rect"
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Disables DOM agent for the given page."
+        },
+        {
+            "name": "discardSearchResults",
+            "description": "Discards search results from the session with the given id. `getSearchResults` should no longer\nbe called for that search.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "searchId",
+                    "description": "Unique search session identifier.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "enable",
+            "description": "Enables DOM agent for the given page.",
+            "parameters": [
+                {
+                    "name": "includeWhitespace",
+                    "description": "Whether to include whitespaces in the children array of returned Nodes.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "all"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "focus",
+            "description": "Focuses the given element.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node.",
+                    "optional": true,
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ]
+        },
+        {
+            "name": "getAttributes",
+            "description": "Returns attributes for the specified node.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to retrieve attributes for.",
+                    "$ref": "NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "attributes",
+                    "description": "An interleaved array of node attribute names and values.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getBoxModel",
+            "description": "Returns boxes for the given node.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node.",
+                    "optional": true,
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "model",
+                    "description": "Box model for the node.",
+                    "$ref": "BoxModel"
+                }
+            ]
+        },
+        {
+            "name": "getContentQuads",
+            "description": "Returns quads that describe node position on the page. This method\nmight return multiple quads for inline nodes.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node.",
+                    "optional": true,
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "quads",
+                    "description": "Quads that describe node layout relative to viewport.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Quad"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getDocument",
+            "description": "Returns the root DOM node (and optionally the subtree) to the caller.\nImplicitly enables the DOM domain events for the current target.",
+            "parameters": [
+                {
+                    "name": "depth",
+                    "description": "The maximum depth at which children should be retrieved, defaults to 1. Use -1 for the\nentire subtree or provide an integer larger than 0.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "pierce",
+                    "description": "Whether or not iframes and shadow roots should be traversed when returning the subtree\n(default is false).",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "root",
+                    "description": "Resulting node.",
+                    "$ref": "Node"
+                }
+            ]
+        },
+        {
+            "name": "getFlattenedDocument",
+            "description": "Returns the root DOM node (and optionally the subtree) to the caller.\nDeprecated, as it is not designed to work well with the rest of the DOM agent.\nUse DOMSnapshot.captureSnapshot instead.",
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "depth",
+                    "description": "The maximum depth at which children should be retrieved, defaults to 1. Use -1 for the\nentire subtree or provide an integer larger than 0.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "pierce",
+                    "description": "Whether or not iframes and shadow roots should be traversed when returning the subtree\n(default is false).",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodes",
+                    "description": "Resulting node.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Node"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getNodesForSubtreeByStyle",
+            "description": "Finds nodes with a given computed style in a subtree.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Node ID pointing to the root of a subtree.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "computedStyles",
+                    "description": "The style to filter nodes by (includes nodes if any of properties matches).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "CSSComputedStyleProperty"
+                    }
+                },
+                {
+                    "name": "pierce",
+                    "description": "Whether or not iframes and shadow roots in the same target should be traversed when returning the\nresults (default is false).",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeIds",
+                    "description": "Resulting nodes.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getNodeForLocation",
+            "description": "Returns node id at given location. Depending on whether DOM domain is enabled, nodeId is\neither returned or not.",
+            "parameters": [
+                {
+                    "name": "x",
+                    "description": "X coordinate.",
+                    "type": "integer"
+                },
+                {
+                    "name": "y",
+                    "description": "Y coordinate.",
+                    "type": "integer"
+                },
+                {
+                    "name": "includeUserAgentShadowDOM",
+                    "description": "False to skip to the nearest non-UA shadow root ancestor (default: false).",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "ignorePointerEventsNone",
+                    "description": "Whether to ignore pointer-events: none on elements and hit test them.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "backendNodeId",
+                    "description": "Resulting node.",
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "frameId",
+                    "description": "Frame this node belongs to.",
+                    "$ref": "Page.FrameId"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node at given coordinates, only when enabled and requested document.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "getOuterHTML",
+            "description": "Returns node's HTML markup.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node.",
+                    "optional": true,
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                },
+                {
+                    "name": "includeShadowDOM",
+                    "description": "Include all shadow roots. Equals to false if not specified.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "outerHTML",
+                    "description": "Outer HTML markup.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "getRelayoutBoundary",
+            "description": "Returns the id of the nearest ancestor that is a relayout boundary.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node.",
+                    "$ref": "NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "Relayout boundary node id for the given node.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "getSearchResults",
+            "description": "Returns search results from given `fromIndex` to given `toIndex` from the search with the given\nidentifier.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "searchId",
+                    "description": "Unique search session identifier.",
+                    "type": "string"
+                },
+                {
+                    "name": "fromIndex",
+                    "description": "Start index of the search result to be returned.",
+                    "type": "integer"
+                },
+                {
+                    "name": "toIndex",
+                    "description": "End index of the search result to be returned.",
+                    "type": "integer"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeIds",
+                    "description": "Ids of the search result nodes.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "hideHighlight",
+            "description": "Hides any highlight.",
+            "redirect": "Overlay"
+        },
+        {
+            "name": "highlightNode",
+            "description": "Highlights DOM node.",
+            "redirect": "Overlay"
+        },
+        {
+            "name": "highlightRect",
+            "description": "Highlights given rectangle.",
+            "redirect": "Overlay"
+        },
+        {
+            "name": "markUndoableState",
+            "description": "Marks last undoable state.",
+            "experimental": true
+        },
+        {
+            "name": "moveTo",
+            "description": "Moves node into the new container, places it before the given anchor.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to move.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "targetNodeId",
+                    "description": "Id of the element to drop the moved node into.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "insertBeforeNodeId",
+                    "description": "Drop node before this one (if absent, the moved node becomes the last child of\n`targetNodeId`).",
+                    "optional": true,
+                    "$ref": "NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "New id of the moved node.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "performSearch",
+            "description": "Searches for a given string in the DOM tree. Use `getSearchResults` to access search results or\n`cancelSearch` to end this search session.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "query",
+                    "description": "Plain text or query selector or XPath search query.",
+                    "type": "string"
+                },
+                {
+                    "name": "includeUserAgentShadowDOM",
+                    "description": "True to search in user agent shadow DOM.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "searchId",
+                    "description": "Unique search session identifier.",
+                    "type": "string"
+                },
+                {
+                    "name": "resultCount",
+                    "description": "Number of search results.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "pushNodeByPathToFrontend",
+            "description": "Requests that the node is sent to the caller given its path. // FIXME, use XPath",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "path",
+                    "description": "Path to node in the proprietary format.",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node for given path.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "pushNodesByBackendIdsToFrontend",
+            "description": "Requests that a batch of nodes is sent to the caller given their backend node ids.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "backendNodeIds",
+                    "description": "The array of backend node ids.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "BackendNodeId"
+                    }
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeIds",
+                    "description": "The array of ids of pushed nodes that correspond to the backend ids specified in\nbackendNodeIds.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "querySelector",
+            "description": "Executes `querySelector` on a given node.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to query upon.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "selector",
+                    "description": "Selector string.",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "Query selector result.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "querySelectorAll",
+            "description": "Executes `querySelectorAll` on a given node.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to query upon.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "selector",
+                    "description": "Selector string.",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeIds",
+                    "description": "Query selector result.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getTopLayerElements",
+            "description": "Returns NodeIds of current top layer elements.\nTop layer is rendered closest to the user within a viewport, therefore its elements always\nappear on top of all other content.",
+            "experimental": true,
+            "returns": [
+                {
+                    "name": "nodeIds",
+                    "description": "NodeIds of top layer elements",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getElementByRelation",
+            "description": "Returns the NodeId of the matched element according to certain relations.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node from which to query the relation.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "relation",
+                    "description": "Type of relation to get.",
+                    "type": "string",
+                    "enum": [
+                        "PopoverTarget",
+                        "InterestTarget",
+                        "CommandFor"
+                    ]
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "NodeId of the element matching the queried relation.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "redo",
+            "description": "Re-does the last undone action.",
+            "experimental": true
+        },
+        {
+            "name": "removeAttribute",
+            "description": "Removes attribute with given name from an element with given id.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the element to remove attribute from.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "name",
+                    "description": "Name of the attribute to remove.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "removeNode",
+            "description": "Removes node with given id.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to remove.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "requestChildNodes",
+            "description": "Requests that children of the node with given id are returned to the caller in form of\n`setChildNodes` events where not only immediate children are retrieved, but all children down to\nthe specified depth.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to get children for.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "depth",
+                    "description": "The maximum depth at which children should be retrieved, defaults to 1. Use -1 for the\nentire subtree or provide an integer larger than 0.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "pierce",
+                    "description": "Whether or not iframes and shadow roots should be traversed when returning the sub-tree\n(default is false).",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "requestNode",
+            "description": "Requests that the node is sent to the caller given the JavaScript node object reference. All\nnodes that form the path from the node to the root are also sent to the client as a series of\n`setChildNodes` notifications.",
+            "parameters": [
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id to convert into node.",
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "Node id for given object.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "resolveNode",
+            "description": "Resolves the JavaScript node object for a given NodeId or BackendNodeId.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to resolve.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Backend identifier of the node to resolve.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "objectGroup",
+                    "description": "Symbolic group name that can be used to release multiple objects.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "executionContextId",
+                    "description": "Execution context in which to resolve the node.",
+                    "optional": true,
+                    "$ref": "Runtime.ExecutionContextId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "object",
+                    "description": "JavaScript object wrapper for given node.",
+                    "$ref": "Runtime.RemoteObject"
+                }
+            ]
+        },
+        {
+            "name": "setAttributeValue",
+            "description": "Sets attribute for an element with given id.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the element to set attribute for.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "name",
+                    "description": "Attribute name.",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "description": "Attribute value.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "setAttributesAsText",
+            "description": "Sets attributes on element with given id. This method is useful when user edits some existing\nattribute value and types in several attribute name/value pairs.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the element to set attributes for.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "text",
+                    "description": "Text with a number of attributes. Will parse this text using HTML parser.",
+                    "type": "string"
+                },
+                {
+                    "name": "name",
+                    "description": "Attribute name to replace with new attributes derived from text in case text parsed\nsuccessfully.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "setFileInputFiles",
+            "description": "Sets files for the given file input element.",
+            "parameters": [
+                {
+                    "name": "files",
+                    "description": "Array of file paths to set.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node.",
+                    "optional": true,
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ]
+        },
+        {
+            "name": "setNodeStackTracesEnabled",
+            "description": "Sets if stack traces should be captured for Nodes. See `Node.getNodeStackTraces`. Default is disabled.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "enable",
+                    "description": "Enable or disable.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "getNodeStackTraces",
+            "description": "Gets stack traces associated with a Node. As of now, only provides stack trace for Node creation.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to get stack traces for.",
+                    "$ref": "NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "creation",
+                    "description": "Creation stack trace, if available.",
+                    "optional": true,
+                    "$ref": "Runtime.StackTrace"
+                }
+            ]
+        },
+        {
+            "name": "getFileInfo",
+            "description": "Returns file information for the given\nFile wrapper.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper.",
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "path",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "getDetachedDomNodes",
+            "description": "Returns list of detached nodes",
+            "experimental": true,
+            "returns": [
+                {
+                    "name": "detachedNodes",
+                    "description": "The list of detached nodes",
+                    "type": "array",
+                    "items": {
+                        "$ref": "DetachedElementInfo"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setInspectedNode",
+            "description": "Enables console to refer to the node with given id via $x (see Command Line API for more details\n$x functions).",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "DOM node id to be accessible by means of $x command line API.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "setNodeName",
+            "description": "Sets node name for a node with given id.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to set name for.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "name",
+                    "description": "New node's name.",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "New node's id.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "setNodeValue",
+            "description": "Sets node value for a node with given id.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to set value for.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "value",
+                    "description": "New node's value.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "setOuterHTML",
+            "description": "Sets node HTML markup, returns new node id.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node to set markup for.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "outerHTML",
+                    "description": "Outer HTML markup to set.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "undo",
+            "description": "Undoes the last performed action.",
+            "experimental": true
+        },
+        {
+            "name": "getFrameOwner",
+            "description": "Returns iframe node that owns iframe with the given domain.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "frameId",
+                    "$ref": "Page.FrameId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "backendNodeId",
+                    "description": "Resulting node.",
+                    "$ref": "BackendNodeId"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node at given coordinates, only when enabled and requested document.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "getContainerForNode",
+            "description": "Returns the query container of the given node based on container query\nconditions: containerName, physical and logical axes, and whether it queries\nscroll-state or anchored elements. If no axes are provided and\nqueriesScrollState is false, the style container is returned, which is the\ndirect parent or the closest element with a matching container-name.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "containerName",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "physicalAxes",
+                    "optional": true,
+                    "$ref": "PhysicalAxes"
+                },
+                {
+                    "name": "logicalAxes",
+                    "optional": true,
+                    "$ref": "LogicalAxes"
+                },
+                {
+                    "name": "queriesScrollState",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "queriesAnchored",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "The container node for the given node, or null if not found.",
+                    "optional": true,
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "getQueryingDescendantsForContainer",
+            "description": "Returns the descendants of a container query container that have\ncontainer queries against this container.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the container node to find querying descendants from.",
+                    "$ref": "NodeId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeIds",
+                    "description": "Descendant nodes with container queries against the given container.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getAnchorElement",
+            "description": "Returns the target anchor element of the given anchor query according to\nhttps://www.w3.org/TR/css-anchor-position-1/#target.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the positioned element from which to find the anchor.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "anchorSpecifier",
+                    "description": "An optional anchor specifier, as defined in\nhttps://www.w3.org/TR/css-anchor-position-1/#anchor-specifier.\nIf not provided, it will return the implicit anchor element for\nthe given positioned element.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeId",
+                    "description": "The anchor element of the given anchor query.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "forceShowPopover",
+            "description": "When enabling, this API force-opens the popover identified by nodeId\nand keeps it open until disabled.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the popover HTMLElement",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "enable",
+                    "description": "If true, opens the popover and keeps it open. If false, closes the\npopover if it was previously force-opened.",
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodeIds",
+                    "description": "List of popovers that were closed in order to respect popover stacking order.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "attributeModified",
+            "description": "Fired when `Element`'s attribute is modified.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node that has changed.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "name",
+                    "description": "Attribute name.",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "description": "Attribute value.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "adoptedStyleSheetsModified",
+            "description": "Fired when `Element`'s adoptedStyleSheets are modified.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node that has changed.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "adoptedStyleSheets",
+                    "description": "New adoptedStyleSheets array.",
+                    "experimental": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "StyleSheetId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "attributeRemoved",
+            "description": "Fired when `Element`'s attribute is removed.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node that has changed.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "name",
+                    "description": "A ttribute name.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "characterDataModified",
+            "description": "Mirrors `DOMCharacterDataModified` event.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node that has changed.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "characterData",
+                    "description": "New text value.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "childNodeCountUpdated",
+            "description": "Fired when `Container`'s child node count has changed.",
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node that has changed.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "childNodeCount",
+                    "description": "New node count.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "childNodeInserted",
+            "description": "Mirrors `DOMNodeInserted` event.",
+            "parameters": [
+                {
+                    "name": "parentNodeId",
+                    "description": "Id of the node that has changed.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "previousNodeId",
+                    "description": "Id of the previous sibling.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "node",
+                    "description": "Inserted node data.",
+                    "$ref": "Node"
+                }
+            ]
+        },
+        {
+            "name": "childNodeRemoved",
+            "description": "Mirrors `DOMNodeRemoved` event.",
+            "parameters": [
+                {
+                    "name": "parentNodeId",
+                    "description": "Parent id.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "nodeId",
+                    "description": "Id of the node that has been removed.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "distributedNodesUpdated",
+            "description": "Called when distribution is changed.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "insertionPointId",
+                    "description": "Insertion point where distributed nodes were updated.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "distributedNodes",
+                    "description": "Distributed nodes for given insertion point.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "BackendNode"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "documentUpdated",
+            "description": "Fired when `Document` has been totally updated. Node ids are no longer valid."
+        },
+        {
+            "name": "inlineStyleInvalidated",
+            "description": "Fired when `Element`'s inline style is modified via a CSS property modification.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeIds",
+                    "description": "Ids of the nodes for which the inline styles have been invalidated.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "NodeId"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "pseudoElementAdded",
+            "description": "Called when a pseudo element is added to an element.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "parentId",
+                    "description": "Pseudo element's parent element id.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "pseudoElement",
+                    "description": "The added pseudo element.",
+                    "$ref": "Node"
+                }
+            ]
+        },
+        {
+            "name": "topLayerElementsUpdated",
+            "description": "Called when top layer elements are changed.",
+            "experimental": true
+        },
+        {
+            "name": "scrollableFlagUpdated",
+            "description": "Fired when a node's scrollability state changes.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "The id of the node.",
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "isScrollable",
+                    "description": "If the node is scrollable.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "adRelatedStateUpdated",
+            "description": "Fired when a node's ad related state changes.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "The id of the node.",
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "adProvenance",
+                    "description": "The provenance of the ad related node, if it is ad related.",
+                    "optional": true,
+                    "$ref": "Network.AdProvenance"
+                }
+            ]
+        },
+        {
+            "name": "affectedByStartingStylesFlagUpdated",
+            "description": "Fired when a node's starting styles changes.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "The id of the node.",
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "affectedByStartingStyles",
+                    "description": "If the node has starting styles.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "pseudoElementRemoved",
+            "description": "Called when a pseudo element is removed from an element.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "parentId",
+                    "description": "Pseudo element's parent element id.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "pseudoElementId",
+                    "description": "The removed pseudo element id.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "setChildNodes",
+            "description": "Fired when backend wants to provide client with the missing DOM structure. This happens upon\nmost of the calls requesting node ids.",
+            "parameters": [
+                {
+                    "name": "parentId",
+                    "description": "Parent node id to populate with children.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "nodes",
+                    "description": "Child nodes array.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Node"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "shadowRootPopped",
+            "description": "Called when shadow root is popped from the element.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "hostId",
+                    "description": "Host element id.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "rootId",
+                    "description": "Shadow root id.",
+                    "$ref": "NodeId"
+                }
+            ]
+        },
+        {
+            "name": "shadowRootPushed",
+            "description": "Called when shadow root is pushed into the element.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "hostId",
+                    "description": "Host element id.",
+                    "$ref": "NodeId"
+                },
+                {
+                    "name": "root",
+                    "description": "Shadow root.",
+                    "$ref": "Node"
+                }
+            ]
+        }
+    ]
+}

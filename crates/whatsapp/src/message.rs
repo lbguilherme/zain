@@ -5,6 +5,7 @@ use std::time::Duration;
 use chrono::NaiveDateTime;
 use std::path::Path;
 
+use base64::Engine;
 use chromium_driver::dom::{Dom, Element, HumanDelay};
 use chromium_driver::PageSession;
 use sha2::{Digest, Sha256};
@@ -12,15 +13,19 @@ use sha2::{Digest, Sha256};
 use crate::error::{Result, WhatsappError};
 use crate::types::{DataId, MessageType, RawMessage};
 
-/// Selector for the chat message input box (appears when a chat is open).
-const MESSAGE_INPUT: &str = r#"div[role="textbox"][data-tab="10"]"#;
+/// Selector for the conversation panel (message scroll container).
+/// Works for all chat types including read-only groups/channels.
+const CONVERSATION_PANEL: &str =
+    r#"div[data-scrolltracepolicy="wa.web.conversation.messages"]"#;
 
 /// Scrollable container for messages inside an open chat.
 const MSG_SCROLL_CONTAINER: &str =
     r#"div[data-scrolltracepolicy="wa.web.conversation.messages"]"#;
 
-/// Each message element has a `data-id` attribute.
-const MSG_ELEMENT: &str = r#"div[data-id]"#;
+/// Each top-level message element has a `data-id` attribute.
+/// The `:not(div[data-id] div[data-id])` excludes nested `div[data-id]` elements
+/// that are quoted-message previews rendered inside a reply bubble.
+const MSG_ELEMENT: &str = r#"div[data-id]:not(div[data-id] div[data-id])"#;
 
 /// Menu button inside the chat header (kebab "...").
 const CHAT_MENU_BUTTON: &str = r#"button[data-tab="6"][aria-label="Menu"]"#;
@@ -31,83 +36,74 @@ const CHAT_LIST: &str = r#"div[role="grid"][aria-label="Chat list"]"#;
 /// Opens a chat by clicking on its row in the sidebar.
 ///
 /// Scrolls the sidebar to find and position the target chat row in a safe
-/// vertical zone before clicking. Matches titles after stripping bidi chars.
-pub(crate) async fn open_chat(dom: &Dom, title: &str, timing: &HumanDelay) -> Result<()> {
+/// vertical zone before clicking.
+pub(crate) async fn open_chat(dom: &Dom, page: &PageSession, title: &str, timing: &HumanDelay) -> Result<()> {
     let mut clicked = false;
     for attempt in 0..50 {
         tracing::info!(title, attempt, "find_chat_row...");
         let found = find_chat_row(dom, title).await?;
 
+        // Use viewport height (not grid box model, which returns the full
+        // scrollable height for virtualised lists).
+        let viewport_h = page
+            .eval_value("window.innerHeight")
+            .await
+            .ok()
+            .and_then(|v| v.as_f64())
+            .unwrap_or(900.0);
+
+        // X center of the sidebar — get from grid box model (x is always valid).
+        let sidebar_x = if let Some(grid) = dom.try_query_selector(CHAT_LIST).await? {
+            grid.center_x().await.unwrap_or(185.0)
+        } else {
+            185.0
+        };
+
         let Some(row_el) = found else {
-            tracing::debug!(title, attempt, "Not found, scrolling down");
-            let Some(grid) = dom.try_query_selector(CHAT_LIST).await? else {
-                tracing::debug!(title, "Chat list grid not found, breaking");
-                break;
-            };
-            let _ = grid.swipe_up(300.0, timing).await;
+            tracing::info!(title, attempt, "Not found, scrolling down");
+            // Swipe up (drag up = content scrolls down = reveals items lower in list)
+            // using absolute viewport coords to avoid virtualised height issues.
+            let start_y = viewport_h * 0.70;
+            let end_y = viewport_h * 0.20;
+            let _ = dom.swipe_vertical(sidebar_x, start_y, end_y, timing).await;
             tokio::time::sleep(Duration::from_millis(300)).await;
             continue;
         };
 
-        tracing::debug!(title, attempt, "Found row, getting box model");
+        tracing::info!(title, attempt, "Found row, getting box model");
 
         // Check vertical position: avoid clicking near the bottom (banner zone).
         let el_center_y = match row_el.box_model().await {
             Ok(bm) if bm.content.len() >= 8 => {
                 let cy = (bm.content[1] + bm.content[5]) / 2.0;
-                tracing::debug!(title, attempt, cy, "Row center Y");
+                tracing::info!(title, attempt, cy, "Row center Y");
                 cy
             }
             Ok(bm) => {
-                tracing::debug!(title, attempt, content_len = bm.content.len(), "Invalid box model");
+                tracing::info!(title, attempt, content_len = bm.content.len(), "Invalid box model");
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
             Err(e) => {
-                tracing::debug!(title, attempt, "box_model failed: {e:#}");
+                tracing::info!(title, attempt, "box_model failed: {e:#}");
                 tokio::time::sleep(Duration::from_millis(200)).await;
                 continue;
             }
         };
 
-        let grid_bounds = match dom.try_query_selector(CHAT_LIST).await? {
-            Some(g) => match g.box_model().await {
-                Ok(bm) if bm.content.len() >= 8 => {
-                    let top = bm.content[1];
-                    let bottom = bm.content[5];
-                    tracing::debug!(title, attempt, top, bottom, "Grid bounds");
-                    Some((top, bottom))
-                }
-                _ => None,
-            },
-            None => None,
-        };
+        let safe_bottom = viewport_h * 0.70;
+        let ideal_y = viewport_h * 0.35;
 
-        if let Some((grid_top, grid_bottom)) = grid_bounds {
-            let grid_height = grid_bottom - grid_top;
-            let safe_bottom = grid_top + grid_height * 0.75;
-            let ideal_center = grid_top + grid_height * 0.4;
-
-            if el_center_y > safe_bottom {
-                let swipe_dist = (el_center_y - ideal_center).min(grid_height * 0.5);
-                tracing::debug!(title, attempt, el_center_y, safe_bottom, swipe_dist, "Too low, swiping up");
-                if let Some(grid) = dom.try_query_selector(CHAT_LIST).await? {
-                    let _ = grid.swipe_up(swipe_dist, timing).await;
-                    tokio::time::sleep(Duration::from_millis(300)).await;
-                    continue;
-                }
-            }
-
-            if el_center_y < grid_top {
-                let swipe_dist =
-                    (grid_top - el_center_y + grid_height * 0.3).min(grid_height * 0.5);
-                tracing::debug!(title, attempt, el_center_y, grid_top, swipe_dist, "Too high, swiping down");
-                if let Some(grid) = dom.try_query_selector(CHAT_LIST).await? {
-                    let _ = grid.swipe_down(swipe_dist, timing).await;
-                    tokio::time::sleep(Duration::from_millis(300)).await;
-                    continue;
-                }
-            }
+        if el_center_y > safe_bottom {
+            // Element too low — swipe up (drag up = content up = item moves higher).
+            // Use absolute viewport coords; grid box model height is virtual/huge.
+            let swipe_dist = (el_center_y - ideal_y).min(400.0).max(100.0);
+            let start_y = viewport_h * 0.70;
+            let end_y = (start_y - swipe_dist).max(viewport_h * 0.10);
+            tracing::info!(title, attempt, el_center_y, safe_bottom, swipe_dist, "Too low, swiping up");
+            let _ = dom.swipe_vertical(sidebar_x, start_y, end_y, timing).await;
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            continue;
         }
 
         tracing::debug!(title, attempt, "Clicking...");
@@ -131,7 +127,7 @@ pub(crate) async fn open_chat(dom: &Dom, title: &str, timing: &HumanDelay) -> Re
         return Err(WhatsappError::SelectorNotFound("chat row by title"));
     }
 
-    if let Err(_) = dom.wait_for(MESSAGE_INPUT, Duration::from_secs(5)).await {
+    if let Err(_) = dom.wait_for(CONVERSATION_PANEL, Duration::from_secs(5)).await {
         tracing::warn!(title, "Message panel did not appear, dumping DOM");
         dump_debug(dom, "message_panel_timeout").await;
         return Err(WhatsappError::Timeout("chat message panel".into()));
@@ -144,54 +140,105 @@ pub(crate) async fn open_chat(dom: &Dom, title: &str, timing: &HumanDelay) -> Re
     Ok(())
 }
 
-/// Finds a chat row by title using a CSS selector with the title attribute.
-/// Much faster than iterating all rows — single CDP call.
+/// Finds a chat row's gridcell by title. The gridcell is the clickable
+/// element that opens the chat.
 async fn find_chat_row(dom: &Dom, target_title: &str) -> Result<Option<Element>> {
-    // Use CSS attribute selector to find the span directly.
-    let selector = format!(
-        r#"div[role="grid"][aria-label="Chat list"] div[role="row"] span[title="{}"]"#,
-        css_escape_attr(target_title)
-    );
+    let escaped = target_title.replace('\\', "\\\\").replace('"', "\\\"");
 
-    let span = match dom.try_query_selector(&selector).await {
-        Ok(Some(s)) => s,
+    // Try :has() selector to get the gridcell directly.
+    let gridcell_selector = format!(
+        r#"div[role="grid"][aria-label="Chat list"] div[role="gridcell"]:has(span[title="{}"])"#,
+        escaped
+    );
+    match dom.try_query_selector(&gridcell_selector).await {
+        Ok(Some(el)) => {
+            tracing::info!(target_title, node_id = el.node_id(), "Found chat gridcell");
+            return Ok(Some(el));
+        }
+        Ok(None) => {}
+        Err(e) => {
+            tracing::debug!(target_title, "gridcell :has() error: {e:#}");
+        }
+    }
+
+    // Fallback: find the span and click it (may not open the chat in all cases).
+    let span_selector = format!(
+        r#"div[role="grid"][aria-label="Chat list"] span[title="{}"]"#,
+        escaped
+    );
+    match dom.try_query_selector(&span_selector).await {
+        Ok(Some(el)) => {
+            tracing::info!(target_title, node_id = el.node_id(), "Found chat span (fallback)");
+            Ok(Some(el))
+        }
         Ok(None) => {
-            tracing::debug!(target_title, "CSS selector found no match");
-            return Ok(None);
+            tracing::info!(target_title, "Chat not found in DOM");
+            Ok(None)
         }
         Err(e) => {
-            tracing::debug!(target_title, "CSS selector error: {e:#}");
-            return Ok(None);
-        }
-    };
-
-    // Navigate up to the row element: the span is inside the row.
-    // We can't go to parent in CDP easily, so we re-query the row
-    // that contains this specific title.
-    let row_selector = format!(
-        r#"div[role="grid"][aria-label="Chat list"] div[role="row"]:has(span[title="{}"])"#,
-        css_escape_attr(target_title)
-    );
-
-    match dom.try_query_selector(&row_selector).await {
-        Ok(Some(row)) => Ok(Some(row)),
-        Ok(None) => {
-            // Fallback: click the span itself.
-            tracing::debug!(target_title, ":has() selector failed, using span directly");
-            Ok(Some(span))
-        }
-        Err(e) => {
-            tracing::debug!(target_title, ":has() selector error: {e:#}, using span");
-            Ok(Some(span))
+            tracing::debug!(target_title, "span selector error: {e:#}");
+            Ok(None)
         }
     }
 }
 
-/// Escapes a string for use inside a CSS attribute selector value.
-fn css_escape_attr(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+
+/// Fetches a blob URL from inside the browser and returns raw bytes.
+///
+/// Uses JS `fetch()` + `FileReader.readAsDataURL()` to convert the blob
+/// to base64, then decodes on our side. This is the only way to read
+/// blob: URLs since CDP IO.read doesn't support them.
+async fn fetch_blob_bytes(page: &PageSession, blob_url: &str) -> Result<Vec<u8>> {
+    tracing::info!(blob_url = %blob_url, "fetch_blob_bytes: starting JS fetch");
+
+    let js = format!(
+        r#"(async()=>{{const r=await fetch("{}");const b=await r.blob();return new Promise((ok,err)=>{{const rd=new FileReader();rd.onloadend=()=>ok(rd.result);rd.onerror=()=>err("read error");rd.readAsDataURL(b);}})}})()"#,
+        blob_url.replace('"', r#"\""#)
+    );
+
+    let result = page
+        .eval_value_async(&js)
+        .await
+        .map_err(|e| WhatsappError::Screenshot(format!("blob fetch: {e}")))?;
+
+    tracing::info!(result_type = %result_type_name(&result), "fetch_blob_bytes: JS eval result");
+
+    let data_url = result
+        .as_str()
+        .ok_or_else(|| WhatsappError::Screenshot(
+            format!("blob fetch returned non-string: {result:?}")
+        ))?;
+
+    tracing::info!(
+        data_url_prefix = %&data_url[..data_url.len().min(80)],
+        total_len = data_url.len(),
+        "fetch_blob_bytes: got data URL"
+    );
+
+    // "data:image/webp;base64,AAAA..."
+    let base64_part = data_url
+        .split_once(',')
+        .map(|(_, b)| b)
+        .ok_or_else(|| WhatsappError::Screenshot("invalid data URL".into()))?;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64_part)
+        .map_err(|e| WhatsappError::Screenshot(format!("base64 decode: {e}")))?;
+
+    tracing::info!(bytes = bytes.len(), "fetch_blob_bytes: decoded bytes");
+    Ok(bytes)
 }
 
+fn result_type_name(v: &serde_json::Value) -> &'static str {
+    match v {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "bool",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
 
 /// Saves a debug DOM dump to `dumps/{name}.html`.
 async fn dump_debug(dom: &Dom, name: &str) {
@@ -202,6 +249,21 @@ async fn dump_debug(dom: &Dom, name: &str) {
         let _ = std::fs::write(&path, &html);
         tracing::info!("Debug dump saved to {}", path.display());
     }
+}
+
+/// Saves a debug DOM dump once (skips on subsequent calls with the same name).
+async fn dump_debug_once(dom: &Dom, name: &str) {
+    use std::sync::Mutex;
+    use std::collections::HashSet;
+    static DUMPED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+    {
+        let mut guard = DUMPED.lock().unwrap();
+        let set = guard.get_or_insert_with(HashSet::new);
+        if !set.insert(name.to_owned()) {
+            return;
+        }
+    }
+    dump_debug(dom, name).await;
 }
 
 /// Gets the data-id of the last visible message element.
@@ -319,7 +381,8 @@ pub(crate) async fn scroll_up_messages(dom: &Dom, timing: &HumanDelay) -> Result
         .await?
         .ok_or(WhatsappError::SelectorNotFound(MSG_SCROLL_CONTAINER))?;
 
-    container.swipe_up(500.0, timing).await?;
+    // swipe_down = drag finger downward = content scrolls up = reveals older messages above.
+    container.swipe_down(500.0, timing).await?;
     tokio::time::sleep(Duration::from_millis(500)).await;
     Ok(())
 }
@@ -622,13 +685,7 @@ async fn download_sticker(
         return Ok(None);
     }
 
-    // Extract UUID from blob URL: "blob:https://web.whatsapp.com/<uuid>"
-    let uuid = src
-        .rsplit('/')
-        .next()
-        .ok_or_else(|| WhatsappError::Screenshot("no UUID in blob URL".into()))?;
-
-    let bytes = page.read_blob(uuid).await?;
+    let bytes = fetch_blob_bytes(page, &src).await?;
 
     if bytes.is_empty() {
         return Ok(None);
@@ -662,31 +719,43 @@ async fn download_image(
         return Ok(None);
     };
 
+    tracing::info!("download_image: clicking Open picture button");
     open_btn.click(timing).await?;
-    tokio::time::sleep(Duration::from_millis(800)).await;
+    tokio::time::sleep(Duration::from_millis(1200)).await;
 
-    // Find the fullscreen image with a blob: src.
-    // The fullscreen viewer shows the image in a large <img> with crossorigin="anonymous".
     let dom = page.dom().await?;
+
+    // Dump DOM so we can inspect the fullscreen viewer structure.
+    dump_debug_once(dom, "image_fullscreen").await;
+
+    tracing::info!("download_image: looking for blob img elements");
     let result = async {
-        let imgs = dom
-            .query_selector_all(r#"img[crossorigin="anonymous"][src^="blob:"]"#)
-            .await?;
+        // Try the expected selector first, then fall back to any blob img.
+        let imgs = {
+            let specific = dom
+                .query_selector_all(r#"img[crossorigin="anonymous"][src^="blob:"]"#)
+                .await?;
+            tracing::info!(count = specific.len(), "download_image: crossorigin blob imgs found");
+            if specific.is_empty() {
+                let any = dom
+                    .query_selector_all(r#"img[src^="blob:"]"#)
+                    .await?;
+                tracing::info!(count = any.len(), "download_image: any blob imgs found (fallback)");
+                any
+            } else {
+                specific
+            }
+        };
 
         for img in &imgs {
-            let Some(src) = img.attribute("src").await? else {
-                continue;
-            };
+            let src = img.attribute("src").await?.unwrap_or_default();
+            tracing::info!(src = %src, "download_image: candidate img src");
             if !src.starts_with("blob:") {
                 continue;
             }
 
-            let uuid = src.rsplit('/').next().unwrap_or("");
-            if uuid.is_empty() {
-                continue;
-            }
-
-            let bytes = page.read_blob(uuid).await?;
+            let bytes = fetch_blob_bytes(page, &src).await?;
+            tracing::info!(src = %src, bytes = bytes.len(), "download_image: fetch_blob_bytes result");
             if bytes.is_empty() {
                 continue;
             }
@@ -696,22 +765,22 @@ async fn download_image(
             let path = media_dir.join(&filename);
             if !path.exists() {
                 std::fs::write(&path, &bytes)?;
-                tracing::debug!(filename = %filename, size = bytes.len(), "Saved image");
+                tracing::info!(filename = %filename, size = bytes.len(), "Saved image");
             }
 
             return Ok(Some(filename));
         }
 
+        tracing::warn!("download_image: no usable blob img found in fullscreen viewer");
         Ok::<_, WhatsappError>(None)
     }
     .await;
 
     // Close the fullscreen viewer by pressing Escape.
-    // Use a fresh DOM query to find a focusable element and press Escape on it.
     if let Some(body) = dom.try_query_selector("body").await? {
         let _ = body.press_key("Escape", timing).await;
     }
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
 
     result
 }

@@ -1,0 +1,417 @@
+{
+    "domain": "LayerTree",
+    "experimental": true,
+    "dependencies": [
+        "DOM"
+    ],
+    "types": [
+        {
+            "id": "LayerId",
+            "description": "Unique Layer identifier.",
+            "type": "string"
+        },
+        {
+            "id": "SnapshotId",
+            "description": "Unique snapshot identifier.",
+            "type": "string"
+        },
+        {
+            "id": "ScrollRect",
+            "description": "Rectangle where scrolling happens on the main thread.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "rect",
+                    "description": "Rectangle itself.",
+                    "$ref": "DOM.Rect"
+                },
+                {
+                    "name": "type",
+                    "description": "Reason for rectangle to force scrolling on the main thread",
+                    "type": "string",
+                    "enum": [
+                        "RepaintsOnScroll",
+                        "TouchEventHandler",
+                        "WheelEventHandler"
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "StickyPositionConstraint",
+            "description": "Sticky position constraints.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "stickyBoxRect",
+                    "description": "Layout rectangle of the sticky element before being shifted",
+                    "$ref": "DOM.Rect"
+                },
+                {
+                    "name": "containingBlockRect",
+                    "description": "Layout rectangle of the containing block of the sticky element",
+                    "$ref": "DOM.Rect"
+                },
+                {
+                    "name": "nearestLayerShiftingStickyBox",
+                    "description": "The nearest sticky layer that shifts the sticky box",
+                    "optional": true,
+                    "$ref": "LayerId"
+                },
+                {
+                    "name": "nearestLayerShiftingContainingBlock",
+                    "description": "The nearest sticky layer that shifts the containing block",
+                    "optional": true,
+                    "$ref": "LayerId"
+                }
+            ]
+        },
+        {
+            "id": "PictureTile",
+            "description": "Serialized fragment of layer picture along with its offset within the layer.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "x",
+                    "description": "Offset from owning layer left boundary",
+                    "type": "number"
+                },
+                {
+                    "name": "y",
+                    "description": "Offset from owning layer top boundary",
+                    "type": "number"
+                },
+                {
+                    "name": "picture",
+                    "description": "Base64-encoded snapshot data. (Encoded as a base64 string when passed over JSON)",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "Layer",
+            "description": "Information about a compositing layer.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "layerId",
+                    "description": "The unique id for this layer.",
+                    "$ref": "LayerId"
+                },
+                {
+                    "name": "parentLayerId",
+                    "description": "The id of parent (not present for root).",
+                    "optional": true,
+                    "$ref": "LayerId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "The backend id for the node associated with this layer.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "offsetX",
+                    "description": "Offset from parent layer, X coordinate.",
+                    "type": "number"
+                },
+                {
+                    "name": "offsetY",
+                    "description": "Offset from parent layer, Y coordinate.",
+                    "type": "number"
+                },
+                {
+                    "name": "width",
+                    "description": "Layer width.",
+                    "type": "number"
+                },
+                {
+                    "name": "height",
+                    "description": "Layer height.",
+                    "type": "number"
+                },
+                {
+                    "name": "transform",
+                    "description": "Transformation matrix for layer, default is identity matrix",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                {
+                    "name": "anchorX",
+                    "description": "Transform anchor point X, absent if no transform specified",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "anchorY",
+                    "description": "Transform anchor point Y, absent if no transform specified",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "anchorZ",
+                    "description": "Transform anchor point Z, absent if no transform specified",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "paintCount",
+                    "description": "Indicates how many time this layer has painted.",
+                    "type": "integer"
+                },
+                {
+                    "name": "drawsContent",
+                    "description": "Indicates whether this layer hosts any content, rather than being used for\ntransform/scrolling purposes only.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "invisible",
+                    "description": "Set if layer is not visible.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "scrollRects",
+                    "description": "Rectangles scrolling on main thread only.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "ScrollRect"
+                    }
+                },
+                {
+                    "name": "stickyPositionConstraint",
+                    "description": "Sticky position constraint information",
+                    "optional": true,
+                    "$ref": "StickyPositionConstraint"
+                }
+            ]
+        },
+        {
+            "id": "PaintProfile",
+            "description": "Array of timings, one per paint step.",
+            "type": "array",
+            "items": {
+                "type": "number"
+            }
+        }
+    ],
+    "commands": [
+        {
+            "name": "compositingReasons",
+            "description": "Provides the reasons why the given layer was composited.",
+            "parameters": [
+                {
+                    "name": "layerId",
+                    "description": "The id of the layer for which we want to get the reasons it was composited.",
+                    "$ref": "LayerId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "compositingReasons",
+                    "description": "A list of strings specifying reasons for the given layer to become composited.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                {
+                    "name": "compositingReasonIds",
+                    "description": "A list of strings specifying reason IDs for the given layer to become composited.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Disables compositing tree inspection."
+        },
+        {
+            "name": "enable",
+            "description": "Enables compositing tree inspection."
+        },
+        {
+            "name": "loadSnapshot",
+            "description": "Returns the snapshot identifier.",
+            "parameters": [
+                {
+                    "name": "tiles",
+                    "description": "An array of tiles composing the snapshot.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "PictureTile"
+                    }
+                }
+            ],
+            "returns": [
+                {
+                    "name": "snapshotId",
+                    "description": "The id of the snapshot.",
+                    "$ref": "SnapshotId"
+                }
+            ]
+        },
+        {
+            "name": "makeSnapshot",
+            "description": "Returns the layer snapshot identifier.",
+            "parameters": [
+                {
+                    "name": "layerId",
+                    "description": "The id of the layer.",
+                    "$ref": "LayerId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "snapshotId",
+                    "description": "The id of the layer snapshot.",
+                    "$ref": "SnapshotId"
+                }
+            ]
+        },
+        {
+            "name": "profileSnapshot",
+            "parameters": [
+                {
+                    "name": "snapshotId",
+                    "description": "The id of the layer snapshot.",
+                    "$ref": "SnapshotId"
+                },
+                {
+                    "name": "minRepeatCount",
+                    "description": "The maximum number of times to replay the snapshot (1, if not specified).",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "minDuration",
+                    "description": "The minimum duration (in seconds) to replay the snapshot.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "clipRect",
+                    "description": "The clip rectangle to apply when replaying the snapshot.",
+                    "optional": true,
+                    "$ref": "DOM.Rect"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "timings",
+                    "description": "The array of paint profiles, one per run.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "PaintProfile"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "releaseSnapshot",
+            "description": "Releases layer snapshot captured by the back-end.",
+            "parameters": [
+                {
+                    "name": "snapshotId",
+                    "description": "The id of the layer snapshot.",
+                    "$ref": "SnapshotId"
+                }
+            ]
+        },
+        {
+            "name": "replaySnapshot",
+            "description": "Replays the layer snapshot and returns the resulting bitmap.",
+            "parameters": [
+                {
+                    "name": "snapshotId",
+                    "description": "The id of the layer snapshot.",
+                    "$ref": "SnapshotId"
+                },
+                {
+                    "name": "fromStep",
+                    "description": "The first step to replay from (replay from the very start if not specified).",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "toStep",
+                    "description": "The last step to replay to (replay till the end if not specified).",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "scale",
+                    "description": "The scale to apply while replaying (defaults to 1).",
+                    "optional": true,
+                    "type": "number"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "dataURL",
+                    "description": "A data: URL for resulting image.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "snapshotCommandLog",
+            "description": "Replays the layer snapshot and returns canvas log.",
+            "parameters": [
+                {
+                    "name": "snapshotId",
+                    "description": "The id of the layer snapshot.",
+                    "$ref": "SnapshotId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "commandLog",
+                    "description": "The array of canvas function calls.",
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "layerPainted",
+            "parameters": [
+                {
+                    "name": "layerId",
+                    "description": "The id of the painted layer.",
+                    "$ref": "LayerId"
+                },
+                {
+                    "name": "clip",
+                    "description": "Clip rectangle.",
+                    "$ref": "DOM.Rect"
+                }
+            ]
+        },
+        {
+            "name": "layerTreeDidChange",
+            "parameters": [
+                {
+                    "name": "layers",
+                    "description": "Layer tree, absent if not in the compositing mode.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "Layer"
+                    }
+                }
+            ]
+        }
+    ]
+}

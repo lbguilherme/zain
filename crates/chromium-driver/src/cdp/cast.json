@@ -1,0 +1,109 @@
+{
+    "domain": "Cast",
+    "description": "A domain for interacting with Cast, Presentation API, and Remote Playback API\nfunctionalities.",
+    "experimental": true,
+    "types": [
+        {
+            "id": "Sink",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "type": "string"
+                },
+                {
+                    "name": "id",
+                    "type": "string"
+                },
+                {
+                    "name": "session",
+                    "description": "Text describing the current session. Present only if there is an active\nsession on the sink.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "enable",
+            "description": "Starts observing for sinks that can be used for tab mirroring, and if set,\nsinks compatible with |presentationUrl| as well. When sinks are found, a\n|sinksUpdated| event is fired.\nAlso starts observing for issue messages. When an issue is added or removed,\nan |issueUpdated| event is fired.",
+            "parameters": [
+                {
+                    "name": "presentationUrl",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Stops observing for sinks and issues."
+        },
+        {
+            "name": "setSinkToUse",
+            "description": "Sets a sink to be used when the web page requests the browser to choose a\nsink via Presentation API, Remote Playback API, or Cast SDK.",
+            "parameters": [
+                {
+                    "name": "sinkName",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "startDesktopMirroring",
+            "description": "Starts mirroring the desktop to the sink.",
+            "parameters": [
+                {
+                    "name": "sinkName",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "startTabMirroring",
+            "description": "Starts mirroring the tab to the sink.",
+            "parameters": [
+                {
+                    "name": "sinkName",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "stopCasting",
+            "description": "Stops the active Cast session on the sink.",
+            "parameters": [
+                {
+                    "name": "sinkName",
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "sinksUpdated",
+            "description": "This is fired whenever the list of available sinks changes. A sink is a\ndevice or a software surface that you can cast to.",
+            "parameters": [
+                {
+                    "name": "sinks",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Sink"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "issueUpdated",
+            "description": "This is fired whenever the outstanding issue/error message changes.\n|issueMessage| is empty if there is no issue.",
+            "parameters": [
+                {
+                    "name": "issueMessage",
+                    "type": "string"
+                }
+            ]
+        }
+    ]
+}

@@ -2,6 +2,8 @@ pub mod browser;
 pub mod dom;
 pub mod emulation;
 pub mod input;
+pub mod io;
 pub mod page;
 pub mod runtime;
+pub mod schema;
 pub mod target;

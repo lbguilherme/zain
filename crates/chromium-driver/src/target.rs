@@ -1,7 +1,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use tokio::sync::OnceCell;
+
 use crate::cdp::target::{AttachToTargetParams, TargetCommands};
+use crate::dom::Dom;
 use crate::error::Result;
 use crate::page::PageSession;
 use crate::session::CdpSession;
@@ -10,6 +13,7 @@ use crate::types::TargetId;
 pub(crate) struct TargetInner {
     pub(crate) target_id: TargetId,
     pub(crate) browser_session: CdpSession,
+    pub(crate) dom: OnceCell<Dom>,
     closed: AtomicBool,
 }
 
@@ -52,6 +56,7 @@ impl PageTarget {
             inner: Arc::new(TargetInner {
                 target_id,
                 browser_session: browser.cdp().clone(),
+                dom: OnceCell::new(),
                 closed: AtomicBool::new(false),
             }),
         }
@@ -88,12 +93,15 @@ impl PageTarget {
     ///
     /// Marks the target as closed so the automatic cleanup on drop is skipped.
     /// Returns `true` if the target was closed successfully.
+    #[allow(deprecated)]
     pub async fn close(&self) -> Result<bool> {
         self.inner.mark_closed();
-        self.inner
+        let ret = self
+            .inner
             .browser_session
             .target_close_target(&self.inner.target_id)
-            .await
+            .await?;
+        Ok(ret.success)
     }
 
     /// Brings this target to the foreground in the browser.

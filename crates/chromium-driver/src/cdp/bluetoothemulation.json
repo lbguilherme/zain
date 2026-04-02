@@ -1,0 +1,481 @@
+{
+    "domain": "BluetoothEmulation",
+    "description": "This domain allows configuring virtual Bluetooth devices to test\nthe web-bluetooth API.",
+    "experimental": true,
+    "types": [
+        {
+            "id": "CentralState",
+            "description": "Indicates the various states of Central.",
+            "type": "string",
+            "enum": [
+                "absent",
+                "powered-off",
+                "powered-on"
+            ]
+        },
+        {
+            "id": "GATTOperationType",
+            "description": "Indicates the various types of GATT event.",
+            "type": "string",
+            "enum": [
+                "connection",
+                "discovery"
+            ]
+        },
+        {
+            "id": "CharacteristicWriteType",
+            "description": "Indicates the various types of characteristic write.",
+            "type": "string",
+            "enum": [
+                "write-default-deprecated",
+                "write-with-response",
+                "write-without-response"
+            ]
+        },
+        {
+            "id": "CharacteristicOperationType",
+            "description": "Indicates the various types of characteristic operation.",
+            "type": "string",
+            "enum": [
+                "read",
+                "write",
+                "subscribe-to-notifications",
+                "unsubscribe-from-notifications"
+            ]
+        },
+        {
+            "id": "DescriptorOperationType",
+            "description": "Indicates the various types of descriptor operation.",
+            "type": "string",
+            "enum": [
+                "read",
+                "write"
+            ]
+        },
+        {
+            "id": "ManufacturerData",
+            "description": "Stores the manufacturer data",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "key",
+                    "description": "Company identifier\nhttps://bitbucket.org/bluetooth-SIG/public/src/main/assigned_numbers/company_identifiers/company_identifiers.yaml\nhttps://usb.org/developers",
+                    "type": "integer"
+                },
+                {
+                    "name": "data",
+                    "description": "Manufacturer-specific data (Encoded as a base64 string when passed over JSON)",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "ScanRecord",
+            "description": "Stores the byte data of the advertisement packet sent by a Bluetooth device.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "uuids",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                {
+                    "name": "appearance",
+                    "description": "Stores the external appearance description of the device.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "txPower",
+                    "description": "Stores the transmission power of a broadcasting device.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "manufacturerData",
+                    "description": "Key is the company identifier and the value is an array of bytes of\nmanufacturer specific data.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "ManufacturerData"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "ScanEntry",
+            "description": "Stores the advertisement packet information that is sent by a Bluetooth device.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "deviceAddress",
+                    "type": "string"
+                },
+                {
+                    "name": "rssi",
+                    "type": "integer"
+                },
+                {
+                    "name": "scanRecord",
+                    "$ref": "ScanRecord"
+                }
+            ]
+        },
+        {
+            "id": "CharacteristicProperties",
+            "description": "Describes the properties of a characteristic. This follows Bluetooth Core\nSpecification BT 4.2 Vol 3 Part G 3.3.1. Characteristic Properties.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "broadcast",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "read",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "writeWithoutResponse",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "write",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "notify",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "indicate",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "authenticatedSignedWrites",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "extendedProperties",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "enable",
+            "description": "Enable the BluetoothEmulation domain.",
+            "parameters": [
+                {
+                    "name": "state",
+                    "description": "State of the simulated central.",
+                    "$ref": "CentralState"
+                },
+                {
+                    "name": "leSupported",
+                    "description": "If the simulated central supports low-energy.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setSimulatedCentralState",
+            "description": "Set the state of the simulated central.",
+            "parameters": [
+                {
+                    "name": "state",
+                    "description": "State of the simulated central.",
+                    "$ref": "CentralState"
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Disable the BluetoothEmulation domain."
+        },
+        {
+            "name": "simulatePreconnectedPeripheral",
+            "description": "Simulates a peripheral with |address|, |name| and |knownServiceUuids|\nthat has already been connected to the system.",
+            "parameters": [
+                {
+                    "name": "address",
+                    "type": "string"
+                },
+                {
+                    "name": "name",
+                    "type": "string"
+                },
+                {
+                    "name": "manufacturerData",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ManufacturerData"
+                    }
+                },
+                {
+                    "name": "knownServiceUuids",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "simulateAdvertisement",
+            "description": "Simulates an advertisement packet described in |entry| being received by\nthe central.",
+            "parameters": [
+                {
+                    "name": "entry",
+                    "$ref": "ScanEntry"
+                }
+            ]
+        },
+        {
+            "name": "simulateGATTOperationResponse",
+            "description": "Simulates the response code from the peripheral with |address| for a\nGATT operation of |type|. The |code| value follows the HCI Error Codes from\nBluetooth Core Specification Vol 2 Part D 1.3 List Of Error Codes.",
+            "parameters": [
+                {
+                    "name": "address",
+                    "type": "string"
+                },
+                {
+                    "name": "type",
+                    "$ref": "GATTOperationType"
+                },
+                {
+                    "name": "code",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "simulateCharacteristicOperationResponse",
+            "description": "Simulates the response from the characteristic with |characteristicId| for a\ncharacteristic operation of |type|. The |code| value follows the Error\nCodes from Bluetooth Core Specification Vol 3 Part F 3.4.1.1 Error Response.\nThe |data| is expected to exist when simulating a successful read operation\nresponse.",
+            "parameters": [
+                {
+                    "name": "characteristicId",
+                    "type": "string"
+                },
+                {
+                    "name": "type",
+                    "$ref": "CharacteristicOperationType"
+                },
+                {
+                    "name": "code",
+                    "type": "integer"
+                },
+                {
+                    "name": "data",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "simulateDescriptorOperationResponse",
+            "description": "Simulates the response from the descriptor with |descriptorId| for a\ndescriptor operation of |type|. The |code| value follows the Error\nCodes from Bluetooth Core Specification Vol 3 Part F 3.4.1.1 Error Response.\nThe |data| is expected to exist when simulating a successful read operation\nresponse.",
+            "parameters": [
+                {
+                    "name": "descriptorId",
+                    "type": "string"
+                },
+                {
+                    "name": "type",
+                    "$ref": "DescriptorOperationType"
+                },
+                {
+                    "name": "code",
+                    "type": "integer"
+                },
+                {
+                    "name": "data",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "addService",
+            "description": "Adds a service with |serviceUuid| to the peripheral with |address|.",
+            "parameters": [
+                {
+                    "name": "address",
+                    "type": "string"
+                },
+                {
+                    "name": "serviceUuid",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "serviceId",
+                    "description": "An identifier that uniquely represents this service.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "removeService",
+            "description": "Removes the service respresented by |serviceId| from the simulated central.",
+            "parameters": [
+                {
+                    "name": "serviceId",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "addCharacteristic",
+            "description": "Adds a characteristic with |characteristicUuid| and |properties| to the\nservice represented by |serviceId|.",
+            "parameters": [
+                {
+                    "name": "serviceId",
+                    "type": "string"
+                },
+                {
+                    "name": "characteristicUuid",
+                    "type": "string"
+                },
+                {
+                    "name": "properties",
+                    "$ref": "CharacteristicProperties"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "characteristicId",
+                    "description": "An identifier that uniquely represents this characteristic.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "removeCharacteristic",
+            "description": "Removes the characteristic respresented by |characteristicId| from the\nsimulated central.",
+            "parameters": [
+                {
+                    "name": "characteristicId",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "addDescriptor",
+            "description": "Adds a descriptor with |descriptorUuid| to the characteristic respresented\nby |characteristicId|.",
+            "parameters": [
+                {
+                    "name": "characteristicId",
+                    "type": "string"
+                },
+                {
+                    "name": "descriptorUuid",
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "descriptorId",
+                    "description": "An identifier that uniquely represents this descriptor.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "removeDescriptor",
+            "description": "Removes the descriptor with |descriptorId| from the simulated central.",
+            "parameters": [
+                {
+                    "name": "descriptorId",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "simulateGATTDisconnection",
+            "description": "Simulates a GATT disconnection from the peripheral with |address|.",
+            "parameters": [
+                {
+                    "name": "address",
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "gattOperationReceived",
+            "description": "Event for when a GATT operation of |type| to the peripheral with |address|\nhappened.",
+            "parameters": [
+                {
+                    "name": "address",
+                    "type": "string"
+                },
+                {
+                    "name": "type",
+                    "$ref": "GATTOperationType"
+                }
+            ]
+        },
+        {
+            "name": "characteristicOperationReceived",
+            "description": "Event for when a characteristic operation of |type| to the characteristic\nrespresented by |characteristicId| happened. |data| and |writeType| is\nexpected to exist when |type| is write.",
+            "parameters": [
+                {
+                    "name": "characteristicId",
+                    "type": "string"
+                },
+                {
+                    "name": "type",
+                    "$ref": "CharacteristicOperationType"
+                },
+                {
+                    "name": "data",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "writeType",
+                    "optional": true,
+                    "$ref": "CharacteristicWriteType"
+                }
+            ]
+        },
+        {
+            "name": "descriptorOperationReceived",
+            "description": "Event for when a descriptor operation of |type| to the descriptor\nrespresented by |descriptorId| happened. |data| is expected to exist when\n|type| is write.",
+            "parameters": [
+                {
+                    "name": "descriptorId",
+                    "type": "string"
+                },
+                {
+                    "name": "type",
+                    "$ref": "DescriptorOperationType"
+                },
+                {
+                    "name": "data",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        }
+    ]
+}

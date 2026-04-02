@@ -1,0 +1,225 @@
+{
+    "domain": "Autofill",
+    "description": "Defines commands and events for Autofill.",
+    "experimental": true,
+    "types": [
+        {
+            "id": "CreditCard",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "number",
+                    "description": "16-digit credit card number.",
+                    "type": "string"
+                },
+                {
+                    "name": "name",
+                    "description": "Name of the credit card owner.",
+                    "type": "string"
+                },
+                {
+                    "name": "expiryMonth",
+                    "description": "2-digit expiry month.",
+                    "type": "string"
+                },
+                {
+                    "name": "expiryYear",
+                    "description": "4-digit expiry year.",
+                    "type": "string"
+                },
+                {
+                    "name": "cvc",
+                    "description": "3-digit card verification code.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "AddressField",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "address field name, for example GIVEN_NAME.\nThe full list of supported field names:\nhttps://source.chromium.org/chromium/chromium/src/+/main:components/autofill/core/browser/field_types.cc;l=38",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "description": "address field value, for example Jon Doe.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "AddressFields",
+            "description": "A list of address fields.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "fields",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AddressField"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "Address",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "fields",
+                    "description": "fields and values defining an address.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AddressField"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "AddressUI",
+            "description": "Defines how an address can be displayed like in chrome://settings/addresses.\nAddress UI is a two dimensional array, each inner array is an \"address information line\", and when rendered in a UI surface should be displayed as such.\nThe following address UI for instance:\n[[{name: \"GIVE_NAME\", value: \"Jon\"}, {name: \"FAMILY_NAME\", value: \"Doe\"}], [{name: \"CITY\", value: \"Munich\"}, {name: \"ZIP\", value: \"81456\"}]]\nshould allow the receiver to render:\nJon Doe\nMunich 81456",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "addressFields",
+                    "description": "A two dimension array containing the representation of values from an address profile.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AddressFields"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "FillingStrategy",
+            "description": "Specified whether a filled field was done so by using the html autocomplete attribute or autofill heuristics.",
+            "type": "string",
+            "enum": [
+                "autocompleteAttribute",
+                "autofillInferred"
+            ]
+        },
+        {
+            "id": "FilledField",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "htmlType",
+                    "description": "The type of the field, e.g text, password etc.",
+                    "type": "string"
+                },
+                {
+                    "name": "id",
+                    "description": "the html id",
+                    "type": "string"
+                },
+                {
+                    "name": "name",
+                    "description": "the html name",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "description": "the field value",
+                    "type": "string"
+                },
+                {
+                    "name": "autofillType",
+                    "description": "The actual field type, e.g FAMILY_NAME",
+                    "type": "string"
+                },
+                {
+                    "name": "fillingStrategy",
+                    "description": "The filling strategy",
+                    "$ref": "FillingStrategy"
+                },
+                {
+                    "name": "frameId",
+                    "description": "The frame the field belongs to",
+                    "$ref": "Page.FrameId"
+                },
+                {
+                    "name": "fieldId",
+                    "description": "The form field's DOM node",
+                    "$ref": "DOM.BackendNodeId"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "addressFormFilled",
+            "description": "Emitted when an address form is filled.",
+            "parameters": [
+                {
+                    "name": "filledFields",
+                    "description": "Information about the fields that were filled",
+                    "type": "array",
+                    "items": {
+                        "$ref": "FilledField"
+                    }
+                },
+                {
+                    "name": "addressUi",
+                    "description": "An UI representation of the address used to fill the form.\nConsists of a 2D array where each child represents an address/profile line.",
+                    "$ref": "AddressUI"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "trigger",
+            "description": "Trigger autofill on a form identified by the fieldId.\nIf the field and related form cannot be autofilled, returns an error.",
+            "parameters": [
+                {
+                    "name": "fieldId",
+                    "description": "Identifies a field that serves as an anchor for autofill.",
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "frameId",
+                    "description": "Identifies the frame that field belongs to.",
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                },
+                {
+                    "name": "card",
+                    "description": "Credit card information to fill out the form. Credit card data is not saved.  Mutually exclusive with `address`.",
+                    "optional": true,
+                    "$ref": "CreditCard"
+                },
+                {
+                    "name": "address",
+                    "description": "Address to fill out the form. Address data is not saved. Mutually exclusive with `card`.",
+                    "optional": true,
+                    "$ref": "Address"
+                }
+            ]
+        },
+        {
+            "name": "setAddresses",
+            "description": "Set addresses so that developers can verify their forms implementation.",
+            "parameters": [
+                {
+                    "name": "addresses",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Address"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "disable",
+            "description": "Disables autofill domain notifications."
+        },
+        {
+            "name": "enable",
+            "description": "Enables autofill domain notifications."
+        }
+    ]
+}

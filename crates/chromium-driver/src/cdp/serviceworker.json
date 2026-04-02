@@ -1,0 +1,297 @@
+{
+    "domain": "ServiceWorker",
+    "experimental": true,
+    "dependencies": [
+        "Target"
+    ],
+    "types": [
+        {
+            "id": "RegistrationID",
+            "type": "string"
+        },
+        {
+            "id": "ServiceWorkerRegistration",
+            "description": "ServiceWorker registration.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "registrationId",
+                    "$ref": "RegistrationID"
+                },
+                {
+                    "name": "scopeURL",
+                    "type": "string"
+                },
+                {
+                    "name": "isDeleted",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "id": "ServiceWorkerVersionRunningStatus",
+            "type": "string",
+            "enum": [
+                "stopped",
+                "starting",
+                "running",
+                "stopping"
+            ]
+        },
+        {
+            "id": "ServiceWorkerVersionStatus",
+            "type": "string",
+            "enum": [
+                "new",
+                "installing",
+                "installed",
+                "activating",
+                "activated",
+                "redundant"
+            ]
+        },
+        {
+            "id": "ServiceWorkerVersion",
+            "description": "ServiceWorker version.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "versionId",
+                    "type": "string"
+                },
+                {
+                    "name": "registrationId",
+                    "$ref": "RegistrationID"
+                },
+                {
+                    "name": "scriptURL",
+                    "type": "string"
+                },
+                {
+                    "name": "runningStatus",
+                    "$ref": "ServiceWorkerVersionRunningStatus"
+                },
+                {
+                    "name": "status",
+                    "$ref": "ServiceWorkerVersionStatus"
+                },
+                {
+                    "name": "scriptLastModified",
+                    "description": "The Last-Modified header value of the main script.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "scriptResponseTime",
+                    "description": "The time at which the response headers of the main script were received from the server.\nFor cached script it is the last time the cache entry was validated.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "controlledClients",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "Target.TargetID"
+                    }
+                },
+                {
+                    "name": "targetId",
+                    "optional": true,
+                    "$ref": "Target.TargetID"
+                },
+                {
+                    "name": "routerRules",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "ServiceWorkerErrorMessage",
+            "description": "ServiceWorker error message.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "errorMessage",
+                    "type": "string"
+                },
+                {
+                    "name": "registrationId",
+                    "$ref": "RegistrationID"
+                },
+                {
+                    "name": "versionId",
+                    "type": "string"
+                },
+                {
+                    "name": "sourceURL",
+                    "type": "string"
+                },
+                {
+                    "name": "lineNumber",
+                    "type": "integer"
+                },
+                {
+                    "name": "columnNumber",
+                    "type": "integer"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "deliverPushMessage",
+            "parameters": [
+                {
+                    "name": "origin",
+                    "type": "string"
+                },
+                {
+                    "name": "registrationId",
+                    "$ref": "RegistrationID"
+                },
+                {
+                    "name": "data",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "disable"
+        },
+        {
+            "name": "dispatchSyncEvent",
+            "parameters": [
+                {
+                    "name": "origin",
+                    "type": "string"
+                },
+                {
+                    "name": "registrationId",
+                    "$ref": "RegistrationID"
+                },
+                {
+                    "name": "tag",
+                    "type": "string"
+                },
+                {
+                    "name": "lastChance",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "dispatchPeriodicSyncEvent",
+            "parameters": [
+                {
+                    "name": "origin",
+                    "type": "string"
+                },
+                {
+                    "name": "registrationId",
+                    "$ref": "RegistrationID"
+                },
+                {
+                    "name": "tag",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "enable"
+        },
+        {
+            "name": "setForceUpdateOnPageLoad",
+            "parameters": [
+                {
+                    "name": "forceUpdateOnPageLoad",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "skipWaiting",
+            "parameters": [
+                {
+                    "name": "scopeURL",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "startWorker",
+            "parameters": [
+                {
+                    "name": "scopeURL",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "stopAllWorkers"
+        },
+        {
+            "name": "stopWorker",
+            "parameters": [
+                {
+                    "name": "versionId",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "unregister",
+            "parameters": [
+                {
+                    "name": "scopeURL",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "updateRegistration",
+            "parameters": [
+                {
+                    "name": "scopeURL",
+                    "type": "string"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "workerErrorReported",
+            "parameters": [
+                {
+                    "name": "errorMessage",
+                    "$ref": "ServiceWorkerErrorMessage"
+                }
+            ]
+        },
+        {
+            "name": "workerRegistrationUpdated",
+            "parameters": [
+                {
+                    "name": "registrations",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ServiceWorkerRegistration"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "workerVersionUpdated",
+            "parameters": [
+                {
+                    "name": "versions",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ServiceWorkerVersion"
+                    }
+                }
+            ]
+        }
+    ]
+}

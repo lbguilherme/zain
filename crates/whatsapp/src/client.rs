@@ -205,7 +205,7 @@ impl WhatsAppSession {
     pub async fn open_chat(&self, title: &str) -> Result<()> {
         let dom = self.page.dom().await?;
         let timing = crate::timing();
-        crate::message::open_chat(dom, title, &timing).await
+        crate::message::open_chat(dom, &self.page, title, &timing).await
     }
 
     /// Closes the currently open chat via "..." menu → "Close chat".

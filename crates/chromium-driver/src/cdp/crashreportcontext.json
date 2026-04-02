@@ -1,0 +1,45 @@
+{
+    "domain": "CrashReportContext",
+    "description": "This domain exposes the current state of the CrashReportContext API.",
+    "experimental": true,
+    "dependencies": [
+        "Page"
+    ],
+    "types": [
+        {
+            "id": "CrashReportContextEntry",
+            "description": "Key-value pair in CrashReportContext.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "key",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "type": "string"
+                },
+                {
+                    "name": "frameId",
+                    "description": "The ID of the frame where the key-value pair was set.",
+                    "$ref": "Page.FrameId"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "getEntries",
+            "description": "Returns all entries in the CrashReportContext across all frames in the page.",
+            "returns": [
+                {
+                    "name": "entries",
+                    "type": "array",
+                    "items": {
+                        "$ref": "CrashReportContextEntry"
+                    }
+                }
+            ]
+        }
+    ]
+}

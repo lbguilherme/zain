@@ -1,0 +1,31 @@
+{
+    "domain": "DeviceOrientation",
+    "experimental": true,
+    "commands": [
+        {
+            "name": "clearDeviceOrientationOverride",
+            "description": "Clears the overridden Device Orientation."
+        },
+        {
+            "name": "setDeviceOrientationOverride",
+            "description": "Overrides the Device Orientation.",
+            "parameters": [
+                {
+                    "name": "alpha",
+                    "description": "Mock alpha",
+                    "type": "number"
+                },
+                {
+                    "name": "beta",
+                    "description": "Mock beta",
+                    "type": "number"
+                },
+                {
+                    "name": "gamma",
+                    "description": "Mock gamma",
+                    "type": "number"
+                }
+            ]
+        }
+    ]
+}

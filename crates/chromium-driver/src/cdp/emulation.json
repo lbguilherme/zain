@@ -1,0 +1,1456 @@
+{
+    "domain": "Emulation",
+    "description": "This domain emulates different environments for the page.",
+    "dependencies": [
+        "DOM",
+        "Page",
+        "Runtime"
+    ],
+    "types": [
+        {
+            "id": "SafeAreaInsets",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "top",
+                    "description": "Overrides safe-area-inset-top.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "topMax",
+                    "description": "Overrides safe-area-max-inset-top.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "left",
+                    "description": "Overrides safe-area-inset-left.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "leftMax",
+                    "description": "Overrides safe-area-max-inset-left.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "bottom",
+                    "description": "Overrides safe-area-inset-bottom.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "bottomMax",
+                    "description": "Overrides safe-area-max-inset-bottom.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "right",
+                    "description": "Overrides safe-area-inset-right.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "rightMax",
+                    "description": "Overrides safe-area-max-inset-right.",
+                    "optional": true,
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "id": "ScreenOrientation",
+            "description": "Screen orientation.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "type",
+                    "description": "Orientation type.",
+                    "type": "string",
+                    "enum": [
+                        "portraitPrimary",
+                        "portraitSecondary",
+                        "landscapePrimary",
+                        "landscapeSecondary"
+                    ]
+                },
+                {
+                    "name": "angle",
+                    "description": "Orientation angle.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "id": "DisplayFeature",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "orientation",
+                    "description": "Orientation of a display feature in relation to screen",
+                    "type": "string",
+                    "enum": [
+                        "vertical",
+                        "horizontal"
+                    ]
+                },
+                {
+                    "name": "offset",
+                    "description": "The offset from the screen origin in either the x (for vertical\norientation) or y (for horizontal orientation) direction.",
+                    "type": "integer"
+                },
+                {
+                    "name": "maskLength",
+                    "description": "A display feature may mask content such that it is not physically\ndisplayed - this length along with the offset describes this area.\nA display feature that only splits content will have a 0 mask_length.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "id": "DevicePosture",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "type",
+                    "description": "Current posture of the device",
+                    "type": "string",
+                    "enum": [
+                        "continuous",
+                        "folded"
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "MediaFeature",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "VirtualTimePolicy",
+            "description": "advance: If the scheduler runs out of immediate work, the virtual time base may fast forward to\nallow the next delayed task (if any) to run; pause: The virtual time base may not advance;\npauseIfNetworkFetchesPending: The virtual time base may not advance if there are any pending\nresource fetches.",
+            "experimental": true,
+            "type": "string",
+            "enum": [
+                "advance",
+                "pause",
+                "pauseIfNetworkFetchesPending"
+            ]
+        },
+        {
+            "id": "UserAgentBrandVersion",
+            "description": "Used to specify User Agent Client Hints to emulate. See https://wicg.github.io/ua-client-hints",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "brand",
+                    "type": "string"
+                },
+                {
+                    "name": "version",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "UserAgentMetadata",
+            "description": "Used to specify User Agent Client Hints to emulate. See https://wicg.github.io/ua-client-hints\nMissing optional values will be filled in by the target with what it would normally use.",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "brands",
+                    "description": "Brands appearing in Sec-CH-UA.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "UserAgentBrandVersion"
+                    }
+                },
+                {
+                    "name": "fullVersionList",
+                    "description": "Brands appearing in Sec-CH-UA-Full-Version-List.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "UserAgentBrandVersion"
+                    }
+                },
+                {
+                    "name": "fullVersion",
+                    "deprecated": true,
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "platform",
+                    "type": "string"
+                },
+                {
+                    "name": "platformVersion",
+                    "type": "string"
+                },
+                {
+                    "name": "architecture",
+                    "type": "string"
+                },
+                {
+                    "name": "model",
+                    "type": "string"
+                },
+                {
+                    "name": "mobile",
+                    "type": "boolean"
+                },
+                {
+                    "name": "bitness",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "wow64",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "formFactors",
+                    "description": "Used to specify User Agent form-factor values.\nSee https://wicg.github.io/ua-client-hints/#sec-ch-ua-form-factors",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "SensorType",
+            "description": "Used to specify sensor types to emulate.\nSee https://w3c.github.io/sensors/#automation for more information.",
+            "experimental": true,
+            "type": "string",
+            "enum": [
+                "absolute-orientation",
+                "accelerometer",
+                "ambient-light",
+                "gravity",
+                "gyroscope",
+                "linear-acceleration",
+                "magnetometer",
+                "relative-orientation"
+            ]
+        },
+        {
+            "id": "SensorMetadata",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "available",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "minimumFrequency",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "maximumFrequency",
+                    "optional": true,
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "id": "SensorReadingSingle",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "value",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "id": "SensorReadingXYZ",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "x",
+                    "type": "number"
+                },
+                {
+                    "name": "y",
+                    "type": "number"
+                },
+                {
+                    "name": "z",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "id": "SensorReadingQuaternion",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "x",
+                    "type": "number"
+                },
+                {
+                    "name": "y",
+                    "type": "number"
+                },
+                {
+                    "name": "z",
+                    "type": "number"
+                },
+                {
+                    "name": "w",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "id": "SensorReading",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "single",
+                    "optional": true,
+                    "$ref": "SensorReadingSingle"
+                },
+                {
+                    "name": "xyz",
+                    "optional": true,
+                    "$ref": "SensorReadingXYZ"
+                },
+                {
+                    "name": "quaternion",
+                    "optional": true,
+                    "$ref": "SensorReadingQuaternion"
+                }
+            ]
+        },
+        {
+            "id": "PressureSource",
+            "experimental": true,
+            "type": "string",
+            "enum": [
+                "cpu"
+            ]
+        },
+        {
+            "id": "PressureState",
+            "experimental": true,
+            "type": "string",
+            "enum": [
+                "nominal",
+                "fair",
+                "serious",
+                "critical"
+            ]
+        },
+        {
+            "id": "PressureMetadata",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "available",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "id": "WorkAreaInsets",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "top",
+                    "description": "Work area top inset in pixels. Default is 0;",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "left",
+                    "description": "Work area left inset in pixels. Default is 0;",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "bottom",
+                    "description": "Work area bottom inset in pixels. Default is 0;",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "right",
+                    "description": "Work area right inset in pixels. Default is 0;",
+                    "optional": true,
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "id": "ScreenId",
+            "experimental": true,
+            "type": "string"
+        },
+        {
+            "id": "ScreenInfo",
+            "description": "Screen information similar to the one returned by window.getScreenDetails() method,\nsee https://w3c.github.io/window-management/#screendetailed.",
+            "experimental": true,
+            "type": "object",
+            "properties": [
+                {
+                    "name": "left",
+                    "description": "Offset of the left edge of the screen.",
+                    "type": "integer"
+                },
+                {
+                    "name": "top",
+                    "description": "Offset of the top edge of the screen.",
+                    "type": "integer"
+                },
+                {
+                    "name": "width",
+                    "description": "Width of the screen.",
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "Height of the screen.",
+                    "type": "integer"
+                },
+                {
+                    "name": "availLeft",
+                    "description": "Offset of the left edge of the available screen area.",
+                    "type": "integer"
+                },
+                {
+                    "name": "availTop",
+                    "description": "Offset of the top edge of the available screen area.",
+                    "type": "integer"
+                },
+                {
+                    "name": "availWidth",
+                    "description": "Width of the available screen area.",
+                    "type": "integer"
+                },
+                {
+                    "name": "availHeight",
+                    "description": "Height of the available screen area.",
+                    "type": "integer"
+                },
+                {
+                    "name": "devicePixelRatio",
+                    "description": "Specifies the screen's device pixel ratio.",
+                    "type": "number"
+                },
+                {
+                    "name": "orientation",
+                    "description": "Specifies the screen's orientation.",
+                    "$ref": "ScreenOrientation"
+                },
+                {
+                    "name": "colorDepth",
+                    "description": "Specifies the screen's color depth in bits.",
+                    "type": "integer"
+                },
+                {
+                    "name": "isExtended",
+                    "description": "Indicates whether the device has multiple screens.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "isInternal",
+                    "description": "Indicates whether the screen is internal to the device or external, attached to the device.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "isPrimary",
+                    "description": "Indicates whether the screen is set as the the operating system primary screen.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "label",
+                    "description": "Specifies the descriptive label for the screen.",
+                    "type": "string"
+                },
+                {
+                    "name": "id",
+                    "description": "Specifies the unique identifier of the screen.",
+                    "$ref": "ScreenId"
+                }
+            ]
+        },
+        {
+            "id": "DisabledImageType",
+            "description": "Enum of image types that can be disabled.",
+            "experimental": true,
+            "type": "string",
+            "enum": [
+                "avif",
+                "jxl",
+                "webp"
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "canEmulate",
+            "description": "Tells whether emulation is supported.",
+            "deprecated": true,
+            "returns": [
+                {
+                    "name": "result",
+                    "description": "True if emulation is supported.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "clearDeviceMetricsOverride",
+            "description": "Clears the overridden device metrics."
+        },
+        {
+            "name": "clearGeolocationOverride",
+            "description": "Clears the overridden Geolocation Position and Error."
+        },
+        {
+            "name": "resetPageScaleFactor",
+            "description": "Requests that page scale factor is reset to initial values.",
+            "experimental": true
+        },
+        {
+            "name": "setFocusEmulationEnabled",
+            "description": "Enables or disables simulating a focused and active page.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "enabled",
+                    "description": "Whether to enable to disable focus emulation.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setAutoDarkModeOverride",
+            "description": "Automatically render all web contents using a dark theme.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "enabled",
+                    "description": "Whether to enable or disable automatic dark mode.\nIf not specified, any existing override will be cleared.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setCPUThrottlingRate",
+            "description": "Enables CPU throttling to emulate slow CPUs.",
+            "parameters": [
+                {
+                    "name": "rate",
+                    "description": "Throttling rate as a slowdown factor (1 is no throttle, 2 is 2x slowdown, etc).",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "setDefaultBackgroundColorOverride",
+            "description": "Sets or clears an override of the default background color of the frame. This override is used\nif the content does not specify one.",
+            "parameters": [
+                {
+                    "name": "color",
+                    "description": "RGBA of the default background color. If not specified, any existing override will be\ncleared.",
+                    "optional": true,
+                    "$ref": "DOM.RGBA"
+                }
+            ]
+        },
+        {
+            "name": "setSafeAreaInsetsOverride",
+            "description": "Overrides the values for env(safe-area-inset-*) and env(safe-area-max-inset-*). Unset values will cause the\nrespective variables to be undefined, even if previously overridden.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "insets",
+                    "$ref": "SafeAreaInsets"
+                }
+            ]
+        },
+        {
+            "name": "setDeviceMetricsOverride",
+            "description": "Overrides the values of device screen dimensions (window.screen.width, window.screen.height,\nwindow.innerWidth, window.innerHeight, and \"device-width\"/\"device-height\"-related CSS media\nquery results).",
+            "parameters": [
+                {
+                    "name": "width",
+                    "description": "Overriding width value in pixels (minimum 0, maximum 10000000). 0 disables the override.",
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "Overriding height value in pixels (minimum 0, maximum 10000000). 0 disables the override.",
+                    "type": "integer"
+                },
+                {
+                    "name": "deviceScaleFactor",
+                    "description": "Overriding device scale factor value. 0 disables the override.",
+                    "type": "number"
+                },
+                {
+                    "name": "mobile",
+                    "description": "Whether to emulate mobile device. This includes viewport meta tag, overlay scrollbars, text\nautosizing and more.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "scale",
+                    "description": "Scale to apply to resulting view image.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "screenWidth",
+                    "description": "Overriding screen width value in pixels (minimum 0, maximum 10000000).",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "screenHeight",
+                    "description": "Overriding screen height value in pixels (minimum 0, maximum 10000000).",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "positionX",
+                    "description": "Overriding view X position on screen in pixels (minimum 0, maximum 10000000).",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "positionY",
+                    "description": "Overriding view Y position on screen in pixels (minimum 0, maximum 10000000).",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "dontSetVisibleSize",
+                    "description": "Do not set visible view size, rely upon explicit setVisibleSize call.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "screenOrientation",
+                    "description": "Screen orientation override.",
+                    "optional": true,
+                    "$ref": "ScreenOrientation"
+                },
+                {
+                    "name": "viewport",
+                    "description": "If set, the visible area of the page will be overridden to this viewport. This viewport\nchange is not observed by the page, e.g. viewport-relative elements do not change positions.",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "Page.Viewport"
+                },
+                {
+                    "name": "displayFeature",
+                    "description": "If set, the display feature of a multi-segment screen. If not set, multi-segment support\nis turned-off.\nDeprecated, use Emulation.setDisplayFeaturesOverride.",
+                    "experimental": true,
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "DisplayFeature"
+                },
+                {
+                    "name": "devicePosture",
+                    "description": "If set, the posture of a foldable device. If not set the posture is set\nto continuous.\nDeprecated, use Emulation.setDevicePostureOverride.",
+                    "experimental": true,
+                    "deprecated": true,
+                    "optional": true,
+                    "$ref": "DevicePosture"
+                },
+                {
+                    "name": "scrollbarType",
+                    "description": "Scrollbar type. Default: `default`.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "string",
+                    "enum": [
+                        "overlay",
+                        "default"
+                    ]
+                },
+                {
+                    "name": "screenOrientationLockEmulation",
+                    "description": "If set to true, enables screen orientation lock emulation, which\nintercepts screen.orientation.lock() calls from the page and reports\norientation changes via screenOrientationLockChanged events. This is\nuseful for emulating mobile device orientation lock behavior in\nresponsive design mode.",
+                    "experimental": true,
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setDevicePostureOverride",
+            "description": "Start reporting the given posture value to the Device Posture API.\nThis override can also be set in setDeviceMetricsOverride().",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "posture",
+                    "$ref": "DevicePosture"
+                }
+            ]
+        },
+        {
+            "name": "clearDevicePostureOverride",
+            "description": "Clears a device posture override set with either setDeviceMetricsOverride()\nor setDevicePostureOverride() and starts using posture information from the\nplatform again.\nDoes nothing if no override is set.",
+            "experimental": true
+        },
+        {
+            "name": "setDisplayFeaturesOverride",
+            "description": "Start using the given display features to pupulate the Viewport Segments API.\nThis override can also be set in setDeviceMetricsOverride().",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "features",
+                    "type": "array",
+                    "items": {
+                        "$ref": "DisplayFeature"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "clearDisplayFeaturesOverride",
+            "description": "Clears the display features override set with either setDeviceMetricsOverride()\nor setDisplayFeaturesOverride() and starts using display features from the\nplatform again.\nDoes nothing if no override is set.",
+            "experimental": true
+        },
+        {
+            "name": "setScrollbarsHidden",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "hidden",
+                    "description": "Whether scrollbars should be always hidden.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setDocumentCookieDisabled",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "disabled",
+                    "description": "Whether document.coookie API should be disabled.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setEmitTouchEventsForMouse",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "enabled",
+                    "description": "Whether touch emulation based on mouse input should be enabled.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "configuration",
+                    "description": "Touch/gesture events configuration. Default: current platform.",
+                    "optional": true,
+                    "type": "string",
+                    "enum": [
+                        "mobile",
+                        "desktop"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "setEmulatedMedia",
+            "description": "Emulates the given media type or media feature for CSS media queries.",
+            "parameters": [
+                {
+                    "name": "media",
+                    "description": "Media type to emulate. Empty string disables the override.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "features",
+                    "description": "Media features to emulate.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "MediaFeature"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setEmulatedVisionDeficiency",
+            "description": "Emulates the given vision deficiency.",
+            "parameters": [
+                {
+                    "name": "type",
+                    "description": "Vision deficiency to emulate. Order: best-effort emulations come first, followed by any\nphysiologically accurate emulations for medically recognized color vision deficiencies.",
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "blurredVision",
+                        "reducedContrast",
+                        "achromatopsia",
+                        "deuteranopia",
+                        "protanopia",
+                        "tritanopia"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "setEmulatedOSTextScale",
+            "description": "Emulates the given OS text scale.",
+            "parameters": [
+                {
+                    "name": "scale",
+                    "optional": true,
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "setGeolocationOverride",
+            "description": "Overrides the Geolocation Position or Error. Omitting latitude, longitude or\naccuracy emulates position unavailable.",
+            "parameters": [
+                {
+                    "name": "latitude",
+                    "description": "Mock latitude",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "longitude",
+                    "description": "Mock longitude",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "accuracy",
+                    "description": "Mock accuracy",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "altitude",
+                    "description": "Mock altitude",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "altitudeAccuracy",
+                    "description": "Mock altitudeAccuracy",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "heading",
+                    "description": "Mock heading",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "speed",
+                    "description": "Mock speed",
+                    "optional": true,
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "getOverriddenSensorInformation",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "type",
+                    "$ref": "SensorType"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "requestedSamplingFrequency",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "setSensorOverrideEnabled",
+            "description": "Overrides a platform sensor of a given type. If |enabled| is true, calls to\nSensor.start() will use a virtual sensor as backend rather than fetching\ndata from a real hardware sensor. Otherwise, existing virtual\nsensor-backend Sensor objects will fire an error event and new calls to\nSensor.start() will attempt to use a real sensor instead.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "enabled",
+                    "type": "boolean"
+                },
+                {
+                    "name": "type",
+                    "$ref": "SensorType"
+                },
+                {
+                    "name": "metadata",
+                    "optional": true,
+                    "$ref": "SensorMetadata"
+                }
+            ]
+        },
+        {
+            "name": "setSensorOverrideReadings",
+            "description": "Updates the sensor readings reported by a sensor type previously overridden\nby setSensorOverrideEnabled.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "type",
+                    "$ref": "SensorType"
+                },
+                {
+                    "name": "reading",
+                    "$ref": "SensorReading"
+                }
+            ]
+        },
+        {
+            "name": "setPressureSourceOverrideEnabled",
+            "description": "Overrides a pressure source of a given type, as used by the Compute\nPressure API, so that updates to PressureObserver.observe() are provided\nvia setPressureStateOverride instead of being retrieved from\nplatform-provided telemetry data.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "enabled",
+                    "type": "boolean"
+                },
+                {
+                    "name": "source",
+                    "$ref": "PressureSource"
+                },
+                {
+                    "name": "metadata",
+                    "optional": true,
+                    "$ref": "PressureMetadata"
+                }
+            ]
+        },
+        {
+            "name": "setPressureStateOverride",
+            "description": "TODO: OBSOLETE: To remove when setPressureDataOverride is merged.\nProvides a given pressure state that will be processed and eventually be\ndelivered to PressureObserver users. |source| must have been previously\noverridden by setPressureSourceOverrideEnabled.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "source",
+                    "$ref": "PressureSource"
+                },
+                {
+                    "name": "state",
+                    "$ref": "PressureState"
+                }
+            ]
+        },
+        {
+            "name": "setPressureDataOverride",
+            "description": "Provides a given pressure data set that will be processed and eventually be\ndelivered to PressureObserver users. |source| must have been previously\noverridden by setPressureSourceOverrideEnabled.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "source",
+                    "$ref": "PressureSource"
+                },
+                {
+                    "name": "state",
+                    "$ref": "PressureState"
+                },
+                {
+                    "name": "ownContributionEstimate",
+                    "optional": true,
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "setIdleOverride",
+            "description": "Overrides the Idle state.",
+            "parameters": [
+                {
+                    "name": "isUserActive",
+                    "description": "Mock isUserActive",
+                    "type": "boolean"
+                },
+                {
+                    "name": "isScreenUnlocked",
+                    "description": "Mock isScreenUnlocked",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "clearIdleOverride",
+            "description": "Clears Idle state overrides."
+        },
+        {
+            "name": "setNavigatorOverrides",
+            "description": "Overrides value returned by the javascript navigator object.",
+            "experimental": true,
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "platform",
+                    "description": "The platform navigator.platform should return.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "setPageScaleFactor",
+            "description": "Sets a specified page scale factor.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "pageScaleFactor",
+                    "description": "Page scale factor.",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "setScriptExecutionDisabled",
+            "description": "Switches script execution in the page.",
+            "parameters": [
+                {
+                    "name": "value",
+                    "description": "Whether script execution should be disabled in the page.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setTouchEmulationEnabled",
+            "description": "Enables touch on platforms which do not support them.",
+            "parameters": [
+                {
+                    "name": "enabled",
+                    "description": "Whether the touch event emulation should be enabled.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "maxTouchPoints",
+                    "description": "Maximum touch points supported. Defaults to one.",
+                    "optional": true,
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "setVirtualTimePolicy",
+            "description": "Turns on virtual time for all frames (replacing real-time with a synthetic time source) and sets\nthe current virtual time policy.  Note this supersedes any previous time budget.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "policy",
+                    "$ref": "VirtualTimePolicy"
+                },
+                {
+                    "name": "budget",
+                    "description": "If set, after this many virtual milliseconds have elapsed virtual time will be paused and a\nvirtualTimeBudgetExpired event is sent.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "maxVirtualTimeTaskStarvationCount",
+                    "description": "If set this specifies the maximum number of tasks that can be run before virtual is forced\nforwards to prevent deadlock.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "initialVirtualTime",
+                    "description": "If set, base::Time::Now will be overridden to initially return this value.",
+                    "optional": true,
+                    "$ref": "Network.TimeSinceEpoch"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "virtualTimeTicksBase",
+                    "description": "Absolute timestamp at which virtual time was first enabled (up time in milliseconds).",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "setLocaleOverride",
+            "description": "Overrides default host system locale with the specified one.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "locale",
+                    "description": "ICU style C locale (e.g. \"en_US\"). If not specified or empty, disables the override and\nrestores default host system locale.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "setTimezoneOverride",
+            "description": "Overrides default host system timezone with the specified one.",
+            "parameters": [
+                {
+                    "name": "timezoneId",
+                    "description": "The timezone identifier. List of supported timezones:\nhttps://source.chromium.org/chromium/chromium/deps/icu.git/+/faee8bc70570192d82d2978a71e2a615788597d1:source/data/misc/metaZones.txt\nIf empty, disables the override and restores default host system timezone.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "setVisibleSize",
+            "description": "Resizes the frame/viewport of the page. Note that this does not affect the frame's container\n(e.g. browser window). Can be used to produce screenshots of the specified size. Not supported\non Android.",
+            "experimental": true,
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "width",
+                    "description": "Frame width (DIP).",
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "Frame height (DIP).",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "setDisabledImageTypes",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "imageTypes",
+                    "description": "Image types to disable.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "DisabledImageType"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setDataSaverOverride",
+            "description": "Override the value of navigator.connection.saveData",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "dataSaverEnabled",
+                    "description": "Override value. Omitting the parameter disables the override.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setHardwareConcurrencyOverride",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "hardwareConcurrency",
+                    "description": "Hardware concurrency to report",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "setUserAgentOverride",
+            "description": "Allows overriding user agent with the given string.\n`userAgentMetadata` must be set for Client Hint headers to be sent.",
+            "parameters": [
+                {
+                    "name": "userAgent",
+                    "description": "User agent to use.",
+                    "type": "string"
+                },
+                {
+                    "name": "acceptLanguage",
+                    "description": "Browser language to emulate.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "platform",
+                    "description": "The platform navigator.platform should return.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "userAgentMetadata",
+                    "description": "To be sent in Sec-CH-UA-* headers and returned in navigator.userAgentData",
+                    "experimental": true,
+                    "optional": true,
+                    "$ref": "UserAgentMetadata"
+                }
+            ]
+        },
+        {
+            "name": "setAutomationOverride",
+            "description": "Allows overriding the automation flag.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "enabled",
+                    "description": "Whether the override should be enabled.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "name": "setSmallViewportHeightDifferenceOverride",
+            "description": "Allows overriding the difference between the small and large viewport sizes, which determine the\nvalue of the `svh` and `lvh` unit, respectively. Only supported for top-level frames.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "difference",
+                    "description": "This will cause an element of size 100svh to be `difference` pixels smaller than an element\nof size 100lvh.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "getScreenInfos",
+            "description": "Returns device's screen configuration. In headful mode, the physical screens configuration is returned,\nwhereas in headless mode, a virtual headless screen configuration is provided instead.",
+            "experimental": true,
+            "returns": [
+                {
+                    "name": "screenInfos",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ScreenInfo"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "addScreen",
+            "description": "Add a new screen to the device. Only supported in headless mode.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "left",
+                    "description": "Offset of the left edge of the screen in pixels.",
+                    "type": "integer"
+                },
+                {
+                    "name": "top",
+                    "description": "Offset of the top edge of the screen in pixels.",
+                    "type": "integer"
+                },
+                {
+                    "name": "width",
+                    "description": "The width of the screen in pixels.",
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "The height of the screen in pixels.",
+                    "type": "integer"
+                },
+                {
+                    "name": "workAreaInsets",
+                    "description": "Specifies the screen's work area. Default is entire screen.",
+                    "optional": true,
+                    "$ref": "WorkAreaInsets"
+                },
+                {
+                    "name": "devicePixelRatio",
+                    "description": "Specifies the screen's device pixel ratio. Default is 1.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "rotation",
+                    "description": "Specifies the screen's rotation angle. Available values are 0, 90, 180 and 270. Default is 0.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "colorDepth",
+                    "description": "Specifies the screen's color depth in bits. Default is 24.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "label",
+                    "description": "Specifies the descriptive label for the screen. Default is none.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "isInternal",
+                    "description": "Indicates whether the screen is internal to the device or external, attached to the device. Default is false.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "screenInfo",
+                    "$ref": "ScreenInfo"
+                }
+            ]
+        },
+        {
+            "name": "updateScreen",
+            "description": "Updates specified screen parameters. Only supported in headless mode.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "screenId",
+                    "description": "Target screen identifier.",
+                    "$ref": "ScreenId"
+                },
+                {
+                    "name": "left",
+                    "description": "Offset of the left edge of the screen in pixels.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "top",
+                    "description": "Offset of the top edge of the screen in pixels.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "width",
+                    "description": "The width of the screen in pixels.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "height",
+                    "description": "The height of the screen in pixels.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "workAreaInsets",
+                    "description": "Specifies the screen's work area.",
+                    "optional": true,
+                    "$ref": "WorkAreaInsets"
+                },
+                {
+                    "name": "devicePixelRatio",
+                    "description": "Specifies the screen's device pixel ratio.",
+                    "optional": true,
+                    "type": "number"
+                },
+                {
+                    "name": "rotation",
+                    "description": "Specifies the screen's rotation angle. Available values are 0, 90, 180 and 270.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "colorDepth",
+                    "description": "Specifies the screen's color depth in bits.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "label",
+                    "description": "Specifies the descriptive label for the screen.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "isInternal",
+                    "description": "Indicates whether the screen is internal to the device or external, attached to the device. Default is false.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "screenInfo",
+                    "$ref": "ScreenInfo"
+                }
+            ]
+        },
+        {
+            "name": "removeScreen",
+            "description": "Remove screen from the device. Only supported in headless mode.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "screenId",
+                    "$ref": "ScreenId"
+                }
+            ]
+        },
+        {
+            "name": "setPrimaryScreen",
+            "description": "Set primary screen. Only supported in headless mode.\nNote that this changes the coordinate system origin to the top-left\nof the new primary screen, updating the bounds and work areas\nof all existing screens accordingly.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "screenId",
+                    "$ref": "ScreenId"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "virtualTimeBudgetExpired",
+            "description": "Notification sent after the virtual time budget for the current VirtualTimePolicy has run out.",
+            "experimental": true
+        },
+        {
+            "name": "screenOrientationLockChanged",
+            "description": "Fired when a page calls screen.orientation.lock() or screen.orientation.unlock()\nwhile device emulation is enabled. This allows the DevTools frontend to update the\nemulated device orientation accordingly.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "locked",
+                    "description": "Whether the screen orientation is currently locked.",
+                    "type": "boolean"
+                },
+                {
+                    "name": "orientation",
+                    "description": "The orientation lock type requested by the page. Only set when locked is true.",
+                    "optional": true,
+                    "$ref": "ScreenOrientation"
+                }
+            ]
+        }
+    ]
+}

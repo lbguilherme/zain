@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::cdp::runtime::{
     CallArgument, CallFunctionOnParams, EvaluateParams, ExceptionDetails, RemoteObject,
-    RuntimeCommands,
+    RemoteObjectId, RuntimeCommands,
 };
 use crate::error::{CdpError, Result};
 use crate::session::CdpSession;
@@ -39,7 +39,7 @@ impl JsObject {
     ///
     /// Returns `None` if the remote object has no `objectId` (primitives, null, undefined).
     pub fn new(cdp: CdpSession, remote: RemoteObject) -> Option<Self> {
-        let object_id = remote.object_id.clone()?;
+        let object_id = remote.object_id.as_ref()?.0.clone();
         Some(Self {
             inner: Arc::new(JsObjectInner { object_id, cdp }),
             remote: Arc::new(remote),
@@ -69,10 +69,18 @@ impl JsObject {
             .cdp
             .runtime_call_function_on(&CallFunctionOnParams {
                 function_declaration: function_declaration.to_owned(),
-                object_id: Some(self.inner.object_id.clone()),
+                object_id: Some(RemoteObjectId(self.inner.object_id.clone())),
                 arguments: None,
+                silent: None,
                 return_by_value: None,
+                generate_preview: None,
+                user_gesture: None,
                 await_promise: None,
+                execution_context_id: None,
+                object_group: None,
+                throw_on_side_effect: None,
+                unique_context_id: None,
+                serialization_options: None,
             })
             .await?;
         check_exception(ret.exception_details)?;
@@ -90,10 +98,18 @@ impl JsObject {
             .cdp
             .runtime_call_function_on(&CallFunctionOnParams {
                 function_declaration: function_declaration.to_owned(),
-                object_id: Some(self.inner.object_id.clone()),
+                object_id: Some(RemoteObjectId(self.inner.object_id.clone())),
                 arguments: Some(args),
+                silent: None,
                 return_by_value: None,
+                generate_preview: None,
+                user_gesture: None,
                 await_promise: None,
+                execution_context_id: None,
+                object_group: None,
+                throw_on_side_effect: None,
+                unique_context_id: None,
+                serialization_options: None,
             })
             .await?;
         check_exception(ret.exception_details)?;
@@ -107,10 +123,18 @@ impl JsObject {
             .cdp
             .runtime_call_function_on(&CallFunctionOnParams {
                 function_declaration: function_declaration.to_owned(),
-                object_id: Some(self.inner.object_id.clone()),
+                object_id: Some(RemoteObjectId(self.inner.object_id.clone())),
                 arguments: None,
+                silent: None,
                 return_by_value: Some(true),
+                generate_preview: None,
+                user_gesture: None,
                 await_promise: None,
+                execution_context_id: None,
+                object_group: None,
+                throw_on_side_effect: None,
+                unique_context_id: None,
+                serialization_options: None,
             })
             .await?;
         check_exception(ret.exception_details)?;
@@ -174,6 +198,27 @@ pub async fn evaluate_value(
         .runtime_evaluate(&EvaluateParams {
             expression: expression.to_owned(),
             return_by_value: Some(true),
+            ..Default::default()
+        })
+        .await?;
+    check_exception(ret.exception_details)?;
+    Ok(ret.result.value.unwrap_or(serde_json::Value::Null))
+}
+
+/// Evaluates an async JavaScript expression (or one that returns a Promise)
+/// and returns the resolved result by value.
+///
+/// Uses `awaitPromise: true` so CDP waits for the Promise to settle before
+/// returning. Required for `async` IIFEs and expressions that return Promises.
+pub async fn evaluate_value_async(
+    cdp: &CdpSession,
+    expression: &str,
+) -> Result<serde_json::Value> {
+    let ret = cdp
+        .runtime_evaluate(&EvaluateParams {
+            expression: expression.to_owned(),
+            return_by_value: Some(true),
+            await_promise: Some(true),
             ..Default::default()
         })
         .await?;

@@ -1,0 +1,96 @@
+{
+    "domain": "Performance",
+    "types": [
+        {
+            "id": "Metric",
+            "description": "Run-time execution metric.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "Metric name.",
+                    "type": "string"
+                },
+                {
+                    "name": "value",
+                    "description": "Metric value.",
+                    "type": "number"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "disable",
+            "description": "Disable collecting and reporting metrics."
+        },
+        {
+            "name": "enable",
+            "description": "Enable collecting and reporting metrics.",
+            "parameters": [
+                {
+                    "name": "timeDomain",
+                    "description": "Time domain to use for collecting and reporting duration metrics.",
+                    "optional": true,
+                    "type": "string",
+                    "enum": [
+                        "timeTicks",
+                        "threadTicks"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "setTimeDomain",
+            "description": "Sets time domain to use for collecting and reporting duration metrics.\nNote that this must be called before enabling metrics collection. Calling\nthis method while metrics collection is enabled returns an error.",
+            "experimental": true,
+            "deprecated": true,
+            "parameters": [
+                {
+                    "name": "timeDomain",
+                    "description": "Time domain",
+                    "type": "string",
+                    "enum": [
+                        "timeTicks",
+                        "threadTicks"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "getMetrics",
+            "description": "Retrieve current values of run-time metrics.",
+            "returns": [
+                {
+                    "name": "metrics",
+                    "description": "Current values for run-time metrics.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Metric"
+                    }
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "metrics",
+            "description": "Current values of the metrics.",
+            "parameters": [
+                {
+                    "name": "metrics",
+                    "description": "Current values of the metrics.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "Metric"
+                    }
+                },
+                {
+                    "name": "title",
+                    "description": "Timestamp title.",
+                    "type": "string"
+                }
+            ]
+        }
+    ]
+}

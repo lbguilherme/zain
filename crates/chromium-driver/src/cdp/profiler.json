@@ -1,0 +1,360 @@
+{
+    "domain": "Profiler",
+    "dependencies": [
+        "Runtime",
+        "Debugger"
+    ],
+    "types": [
+        {
+            "id": "ProfileNode",
+            "description": "Profile node. Holds callsite information, execution statistics and child nodes.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "id",
+                    "description": "Unique id of the node.",
+                    "type": "integer"
+                },
+                {
+                    "name": "callFrame",
+                    "description": "Function location.",
+                    "$ref": "Runtime.CallFrame"
+                },
+                {
+                    "name": "hitCount",
+                    "description": "Number of samples where this node was on top of the call stack.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "children",
+                    "description": "Child node ids.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                {
+                    "name": "deoptReason",
+                    "description": "The reason of being not optimized. The function may be deoptimized or marked as don't\noptimize.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "positionTicks",
+                    "description": "An array of source position ticks.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "PositionTickInfo"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "Profile",
+            "description": "Profile.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "nodes",
+                    "description": "The list of profile nodes. First item is the root node.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ProfileNode"
+                    }
+                },
+                {
+                    "name": "startTime",
+                    "description": "Profiling start timestamp in microseconds.",
+                    "type": "number"
+                },
+                {
+                    "name": "endTime",
+                    "description": "Profiling end timestamp in microseconds.",
+                    "type": "number"
+                },
+                {
+                    "name": "samples",
+                    "description": "Ids of samples top nodes.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                {
+                    "name": "timeDeltas",
+                    "description": "Time intervals between adjacent samples in microseconds. The first delta is relative to the\nprofile startTime.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "PositionTickInfo",
+            "description": "Specifies a number of samples attributed to a certain source position.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "line",
+                    "description": "Source line number (1-based).",
+                    "type": "integer"
+                },
+                {
+                    "name": "ticks",
+                    "description": "Number of samples attributed to the source line.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "id": "CoverageRange",
+            "description": "Coverage data for a source range.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "startOffset",
+                    "description": "JavaScript script source offset for the range start.",
+                    "type": "integer"
+                },
+                {
+                    "name": "endOffset",
+                    "description": "JavaScript script source offset for the range end.",
+                    "type": "integer"
+                },
+                {
+                    "name": "count",
+                    "description": "Collected execution count of the source range.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "id": "FunctionCoverage",
+            "description": "Coverage data for a JavaScript function.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "functionName",
+                    "description": "JavaScript function name.",
+                    "type": "string"
+                },
+                {
+                    "name": "ranges",
+                    "description": "Source ranges inside the function with coverage data.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "CoverageRange"
+                    }
+                },
+                {
+                    "name": "isBlockCoverage",
+                    "description": "Whether coverage data for this function has block granularity.",
+                    "type": "boolean"
+                }
+            ]
+        },
+        {
+            "id": "ScriptCoverage",
+            "description": "Coverage data for a JavaScript script.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "scriptId",
+                    "description": "JavaScript script id.",
+                    "$ref": "Runtime.ScriptId"
+                },
+                {
+                    "name": "url",
+                    "description": "JavaScript script name or url.",
+                    "type": "string"
+                },
+                {
+                    "name": "functions",
+                    "description": "Functions contained in the script that has coverage data.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "FunctionCoverage"
+                    }
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "disable"
+        },
+        {
+            "name": "enable"
+        },
+        {
+            "name": "getBestEffortCoverage",
+            "description": "Collect coverage data for the current isolate. The coverage data may be incomplete due to\ngarbage collection.",
+            "returns": [
+                {
+                    "name": "result",
+                    "description": "Coverage data for the current isolate.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ScriptCoverage"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "setSamplingInterval",
+            "description": "Changes CPU profiler sampling interval. Must be called before CPU profiles recording started.",
+            "parameters": [
+                {
+                    "name": "interval",
+                    "description": "New sampling interval in microseconds.",
+                    "type": "integer"
+                }
+            ]
+        },
+        {
+            "name": "start"
+        },
+        {
+            "name": "startPreciseCoverage",
+            "description": "Enable precise code coverage. Coverage data for JavaScript executed before enabling precise code\ncoverage may be incomplete. Enabling prevents running optimized code and resets execution\ncounters.",
+            "parameters": [
+                {
+                    "name": "callCount",
+                    "description": "Collect accurate call counts beyond simple 'covered' or 'not covered'.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "detailed",
+                    "description": "Collect block-based coverage.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "allowTriggeredUpdates",
+                    "description": "Allow the backend to send updates on its own initiative",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "timestamp",
+                    "description": "Monotonically increasing time (in seconds) when the coverage update was taken in the backend.",
+                    "type": "number"
+                }
+            ]
+        },
+        {
+            "name": "stop",
+            "returns": [
+                {
+                    "name": "profile",
+                    "description": "Recorded profile.",
+                    "$ref": "Profile"
+                }
+            ]
+        },
+        {
+            "name": "stopPreciseCoverage",
+            "description": "Disable precise code coverage. Disabling releases unnecessary execution count records and allows\nexecuting optimized code."
+        },
+        {
+            "name": "takePreciseCoverage",
+            "description": "Collect coverage data for the current isolate, and resets execution counters. Precise code\ncoverage needs to have started.",
+            "returns": [
+                {
+                    "name": "result",
+                    "description": "Coverage data for the current isolate.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ScriptCoverage"
+                    }
+                },
+                {
+                    "name": "timestamp",
+                    "description": "Monotonically increasing time (in seconds) when the coverage update was taken in the backend.",
+                    "type": "number"
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "consoleProfileFinished",
+            "parameters": [
+                {
+                    "name": "id",
+                    "type": "string"
+                },
+                {
+                    "name": "location",
+                    "description": "Location of console.profileEnd().",
+                    "$ref": "Debugger.Location"
+                },
+                {
+                    "name": "profile",
+                    "$ref": "Profile"
+                },
+                {
+                    "name": "title",
+                    "description": "Profile title passed as an argument to console.profile().",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "consoleProfileStarted",
+            "description": "Sent when new profile recording is started using console.profile() call.",
+            "parameters": [
+                {
+                    "name": "id",
+                    "type": "string"
+                },
+                {
+                    "name": "location",
+                    "description": "Location of console.profile().",
+                    "$ref": "Debugger.Location"
+                },
+                {
+                    "name": "title",
+                    "description": "Profile title passed as an argument to console.profile().",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "preciseCoverageDeltaUpdate",
+            "description": "Reports coverage delta since the last poll (either from an event like this, or from\n`takePreciseCoverage` for the current isolate. May only be sent if precise code\ncoverage has been started. This event can be trigged by the embedder to, for example,\ntrigger collection of coverage data immediately at a certain point in time.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "timestamp",
+                    "description": "Monotonically increasing time (in seconds) when the coverage update was taken in the backend.",
+                    "type": "number"
+                },
+                {
+                    "name": "occasion",
+                    "description": "Identifier for distinguishing coverage events.",
+                    "type": "string"
+                },
+                {
+                    "name": "result",
+                    "description": "Coverage data for the current isolate.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ScriptCoverage"
+                    }
+                }
+            ]
+        }
+    ]
+}

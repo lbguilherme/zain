@@ -1,0 +1,208 @@
+{
+    "domain": "Extensions",
+    "description": "Defines commands and events for browser extensions.",
+    "experimental": true,
+    "types": [
+        {
+            "id": "StorageArea",
+            "description": "Storage areas.",
+            "type": "string",
+            "enum": [
+                "session",
+                "local",
+                "sync",
+                "managed"
+            ]
+        },
+        {
+            "id": "ExtensionInfo",
+            "description": "Detailed information about an extension.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "id",
+                    "description": "Extension id.",
+                    "type": "string"
+                },
+                {
+                    "name": "name",
+                    "description": "Extension name.",
+                    "type": "string"
+                },
+                {
+                    "name": "version",
+                    "description": "Extension version.",
+                    "type": "string"
+                },
+                {
+                    "name": "path",
+                    "description": "The path from which the extension was loaded.",
+                    "type": "string"
+                },
+                {
+                    "name": "enabled",
+                    "description": "Extension enabled status.",
+                    "type": "boolean"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "triggerAction",
+            "description": "Runs an extension default action.\nAvailable if the client is connected using the --remote-debugging-pipe\nflag and the --enable-unsafe-extension-debugging flag is set.",
+            "parameters": [
+                {
+                    "name": "id",
+                    "description": "Extension id.",
+                    "type": "string"
+                },
+                {
+                    "name": "targetId",
+                    "description": "A tab target ID to trigger the default extension action on.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "loadUnpacked",
+            "description": "Installs an unpacked extension from the filesystem similar to\n--load-extension CLI flags. Returns extension ID once the extension\nhas been installed. Available if the client is connected using the\n--remote-debugging-pipe flag and the --enable-unsafe-extension-debugging\nflag is set.",
+            "parameters": [
+                {
+                    "name": "path",
+                    "description": "Absolute file path.",
+                    "type": "string"
+                },
+                {
+                    "name": "enableInIncognito",
+                    "description": "Enable the extension in incognito",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "id",
+                    "description": "Extension id.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "getExtensions",
+            "description": "Gets a list of all unpacked extensions.\nAvailable if the client is connected using the --remote-debugging-pipe flag\nand the --enable-unsafe-extension-debugging flag is set.",
+            "returns": [
+                {
+                    "name": "extensions",
+                    "type": "array",
+                    "items": {
+                        "$ref": "ExtensionInfo"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "uninstall",
+            "description": "Uninstalls an unpacked extension (others not supported) from the profile.\nAvailable if the client is connected using the --remote-debugging-pipe flag\nand the --enable-unsafe-extension-debugging.",
+            "parameters": [
+                {
+                    "name": "id",
+                    "description": "Extension id.",
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "name": "getStorageItems",
+            "description": "Gets data from extension storage in the given `storageArea`. If `keys` is\nspecified, these are used to filter the result.",
+            "parameters": [
+                {
+                    "name": "id",
+                    "description": "ID of extension.",
+                    "type": "string"
+                },
+                {
+                    "name": "storageArea",
+                    "description": "StorageArea to retrieve data from.",
+                    "$ref": "StorageArea"
+                },
+                {
+                    "name": "keys",
+                    "description": "Keys to retrieve.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ],
+            "returns": [
+                {
+                    "name": "data",
+                    "type": "object"
+                }
+            ]
+        },
+        {
+            "name": "removeStorageItems",
+            "description": "Removes `keys` from extension storage in the given `storageArea`.",
+            "parameters": [
+                {
+                    "name": "id",
+                    "description": "ID of extension.",
+                    "type": "string"
+                },
+                {
+                    "name": "storageArea",
+                    "description": "StorageArea to remove data from.",
+                    "$ref": "StorageArea"
+                },
+                {
+                    "name": "keys",
+                    "description": "Keys to remove.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "clearStorageItems",
+            "description": "Clears extension storage in the given `storageArea`.",
+            "parameters": [
+                {
+                    "name": "id",
+                    "description": "ID of extension.",
+                    "type": "string"
+                },
+                {
+                    "name": "storageArea",
+                    "description": "StorageArea to remove data from.",
+                    "$ref": "StorageArea"
+                }
+            ]
+        },
+        {
+            "name": "setStorageItems",
+            "description": "Sets `values` in extension storage in the given `storageArea`. The provided `values`\nwill be merged with existing values in the storage area.",
+            "parameters": [
+                {
+                    "name": "id",
+                    "description": "ID of extension.",
+                    "type": "string"
+                },
+                {
+                    "name": "storageArea",
+                    "description": "StorageArea to set data in.",
+                    "$ref": "StorageArea"
+                },
+                {
+                    "name": "values",
+                    "description": "Values to set.",
+                    "type": "object"
+                }
+            ]
+        }
+    ]
+}

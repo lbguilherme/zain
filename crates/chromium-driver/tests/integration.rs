@@ -1,4 +1,4 @@
-use chromium_driver::cdp::target::TargetCommands;
+use chromium_driver::cdp::target::{SetDiscoverTargetsParams, TargetCommands};
 use chromium_driver::page::PageEvent;
 use chromium_driver::{launch, LaunchOptions};
 
@@ -141,14 +141,14 @@ async fn activate_target() {
 async fn discover_targets_raw() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
-    browser.cdp().target_set_discover_targets(true).await.unwrap();
+    browser.cdp().target_set_discover_targets(&SetDiscoverTargetsParams { discover: true, filter: None }).await.unwrap();
 
     browser.create_page("about:blank").await.unwrap();
 
     let targets = browser.get_targets().await.unwrap();
     assert!(!targets.is_empty());
 
-    browser.cdp().target_set_discover_targets(false).await.unwrap();
+    browser.cdp().target_set_discover_targets(&SetDiscoverTargetsParams { discover: false, filter: None }).await.unwrap();
 
     browser.close().await.unwrap();
     process.wait().await.unwrap();
@@ -236,7 +236,7 @@ async fn lifecycle_events_typed() {
 async fn browser_events_typed() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
-    browser.cdp().target_set_discover_targets(true).await.unwrap();
+    browser.cdp().target_set_discover_targets(&SetDiscoverTargetsParams { discover: true, filter: None }).await.unwrap();
 
     let mut events = browser.events();
 

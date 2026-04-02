@@ -1,0 +1,594 @@
+{
+    "domain": "Accessibility",
+    "experimental": true,
+    "dependencies": [
+        "DOM"
+    ],
+    "types": [
+        {
+            "id": "AXNodeId",
+            "description": "Unique accessibility node identifier.",
+            "type": "string"
+        },
+        {
+            "id": "AXValueType",
+            "description": "Enum of possible property types.",
+            "type": "string",
+            "enum": [
+                "boolean",
+                "tristate",
+                "booleanOrUndefined",
+                "idref",
+                "idrefList",
+                "integer",
+                "node",
+                "nodeList",
+                "number",
+                "string",
+                "computedString",
+                "token",
+                "tokenList",
+                "domRelation",
+                "role",
+                "internalRole",
+                "valueUndefined"
+            ]
+        },
+        {
+            "id": "AXValueSourceType",
+            "description": "Enum of possible property sources.",
+            "type": "string",
+            "enum": [
+                "attribute",
+                "implicit",
+                "style",
+                "contents",
+                "placeholder",
+                "relatedElement"
+            ]
+        },
+        {
+            "id": "AXValueNativeSourceType",
+            "description": "Enum of possible native property sources (as a subtype of a particular AXValueSourceType).",
+            "type": "string",
+            "enum": [
+                "description",
+                "figcaption",
+                "label",
+                "labelfor",
+                "labelwrapped",
+                "legend",
+                "rubyannotation",
+                "tablecaption",
+                "title",
+                "other"
+            ]
+        },
+        {
+            "id": "AXValueSource",
+            "description": "A single source for a computed AX property.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "type",
+                    "description": "What type of source this is.",
+                    "$ref": "AXValueSourceType"
+                },
+                {
+                    "name": "value",
+                    "description": "The value of this property source.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "attribute",
+                    "description": "The name of the relevant attribute, if any.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "attributeValue",
+                    "description": "The value of the relevant attribute, if any.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "superseded",
+                    "description": "Whether this source is superseded by a higher priority source.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "nativeSource",
+                    "description": "The native markup source for this value, e.g. a `<label>` element.",
+                    "optional": true,
+                    "$ref": "AXValueNativeSourceType"
+                },
+                {
+                    "name": "nativeSourceValue",
+                    "description": "The value, such as a node or node list, of the native source.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "invalid",
+                    "description": "Whether the value for this property is invalid.",
+                    "optional": true,
+                    "type": "boolean"
+                },
+                {
+                    "name": "invalidReason",
+                    "description": "Reason for the value being invalid, if it is.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "AXRelatedNode",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "backendDOMNodeId",
+                    "description": "The BackendNodeId of the related DOM node.",
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "idref",
+                    "description": "The IDRef value provided, if any.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "text",
+                    "description": "The text alternative of this node in the current context.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ]
+        },
+        {
+            "id": "AXProperty",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "name",
+                    "description": "The name of this property.",
+                    "$ref": "AXPropertyName"
+                },
+                {
+                    "name": "value",
+                    "description": "The value of this property.",
+                    "$ref": "AXValue"
+                }
+            ]
+        },
+        {
+            "id": "AXValue",
+            "description": "A single computed AX property.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "type",
+                    "description": "The type of this value.",
+                    "$ref": "AXValueType"
+                },
+                {
+                    "name": "value",
+                    "description": "The computed value of this property.",
+                    "optional": true,
+                    "type": "any"
+                },
+                {
+                    "name": "relatedNodes",
+                    "description": "One or more related nodes, if applicable.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXRelatedNode"
+                    }
+                },
+                {
+                    "name": "sources",
+                    "description": "The sources which contributed to the computation of this property.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXValueSource"
+                    }
+                }
+            ]
+        },
+        {
+            "id": "AXPropertyName",
+            "description": "Values of AXProperty name:\n- from 'busy' to 'roledescription': states which apply to every AX node\n- from 'live' to 'root': attributes which apply to nodes in live regions\n- from 'autocomplete' to 'valuetext': attributes which apply to widgets\n- from 'checked' to 'selected': states which apply to widgets\n- from 'activedescendant' to 'owns': relationships between elements other than parent/child/sibling\n- from 'activeFullscreenElement' to 'uninteresting': reasons why this noode is hidden",
+            "type": "string",
+            "enum": [
+                "actions",
+                "busy",
+                "disabled",
+                "editable",
+                "focusable",
+                "focused",
+                "hidden",
+                "hiddenRoot",
+                "invalid",
+                "keyshortcuts",
+                "settable",
+                "roledescription",
+                "live",
+                "atomic",
+                "relevant",
+                "root",
+                "autocomplete",
+                "hasPopup",
+                "level",
+                "multiselectable",
+                "orientation",
+                "multiline",
+                "readonly",
+                "required",
+                "valuemin",
+                "valuemax",
+                "valuetext",
+                "checked",
+                "expanded",
+                "modal",
+                "pressed",
+                "selected",
+                "activedescendant",
+                "controls",
+                "describedby",
+                "details",
+                "errormessage",
+                "flowto",
+                "labelledby",
+                "owns",
+                "url",
+                "activeFullscreenElement",
+                "activeModalDialog",
+                "activeAriaModalDialog",
+                "ariaHiddenElement",
+                "ariaHiddenSubtree",
+                "emptyAlt",
+                "emptyText",
+                "inertElement",
+                "inertSubtree",
+                "labelContainer",
+                "labelFor",
+                "notRendered",
+                "notVisible",
+                "presentationalRole",
+                "probablyPresentational",
+                "inactiveCarouselTabContent",
+                "uninteresting"
+            ]
+        },
+        {
+            "id": "AXNode",
+            "description": "A node in the accessibility tree.",
+            "type": "object",
+            "properties": [
+                {
+                    "name": "nodeId",
+                    "description": "Unique identifier for this node.",
+                    "$ref": "AXNodeId"
+                },
+                {
+                    "name": "ignored",
+                    "description": "Whether this node is ignored for accessibility",
+                    "type": "boolean"
+                },
+                {
+                    "name": "ignoredReasons",
+                    "description": "Collection of reasons why this node is hidden.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXProperty"
+                    }
+                },
+                {
+                    "name": "role",
+                    "description": "This `Node`'s role, whether explicit or implicit.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "chromeRole",
+                    "description": "This `Node`'s Chrome raw role.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "name",
+                    "description": "The accessible name for this `Node`.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "description",
+                    "description": "The accessible description for this `Node`.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "value",
+                    "description": "The value for this `Node`.",
+                    "optional": true,
+                    "$ref": "AXValue"
+                },
+                {
+                    "name": "properties",
+                    "description": "All other properties",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXProperty"
+                    }
+                },
+                {
+                    "name": "parentId",
+                    "description": "ID for this node's parent.",
+                    "optional": true,
+                    "$ref": "AXNodeId"
+                },
+                {
+                    "name": "childIds",
+                    "description": "IDs for each of this node's child nodes.",
+                    "optional": true,
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXNodeId"
+                    }
+                },
+                {
+                    "name": "backendDOMNodeId",
+                    "description": "The backend ID for the associated DOM node, if any.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "frameId",
+                    "description": "The frame ID for the frame associated with this nodes document.",
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                }
+            ]
+        }
+    ],
+    "commands": [
+        {
+            "name": "disable",
+            "description": "Disables the accessibility domain."
+        },
+        {
+            "name": "enable",
+            "description": "Enables the accessibility domain which causes `AXNodeId`s to remain consistent between method calls.\nThis turns on accessibility for the page, which can impact performance until accessibility is disabled."
+        },
+        {
+            "name": "getPartialAXTree",
+            "description": "Fetches the accessibility node and partial accessibility tree for this DOM node, if it exists.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to get the partial accessibility tree for.",
+                    "optional": true,
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node to get the partial accessibility tree for.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper to get the partial accessibility tree for.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                },
+                {
+                    "name": "fetchRelatives",
+                    "description": "Whether to fetch this node's ancestors, siblings and children. Defaults to true.",
+                    "optional": true,
+                    "type": "boolean"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodes",
+                    "description": "The `Accessibility.AXNode` for this DOM node, if it exists, plus its ancestors, siblings and\nchildren, if requested.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXNode"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getFullAXTree",
+            "description": "Fetches the entire accessibility tree for the root Document",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "depth",
+                    "description": "The maximum depth at which descendants of the root node should be retrieved.\nIf omitted, the full tree is returned.",
+                    "optional": true,
+                    "type": "integer"
+                },
+                {
+                    "name": "frameId",
+                    "description": "The frame for whose document the AX tree should be retrieved.\nIf omitted, the root frame is used.",
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodes",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXNode"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getRootAXNode",
+            "description": "Fetches the root node.\nRequires `enable()` to have been called previously.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "frameId",
+                    "description": "The frame in whose document the node resides.\nIf omitted, the root frame is used.",
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "node",
+                    "$ref": "AXNode"
+                }
+            ]
+        },
+        {
+            "name": "getAXNodeAndAncestors",
+            "description": "Fetches a node and all ancestors up to and including the root.\nRequires `enable()` to have been called previously.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node to get.",
+                    "optional": true,
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node to get.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper to get.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodes",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXNode"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "getChildAXNodes",
+            "description": "Fetches a particular accessibility node by AXNodeId.\nRequires `enable()` to have been called previously.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "id",
+                    "$ref": "AXNodeId"
+                },
+                {
+                    "name": "frameId",
+                    "description": "The frame in whose document the node resides.\nIf omitted, the root frame is used.",
+                    "optional": true,
+                    "$ref": "Page.FrameId"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodes",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXNode"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "queryAXTree",
+            "description": "Query a DOM node's accessibility subtree for accessible name and role.\nThis command computes the name and role for all nodes in the subtree, including those that are\nignored for accessibility, and returns those that match the specified name and role. If no DOM\nnode is specified, or the DOM node does not exist, the command returns an error. If neither\n`accessibleName` or `role` is specified, it returns all the accessibility nodes in the subtree.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodeId",
+                    "description": "Identifier of the node for the root to query.",
+                    "optional": true,
+                    "$ref": "DOM.NodeId"
+                },
+                {
+                    "name": "backendNodeId",
+                    "description": "Identifier of the backend node for the root to query.",
+                    "optional": true,
+                    "$ref": "DOM.BackendNodeId"
+                },
+                {
+                    "name": "objectId",
+                    "description": "JavaScript object id of the node wrapper for the root to query.",
+                    "optional": true,
+                    "$ref": "Runtime.RemoteObjectId"
+                },
+                {
+                    "name": "accessibleName",
+                    "description": "Find nodes with this computed name.",
+                    "optional": true,
+                    "type": "string"
+                },
+                {
+                    "name": "role",
+                    "description": "Find nodes with this computed role.",
+                    "optional": true,
+                    "type": "string"
+                }
+            ],
+            "returns": [
+                {
+                    "name": "nodes",
+                    "description": "A list of `Accessibility.AXNode` matching the specified attributes,\nincluding nodes that are ignored for accessibility.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXNode"
+                    }
+                }
+            ]
+        }
+    ],
+    "events": [
+        {
+            "name": "loadComplete",
+            "description": "The loadComplete event mirrors the load complete event sent by the browser to assistive\ntechnology when the web page has finished loading.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "root",
+                    "description": "New document root node.",
+                    "$ref": "AXNode"
+                }
+            ]
+        },
+        {
+            "name": "nodesUpdated",
+            "description": "The nodesUpdated event is sent every time a previously requested node has changed the in tree.",
+            "experimental": true,
+            "parameters": [
+                {
+                    "name": "nodes",
+                    "description": "Updated node data.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "AXNode"
+                    }
+                }
+            ]
+        }
+    ]
+}

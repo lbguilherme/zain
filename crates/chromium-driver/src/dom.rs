@@ -5,11 +5,15 @@ use base64::Engine;
 use rand::RngExt;
 use rand_distr::{Distribution, Normal};
 
-use crate::cdp::dom::{BoxModel, DomCommands};
-use crate::cdp::input::{
-    DispatchKeyEventParams, DispatchTouchEventParams, InputCommands, TouchPoint,
+use crate::cdp::dom::{
+    BoxModel, DomCommands, EnableParams, GetBoxModelParams, GetDocumentParams, GetOuterHtmlParams,
+    NodeId, ResolveNodeParams,
 };
-use crate::cdp::page::{CaptureScreenshotParams, PageCommands, Viewport};
+use crate::cdp::input::{
+    DispatchKeyEventParams, DispatchKeyEventType, DispatchTouchEventParams,
+    DispatchTouchEventType, InputCommands, TouchPoint,
+};
+use crate::cdp::page::{CaptureScreenshotFormat, CaptureScreenshotParams, PageCommands, Viewport};
 use crate::error::{CdpError, Result};
 use crate::keyboard::{self, KeySequence};
 use crate::runtime::JsObject;
@@ -131,6 +135,11 @@ async fn human_sleep(mean_ms: f64, stddev_ms: f64) {
 ///
 /// Wraps a [`CdpSession`] and manages the DOM domain lifecycle.
 ///
+/// **Important**: Caches the document root node ID. Calling [`Dom::invalidate`]
+/// forces a fresh `DOM.getDocument` on the next query. This is necessary if
+/// the page navigates or the DOM is replaced entirely. Within a stable page
+/// (e.g. WhatsApp Web SPA), the cached root remains valid.
+///
 /// # Example
 ///
 /// ```rust,no_run
@@ -150,17 +159,24 @@ async fn human_sleep(mean_ms: f64, stddev_ms: f64) {
 /// ```
 pub struct Dom {
     cdp: CdpSession,
+    cached_root: std::sync::Mutex<Option<NodeId>>,
 }
 
 impl Dom {
     pub(crate) fn new(cdp: CdpSession) -> Self {
-        Self { cdp }
+        Self {
+            cdp,
+            cached_root: std::sync::Mutex::new(None),
+        }
     }
 
     /// Enables the DOM domain and returns a new `Dom` handle.
     pub async fn enable(cdp: &CdpSession) -> Result<Self> {
-        cdp.dom_enable().await?;
-        Ok(Self { cdp: cdp.clone() })
+        cdp.dom_enable(&EnableParams::default()).await?;
+        Ok(Self {
+            cdp: cdp.clone(),
+            cached_root: std::sync::Mutex::new(None),
+        })
     }
 
     /// Disables the DOM domain.
@@ -174,7 +190,7 @@ impl Dom {
     pub async fn try_query_selector(&self, selector: &str) -> Result<Option<Element>> {
         let root_id = self.root_id().await?;
         let qs = self.cdp.dom_query_selector(root_id, selector).await?;
-        if qs.node_id > 0 {
+        if qs.node_id.0 > 0 {
             Ok(Some(Element {
                 cdp: self.cdp.clone(),
                 node_id: qs.node_id,
@@ -203,7 +219,7 @@ impl Dom {
         Ok(qs
             .node_ids
             .into_iter()
-            .filter(|id| *id > 0)
+            .filter(|id| id.0 > 0)
             .map(|node_id| Element {
                 cdp: self.cdp.clone(),
                 node_id,
@@ -234,9 +250,76 @@ impl Dom {
         html_el.outer_html().await
     }
 
-    async fn root_id(&self) -> Result<i64> {
-        let doc = self.cdp.dom_get_document(0).await?;
-        Ok(doc.root.node_id)
+    /// Swipes at explicit viewport coordinates — does not use element box model.
+    ///
+    /// Simulates a finger drag from `(x, start_y)` to `(x, end_y)`.
+    /// Use this for virtualised containers where the element box model height is
+    /// the full virtual scrollable height (far larger than the visible viewport),
+    /// which would place touch events outside the screen if element methods were used.
+    pub async fn swipe_vertical(
+        &self,
+        x: f64,
+        start_y: f64,
+        end_y: f64,
+        timing: &HumanDelay,
+    ) -> Result<()> {
+        let distance = (end_y - start_y).abs();
+        let steps = 5 + (distance / 100.0) as usize;
+        let step_dy = (end_y - start_y) / steps as f64;
+
+        self.cdp
+            .input_dispatch_touch_event(&DispatchTouchEventParams {
+                event_type: DispatchTouchEventType::TouchStart,
+                touch_points: vec![TouchPoint { x, y: start_y, ..Default::default() }],
+                ..Default::default()
+            })
+            .await?;
+
+        let mut y = start_y;
+        for _ in 0..steps {
+            y += step_dy + jitter_offset(2.0);
+            y = if step_dy > 0.0 { y.min(end_y) } else { y.max(end_y) };
+            human_sleep(20.0, 8.0).await;
+            self.cdp
+                .input_dispatch_touch_event(&DispatchTouchEventParams {
+                    event_type: DispatchTouchEventType::TouchMove,
+                    touch_points: vec![TouchPoint { x: x + jitter_offset(1.0), y, ..Default::default() }],
+                    ..Default::default()
+                })
+                .await?;
+        }
+
+        human_sleep(timing.touch_hold_mean_ms, timing.touch_hold_stddev_ms).await;
+        self.cdp
+            .input_dispatch_touch_event(&DispatchTouchEventParams {
+                event_type: DispatchTouchEventType::TouchEnd,
+                touch_points: vec![],
+                ..Default::default()
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    /// Forces the next query to re-fetch the document root.
+    pub fn invalidate(&self) {
+        *self.cached_root.lock().unwrap() = None;
+    }
+
+    async fn root_id(&self) -> Result<NodeId> {
+        {
+            let cached = self.cached_root.lock().unwrap();
+            if let Some(id) = *cached {
+                return Ok(id);
+            }
+        }
+        let doc = self
+            .cdp
+            .dom_get_document(&GetDocumentParams::default())
+            .await?;
+        let id = doc.root.node_id;
+        *self.cached_root.lock().unwrap() = Some(id);
+        Ok(id)
     }
 }
 
@@ -249,12 +332,12 @@ impl Dom {
 /// parameter that controls gaussian-distributed timing for realistic behavior.
 pub struct Element {
     cdp: CdpSession,
-    node_id: i64,
+    node_id: NodeId,
 }
 
 impl Element {
     /// Returns the CDP node ID of this element.
-    pub fn node_id(&self) -> i64 {
+    pub fn node_id(&self) -> NodeId {
         self.node_id
     }
 
@@ -262,7 +345,13 @@ impl Element {
 
     /// Returns the outer HTML of this element.
     pub async fn outer_html(&self) -> Result<String> {
-        let ret = self.cdp.dom_get_outer_html(self.node_id).await?;
+        let ret = self
+            .cdp
+            .dom_get_outer_html(&GetOuterHtmlParams {
+                node_id: Some(self.node_id),
+                ..Default::default()
+            })
+            .await?;
         Ok(ret.outer_html)
     }
 
@@ -281,6 +370,7 @@ impl Element {
     /// Returns all attributes as a name->value map.
     pub async fn attributes(&self) -> Result<HashMap<String, String>> {
         let ret = self.cdp.dom_get_attributes(self.node_id).await?;
+
         let mut map = HashMap::new();
         for pair in ret.attributes.chunks(2) {
             if let [name, value] = pair {
@@ -292,7 +382,13 @@ impl Element {
 
     /// Returns the CSS box model for this element.
     pub async fn box_model(&self) -> Result<BoxModel> {
-        let ret = self.cdp.dom_get_box_model(self.node_id).await?;
+        let ret = self
+            .cdp
+            .dom_get_box_model(&GetBoxModelParams {
+                node_id: Some(self.node_id),
+                ..Default::default()
+            })
+            .await?;
         Ok(ret.model)
     }
 
@@ -301,7 +397,7 @@ impl Element {
     /// Finds the first child element matching a CSS selector within this element.
     pub async fn try_query_selector(&self, selector: &str) -> Result<Option<Element>> {
         let qs = self.cdp.dom_query_selector(self.node_id, selector).await?;
-        if qs.node_id > 0 {
+        if qs.node_id.0 > 0 {
             Ok(Some(Element {
                 cdp: self.cdp.clone(),
                 node_id: qs.node_id,
@@ -332,7 +428,7 @@ impl Element {
         Ok(qs
             .node_ids
             .into_iter()
-            .filter(|id| *id > 0)
+            .filter(|id| id.0 > 0)
             .map(|node_id| Element {
                 cdp: self.cdp.clone(),
                 node_id,
@@ -347,7 +443,13 @@ impl Element {
     /// The returned `JsObject` can be used with [`JsObject::eval`] to call
     /// functions with this element as `this`.
     pub async fn resolve(&self) -> Result<JsObject> {
-        let ret = self.cdp.dom_resolve_node(self.node_id, None).await?;
+        let ret = self
+            .cdp
+            .dom_resolve_node(&ResolveNodeParams {
+                node_id: Some(self.node_id),
+                ..Default::default()
+            })
+            .await?;
         JsObject::new(self.cdp.clone(), ret.object).ok_or_else(|| CdpError::Protocol {
             code: -1,
             message: "DOM.resolveNode returned object without objectId".into(),
@@ -380,8 +482,9 @@ impl Element {
         // Finger touches screen
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: "touchStart".into(),
-                touch_points: vec![TouchPoint { x, y }],
+                event_type: DispatchTouchEventType::TouchStart,
+                touch_points: vec![TouchPoint { x, y, ..Default::default() }],
+                ..Default::default()
             })
             .await?;
 
@@ -391,8 +494,9 @@ impl Element {
         // Finger lifts
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: "touchEnd".into(),
+                event_type: DispatchTouchEventType::TouchEnd,
                 touch_points: vec![],
+                ..Default::default()
             })
             .await?;
 
@@ -451,7 +555,7 @@ impl Element {
     pub async fn press_key(&self, key: &str, timing: &HumanDelay) -> Result<()> {
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: "keyDown".into(),
+                event_type: DispatchKeyEventType::KeyDown,
                 key: Some(key.into()),
                 ..Default::default()
             })
@@ -461,7 +565,7 @@ impl Element {
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: "keyUp".into(),
+                event_type: DispatchKeyEventType::KeyUp,
                 key: Some(key.into()),
                 ..Default::default()
             })
@@ -485,7 +589,7 @@ impl Element {
         // rawKeyDown
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: "rawKeyDown".into(),
+                event_type: DispatchKeyEventType::RawKeyDown,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -498,7 +602,7 @@ impl Element {
         // char (inserts the text)
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: "char".into(),
+                event_type: DispatchKeyEventType::Char,
                 text: Some(text.into()),
                 ..Default::default()
             })
@@ -507,7 +611,7 @@ impl Element {
         // keyUp
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: "keyUp".into(),
+                event_type: DispatchKeyEventType::KeyUp,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -531,7 +635,7 @@ impl Element {
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: "rawKeyDown".into(),
+                event_type: DispatchKeyEventType::RawKeyDown,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -543,7 +647,7 @@ impl Element {
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: "keyUp".into(),
+                event_type: DispatchKeyEventType::KeyUp,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -559,14 +663,7 @@ impl Element {
     /// Uses `Input.insertText` which directly inserts into the focused element,
     /// similar to how a paste operation works.
     async fn dispatch_paste(&self, text: &str, _timing: &HumanDelay) -> Result<()> {
-        self.cdp
-            .call_no_response(
-                "Input.insertText",
-                &serde_json::json!({"text": text}),
-            )
-            .await?;
-
-        Ok(())
+        self.cdp.input_insert_text(text).await
     }
 
     // --- Capture ---
@@ -590,7 +687,7 @@ impl Element {
         let ret = self
             .cdp
             .page_capture_screenshot(&CaptureScreenshotParams {
-                format: Some("png".into()),
+                format: Some(CaptureScreenshotFormat::Png),
                 clip: Some(Viewport {
                     x,
                     y,
@@ -641,8 +738,9 @@ impl Element {
         // Touch down
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: "touchStart".into(),
-                touch_points: vec![TouchPoint { x: cx, y: start_y }],
+                event_type: DispatchTouchEventType::TouchStart,
+                touch_points: vec![TouchPoint { x: cx, y: start_y, ..Default::default() }],
+                ..Default::default()
             })
             .await?;
 
@@ -656,8 +754,9 @@ impl Element {
             human_sleep(20.0, 8.0).await;
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
-                    event_type: "touchMove".into(),
-                    touch_points: vec![TouchPoint { x: cx + jitter_offset(1.0), y }],
+                    event_type: DispatchTouchEventType::TouchMove,
+                    touch_points: vec![TouchPoint { x: cx + jitter_offset(1.0), y, ..Default::default() }],
+                    ..Default::default()
                 })
                 .await?;
         }
@@ -666,8 +765,9 @@ impl Element {
         human_sleep(timing.touch_hold_mean_ms, timing.touch_hold_stddev_ms).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: "touchEnd".into(),
+                event_type: DispatchTouchEventType::TouchEnd,
                 touch_points: vec![],
+                ..Default::default()
             })
             .await?;
 
@@ -699,8 +799,9 @@ impl Element {
 
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: "touchStart".into(),
-                touch_points: vec![TouchPoint { x: cx, y: start_y }],
+                event_type: DispatchTouchEventType::TouchStart,
+                touch_points: vec![TouchPoint { x: cx, y: start_y, ..Default::default() }],
+                ..Default::default()
             })
             .await?;
 
@@ -713,8 +814,9 @@ impl Element {
             human_sleep(20.0, 8.0).await;
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
-                    event_type: "touchMove".into(),
-                    touch_points: vec![TouchPoint { x: cx + jitter_offset(1.0), y }],
+                    event_type: DispatchTouchEventType::TouchMove,
+                    touch_points: vec![TouchPoint { x: cx + jitter_offset(1.0), y, ..Default::default() }],
+                    ..Default::default()
                 })
                 .await?;
         }
@@ -722,8 +824,9 @@ impl Element {
         human_sleep(timing.touch_hold_mean_ms, timing.touch_hold_stddev_ms).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: "touchEnd".into(),
+                event_type: DispatchTouchEventType::TouchEnd,
                 touch_points: vec![],
+                ..Default::default()
             })
             .await?;
 
@@ -731,6 +834,23 @@ impl Element {
     }
 
     // --- Internal ---
+
+    /// Returns the x center coordinate of this element from its box model.
+    ///
+    /// Only the horizontal bounds are used — y is left to the caller.
+    /// Useful for virtualised containers where the box_model height is the
+    /// full virtual height (much larger than the viewport).
+    pub async fn center_x(&self) -> Result<f64> {
+        let bm = self.box_model().await?;
+        let q = &bm.content;
+        if q.len() < 8 {
+            return Err(CdpError::Protocol {
+                code: -1,
+                message: "invalid box model for center_x".into(),
+            });
+        }
+        Ok((q[0] + q[2]) / 2.0)
+    }
 
     async fn center(&self) -> Result<(f64, f64)> {
         let bm = self.box_model().await?;
