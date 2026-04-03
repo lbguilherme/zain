@@ -4,10 +4,10 @@ use std::pin::pin;
 
 use anyhow::{Context, Result};
 use bytes::{BufMut, BytesMut};
-use indicatif::{ProgressBar, ProgressStyle};
-use tokio_postgres::Transaction;
 use futures_util::SinkExt;
+use indicatif::{ProgressBar, ProgressStyle};
 use tokio::sync::mpsc;
+use tokio_postgres::Transaction;
 
 use crate::schema::{NormalizeFn, Table};
 
@@ -34,8 +34,7 @@ async fn import_table(
 
     let pb = ProgressBar::new_spinner();
     pb.set_style(
-        ProgressStyle::with_template("  {prefix} {human_pos} registros ({per_sec})")
-            .unwrap(),
+        ProgressStyle::with_template("  {prefix} {human_pos} registros ({per_sec})").unwrap(),
     );
     pb.set_prefix(table.name.to_string());
 
@@ -55,7 +54,13 @@ async fn import_table(
         let zip_path_owned = zip_path.clone();
         let filename_owned = filename.clone();
         let reader_handle = tokio::task::spawn_blocking(move || {
-            read_csv_from_zip(&zip_path_owned, &normalizers, has_headers, sender, &filename_owned)
+            read_csv_from_zip(
+                &zip_path_owned,
+                &normalizers,
+                has_headers,
+                sender,
+                &filename_owned,
+            )
         });
 
         let copy_sql = table.copy_in_sql(schema);
@@ -75,9 +80,12 @@ async fn import_table(
 
             if buf.len() >= 1024 * 1024 {
                 pb.set_position(total_rows + row_count);
-                sink.as_mut().send(buf.split().freeze()).await.map_err(|e| {
-                    anyhow::anyhow!("falha ao enviar dados COPY para {table_name}: {e:?}")
-                })?;
+                sink.as_mut()
+                    .send(buf.split().freeze())
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!("falha ao enviar dados COPY para {table_name}: {e:?}")
+                    })?;
             }
         }
 
@@ -87,9 +95,10 @@ async fn import_table(
             })?;
         }
 
-        sink.as_mut().finish().await.map_err(|e| {
-            anyhow::anyhow!("falha ao finalizar COPY para {table_name}: {e:?}")
-        })?;
+        sink.as_mut()
+            .finish()
+            .await
+            .map_err(|e| anyhow::anyhow!("falha ao finalizar COPY para {table_name}: {e:?}"))?;
 
         reader_handle
             .await?
@@ -115,7 +124,7 @@ fn read_csv_from_zip(
     let mut archive = zip::ZipArchive::new(file)
         .with_context(|| format!("falha ao ler zip {}", zip_path.display()))?;
 
-    if archive.len() == 0 {
+    if archive.is_empty() {
         anyhow::bail!("zip vazio: {filename}");
     }
 

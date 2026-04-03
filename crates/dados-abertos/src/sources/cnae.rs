@@ -94,11 +94,7 @@ impl DataSource for CnaeSource {
 
 // --- Import ---
 
-async fn import_cnae(
-    tx: &Transaction<'_>,
-    schema: &str,
-    data_dir: &std::path::Path,
-) -> Result<()> {
+async fn import_cnae(tx: &Transaction<'_>, schema: &str, data_dir: &std::path::Path) -> Result<()> {
     let json_path = data_dir.join("subclasses.json");
     let json_data = tokio::fs::read_to_string(&json_path)
         .await
@@ -335,9 +331,7 @@ static TABLES: &[Table] = &[
             Column::text("subclasse_id", "CHAR(7) NOT NULL"),
             Column::text("atividade", "TEXT NOT NULL"),
         ],
-        extra_ddl: &[
-            "CREATE INDEX ON \"{schema}\".\"subclasse_atividades\" (\"subclasse_id\")",
-        ],
+        extra_ddl: &["CREATE INDEX ON \"{schema}\".\"subclasse_atividades\" (\"subclasse_id\")"],
         has_headers: false,
     },
 ];

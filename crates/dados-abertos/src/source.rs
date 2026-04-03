@@ -41,9 +41,7 @@ pub trait DataSource {
     ) -> Pin<Box<dyn Future<Output = Result<()>> + 'a>> {
         let data_dir = self.data_dir();
         let tables = self.tables();
-        Box::pin(async move {
-            crate::import::import_all(tx, temp_schema, &data_dir, tables).await
-        })
+        Box::pin(async move { crate::import::import_all(tx, temp_schema, &data_dir, tables).await })
     }
 
     fn data_dir(&self) -> PathBuf {

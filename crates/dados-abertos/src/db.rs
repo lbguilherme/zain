@@ -19,18 +19,15 @@ pub async fn connect(url: &str) -> Result<Client> {
     Ok(client)
 }
 
-pub async fn read_schema_version(
-    client: &Client,
-    schema: &str,
-) -> Result<Option<SchemaVersion>> {
-    let row = sql!(
+pub async fn read_schema_version(client: &Client, schema: &str) -> Result<Option<SchemaVersion>> {
+    let comment = sql!(
         client,
         "SELECT obj_description(oid) as comment FROM pg_namespace WHERE nspname = $schema"
     )
-    .fetch_optional()
+    .fetch_value_optional()
     .await?;
 
-    match row.and_then(|r| r.comment) {
+    match comment {
         Some(json) => match serde_json::from_str(&json) {
             Ok(v) => Ok(Some(v)),
             Err(_) => Ok(None),

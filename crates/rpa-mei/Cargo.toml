@@ -1,0 +1,15 @@
+[package]
+name = "rpa-mei"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chromium-driver = { path = "../chromium-driver" }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"

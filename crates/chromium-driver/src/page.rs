@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
+use std::time::Duration;
+
 use crate::cdp::dom::{DomCommands, EnableParams};
 use crate::cdp::emulation::EmulationCommands;
-use base64::Engine;
 use crate::cdp::page::{
     CaptureScreenshotParams, DomContentEventFiredEvent, FrameNavigatedEvent,
     GetNavigationHistoryReturn, LifecycleEventEvent, LoadEventFiredEvent, NavigateParams,
@@ -10,11 +11,13 @@ use crate::cdp::page::{
 };
 use crate::cdp::target::TargetCommands;
 use crate::dom::Dom;
-use crate::error::Result;
+use crate::error::{CdpError, Result};
+use crate::frame::{self, FrameInfo, FrameSession};
 use crate::runtime::{self, EvalResult};
 use crate::session::{CdpEventStream, CdpSession};
 use crate::target::TargetInner;
-use crate::types::{SessionId, TargetId};
+use crate::types::{FrameId, SessionId, TargetId};
+use base64::Engine;
 
 /// Typed page event, parsed from raw CDP events.
 ///
@@ -75,19 +78,31 @@ impl PageEventStream {
         match raw.method.as_str() {
             "Page.loadEventFired" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => PageEvent::LoadEventFired(e),
-                Err(_) => PageEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => PageEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             "Page.domContentEventFired" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => PageEvent::DomContentEventFired(e),
-                Err(_) => PageEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => PageEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             "Page.frameNavigated" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => PageEvent::FrameNavigated(e),
-                Err(_) => PageEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => PageEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             "Page.lifecycleEvent" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => PageEvent::LifecycleEvent(e),
-                Err(_) => PageEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => PageEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             _ => PageEvent::Other {
                 method: raw.method,
@@ -132,7 +147,9 @@ impl PageSession {
     ///
     /// Must be called before listening to events via [`events`](Self::events).
     pub async fn enable(&self) -> Result<()> {
-        self.session.page_enable(&crate::cdp::page::EnableParams::default()).await
+        self.session
+            .page_enable(&crate::cdp::page::EnableParams::default())
+            .await
     }
 
     /// Disables the Page domain, stopping page event emission for this session.
@@ -284,6 +301,54 @@ impl PageSession {
             })
     }
 
+    /// Fetches a `blob:` URL from within the browser and returns raw bytes.
+    ///
+    /// Uses JS `fetch()` + `FileReader.readAsDataURL()` to convert the blob
+    /// to base64, then decodes on our side. This is necessary because CDP
+    /// `IO.read` doesn't support `blob:` URLs.
+    pub async fn fetch_blob_url(&self, blob_url: &str) -> Result<Vec<u8>> {
+        let (bytes, _mime) = self.fetch_blob_url_typed(blob_url).await?;
+        Ok(bytes)
+    }
+
+    /// Like [`fetch_blob_url`](Self::fetch_blob_url) but also returns the MIME type
+    /// extracted from the data URL (e.g. `"image/webp"`, `"image/jpeg"`).
+    pub async fn fetch_blob_url_typed(&self, blob_url: &str) -> Result<(Vec<u8>, String)> {
+        let js = format!(
+            r#"(async()=>{{const r=await fetch("{}");const b=await r.blob();return new Promise((ok,err)=>{{const rd=new FileReader();rd.onloadend=()=>ok(rd.result);rd.onerror=()=>err("read error");rd.readAsDataURL(b);}})}})()"#,
+            blob_url.replace('"', r#"\""#)
+        );
+
+        let result = self.eval_value_async(&js).await?;
+
+        let data_url = result.as_str().ok_or_else(|| CdpError::Protocol {
+            code: -1,
+            message: format!("blob fetch returned non-string: {result:?}"),
+        })?;
+
+        // "data:image/webp;base64,AAAA..."
+        let (header, base64_part) = data_url.split_once(',').ok_or_else(|| CdpError::Protocol {
+            code: -1,
+            message: "invalid data URL from blob fetch".into(),
+        })?;
+
+        // header = "data:image/webp;base64"
+        let mime = header
+            .strip_prefix("data:")
+            .and_then(|s| s.split_once(';'))
+            .map(|(m, _)| m.to_owned())
+            .unwrap_or_default();
+
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(base64_part)
+            .map_err(|e| CdpError::Protocol {
+                code: -1,
+                message: format!("base64 decode blob: {e}"),
+            })?;
+
+        Ok((bytes, mime))
+    }
+
     /// Reads a blob by UUID via the CDP IO domain.
     ///
     /// The UUID comes from a `blob:` URL (e.g. `blob:https://.../<uuid>`).
@@ -295,21 +360,18 @@ impl PageSession {
         loop {
             let result: serde_json::Value = self
                 .session
-                .call("IO.read", &serde_json::json!({ "handle": handle, "size": 1_000_000 }))
+                .call(
+                    "IO.read",
+                    &serde_json::json!({ "handle": handle, "size": 1_000_000 }),
+                )
                 .await?;
 
             let base64_encoded = result
                 .get("base64Encoded")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            let data = result
-                .get("data")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let eof = result
-                .get("eof")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            let data = result.get("data").and_then(|v| v.as_str()).unwrap_or("");
+            let eof = result.get("eof").and_then(|v| v.as_bool()).unwrap_or(true);
 
             if !data.is_empty() {
                 if base64_encoded {
@@ -331,6 +393,79 @@ impl PageSession {
         }
 
         Ok(all_bytes)
+    }
+
+    // ── Frames / iframes ────────────────────────────────────────────────
+
+    /// Returns all frames in the page's frame tree (main frame + iframes).
+    pub async fn get_frames(&self) -> Result<Vec<FrameInfo>> {
+        let ret = self.session.page_get_frame_tree().await?;
+        Ok(frame::flatten_frame_tree(&ret.frame_tree))
+    }
+
+    /// Enters an iframe by its `FrameId`, returning a [`FrameSession`] scoped
+    /// to that frame's execution context and document.
+    ///
+    /// The `FrameSession` provides `dom()` and `eval()` methods that operate
+    /// within the iframe, not the top-level page.
+    pub async fn frame(&self, frame_id: &FrameId) -> Result<FrameSession> {
+        frame::enter_frame(&self.session, frame_id).await
+    }
+
+    /// Waits for a frame whose URL contains the given substring to appear.
+    ///
+    /// Polls `get_frames()` at ~500ms intervals until a match is found or
+    /// the timeout expires.
+    pub async fn wait_for_frame(&self, url_contains: &str, timeout: Duration) -> Result<FrameInfo> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let frames = self.get_frames().await?;
+            if let Some(f) = frames.into_iter().find(|f| f.url.contains(url_contains)) {
+                return Ok(f);
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(CdpError::Timeout(timeout));
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    // ── Debug ──────────────────────────────────────────────────────────────
+
+    /// Saves a debug dump of the current page to `dumps/{name}.html` and
+    /// `dumps/{name}.png`.
+    ///
+    /// The HTML is cleaned up: `<script>`, `<style>` and `<link>` tags are
+    /// stripped and the output is indented for readability.
+    pub async fn debug_dump(&self, name: &str) -> Result<()> {
+        let dir = std::path::Path::new("dumps");
+        std::fs::create_dir_all(dir).map_err(|e| crate::error::CdpError::Protocol {
+            code: -1,
+            message: format!("create dumps dir: {e}"),
+        })?;
+
+        let dom = self.dom().await?;
+        let html = dom.page_html().await?;
+        let clean = beautify_html(&html);
+        let html_path = dir.join(format!("{name}.html"));
+        std::fs::write(&html_path, &clean).map_err(|e| crate::error::CdpError::Protocol {
+            code: -1,
+            message: format!("write html dump: {e}"),
+        })?;
+
+        let png_path = dir.join(format!("{name}.png"));
+        let png_bytes = self.capture_screenshot().await?;
+        std::fs::write(&png_path, &png_bytes).map_err(|e| crate::error::CdpError::Protocol {
+            code: -1,
+            message: format!("write png dump: {e}"),
+        })?;
+
+        tracing::debug!(
+            html = %html_path.display(),
+            png = %png_path.display(),
+            "Debug dump saved"
+        );
+        Ok(())
     }
 
     /// Direct access to the raw CDP session for commands not covered by the typed API.
@@ -368,7 +503,93 @@ impl PageSession {
             }
         }
     }
+}
 
+// ── HTML beautifier for debug dumps ─────────────────────────────────────────
+
+fn beautify_html(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut indent: usize = 0;
+    let mut pos = 0;
+    let bytes = html.as_bytes();
+
+    while pos < bytes.len() {
+        if bytes[pos] == b'<' {
+            let tag_end = match html[pos..].find('>') {
+                Some(i) => pos + i + 1,
+                None => break,
+            };
+            let tag = &html[pos..tag_end];
+
+            let tag_lower = tag.to_ascii_lowercase();
+            if tag_lower.starts_with("<link") {
+                pos = tag_end;
+                continue;
+            }
+            if tag_lower.starts_with("<script") || tag_lower.starts_with("<style") {
+                let close = if tag_lower.starts_with("<script") {
+                    "</script>"
+                } else {
+                    "</style>"
+                };
+                if let Some(end) = html[tag_end..].to_ascii_lowercase().find(close) {
+                    pos = tag_end + end + close.len();
+                } else {
+                    pos = bytes.len();
+                }
+                continue;
+            }
+
+            let is_close = tag.starts_with("</");
+            let is_void = tag.ends_with("/>") || is_void_tag(tag);
+
+            if is_close {
+                indent = indent.saturating_sub(1);
+            }
+
+            for _ in 0..indent {
+                out.push_str("  ");
+            }
+            out.push_str(tag);
+            out.push('\n');
+
+            if !is_close && !is_void {
+                indent += 1;
+            }
+
+            pos = tag_end;
+        } else {
+            let text_end = html[pos..]
+                .find('<')
+                .map(|i| pos + i)
+                .unwrap_or(bytes.len());
+            let text = html[pos..text_end].trim();
+            if !text.is_empty() {
+                for _ in 0..indent {
+                    out.push_str("  ");
+                }
+                out.push_str(text);
+                out.push('\n');
+            }
+            pos = text_end;
+        }
+    }
+
+    out
+}
+
+fn is_void_tag(tag: &str) -> bool {
+    const VOIDS: &[&str] = &[
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
+        "track", "wbr",
+    ];
+    let name = tag
+        .trim_start_matches('<')
+        .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    VOIDS.contains(&name.as_str())
 }
 
 impl Drop for PageSession {

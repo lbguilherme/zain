@@ -1,6 +1,6 @@
 use chromium_driver::cdp::io::{IoCommands, ReadParams, StreamHandle};
 use chromium_driver::cdp::runtime::{EvaluateParams, RuntimeCommands};
-use chromium_driver::{launch, LaunchOptions};
+use chromium_driver::{LaunchOptions, launch};
 
 fn opts() -> LaunchOptions {
     LaunchOptions {
@@ -61,11 +61,9 @@ async fn create_blob_and_read_via_io() {
         .unwrap();
 
     let content = if read_ret.base64_encoded.unwrap_or(false) {
-        let bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            &read_ret.data,
-        )
-        .expect("valid base64");
+        let bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &read_ret.data)
+                .expect("valid base64");
         String::from_utf8(bytes).expect("valid utf8")
     } else {
         read_ret.data
@@ -78,9 +76,7 @@ async fn create_blob_and_read_via_io() {
     cdp.io_close(&handle).await.unwrap();
 
     // Release the JS object.
-    cdp.runtime_release_object(&blob_object_id.0)
-        .await
-        .unwrap();
+    cdp.runtime_release_object(&blob_object_id.0).await.unwrap();
 
     browser.close().await.unwrap();
     process.wait().await.unwrap();

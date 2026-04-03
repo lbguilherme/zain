@@ -1303,7 +1303,7 @@ pub trait DomCommands {
     ///
     /// CDP: `DOM.getRelayoutBoundary`
     async fn dom_get_relayout_boundary(&self, node_id: NodeId)
-        -> Result<GetRelayoutBoundaryReturn>;
+    -> Result<GetRelayoutBoundaryReturn>;
 
     /// Returns search results from given `fromIndex` to given `toIndex` from the search with the given
     /// identifier.
@@ -1343,10 +1343,8 @@ pub trait DomCommands {
     /// `cancelSearch` to end this search session.
     ///
     /// CDP: `DOM.performSearch`
-    async fn dom_perform_search(
-        &self,
-        params: &PerformSearchParams,
-    ) -> Result<PerformSearchReturn>;
+    async fn dom_perform_search(&self, params: &PerformSearchParams)
+    -> Result<PerformSearchReturn>;
 
     /// Requests that the node is sent to the caller given its path. // FIXME, use XPath
     ///
@@ -1456,10 +1454,7 @@ pub trait DomCommands {
     /// Gets stack traces associated with a Node. As of now, only provides stack trace for Node creation.
     ///
     /// CDP: `DOM.getNodeStackTraces`
-    async fn dom_get_node_stack_traces(
-        &self,
-        node_id: NodeId,
-    ) -> Result<GetNodeStackTracesReturn>;
+    async fn dom_get_node_stack_traces(&self, node_id: NodeId) -> Result<GetNodeStackTracesReturn>;
 
     /// Returns file information for the given File wrapper.
     ///
@@ -1480,11 +1475,7 @@ pub trait DomCommands {
     /// Sets node name for a node with given id.
     ///
     /// CDP: `DOM.setNodeName`
-    async fn dom_set_node_name(
-        &self,
-        node_id: NodeId,
-        name: &str,
-    ) -> Result<SetNodeNameReturn>;
+    async fn dom_set_node_name(&self, node_id: NodeId, name: &str) -> Result<SetNodeNameReturn>;
 
     /// Sets node value for a node with given id.
     ///
@@ -1761,10 +1752,7 @@ impl DomCommands for CdpSession {
         self.call("DOM.getNodeForLocation", params).await
     }
 
-    async fn dom_get_outer_html(
-        &self,
-        params: &GetOuterHtmlParams,
-    ) -> Result<GetOuterHtmlReturn> {
+    async fn dom_get_outer_html(&self, params: &GetOuterHtmlParams) -> Result<GetOuterHtmlReturn> {
         self.call("DOM.getOuterHTML", params).await
     }
 
@@ -1899,16 +1887,12 @@ impl DomCommands for CdpSession {
     }
 
     async fn dom_request_child_nodes(&self, params: &RequestChildNodesParams) -> Result<()> {
-        self.call_no_response("DOM.requestChildNodes", params)
-            .await
+        self.call_no_response("DOM.requestChildNodes", params).await
     }
 
     async fn dom_request_node(&self, object_id: &str) -> Result<RequestNodeReturn> {
-        self.call(
-            "DOM.requestNode",
-            &RequestNodeInternalParams { object_id },
-        )
-        .await
+        self.call("DOM.requestNode", &RequestNodeInternalParams { object_id })
+            .await
     }
 
     async fn dom_resolve_node(&self, params: &ResolveNodeParams) -> Result<ResolveNodeReturn> {
@@ -1916,8 +1900,7 @@ impl DomCommands for CdpSession {
     }
 
     async fn dom_set_attribute_value(&self, params: &SetAttributeValueParams) -> Result<()> {
-        self.call_no_response("DOM.setAttributeValue", params)
-            .await
+        self.call_no_response("DOM.setAttributeValue", params).await
     }
 
     async fn dom_set_attributes_as_text(&self, params: &SetAttributesAsTextParams) -> Result<()> {
@@ -1926,8 +1909,7 @@ impl DomCommands for CdpSession {
     }
 
     async fn dom_set_file_input_files(&self, params: &SetFileInputFilesParams) -> Result<()> {
-        self.call_no_response("DOM.setFileInputFiles", params)
-            .await
+        self.call_no_response("DOM.setFileInputFiles", params).await
     }
 
     async fn dom_set_node_stack_traces_enabled(&self, enable: bool) -> Result<()> {
@@ -1938,10 +1920,7 @@ impl DomCommands for CdpSession {
         .await
     }
 
-    async fn dom_get_node_stack_traces(
-        &self,
-        node_id: NodeId,
-    ) -> Result<GetNodeStackTracesReturn> {
+    async fn dom_get_node_stack_traces(&self, node_id: NodeId) -> Result<GetNodeStackTracesReturn> {
         self.call(
             "DOM.getNodeStackTraces",
             &GetNodeStackTracesInternalParams { node_id },
@@ -1950,11 +1929,8 @@ impl DomCommands for CdpSession {
     }
 
     async fn dom_get_file_info(&self, object_id: &str) -> Result<GetFileInfoReturn> {
-        self.call(
-            "DOM.getFileInfo",
-            &GetFileInfoInternalParams { object_id },
-        )
-        .await
+        self.call("DOM.getFileInfo", &GetFileInfoInternalParams { object_id })
+            .await
     }
 
     async fn dom_get_detached_dom_nodes(&self) -> Result<GetDetachedDomNodesReturn> {
@@ -1970,11 +1946,7 @@ impl DomCommands for CdpSession {
         .await
     }
 
-    async fn dom_set_node_name(
-        &self,
-        node_id: NodeId,
-        name: &str,
-    ) -> Result<SetNodeNameReturn> {
+    async fn dom_set_node_name(&self, node_id: NodeId, name: &str) -> Result<SetNodeNameReturn> {
         self.call(
             "DOM.setNodeName",
             &SetNodeNameInternalParams { node_id, name },

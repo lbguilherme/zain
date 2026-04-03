@@ -15,22 +15,50 @@ fn normalize_decimal(val: &str) -> Result<String, &'static str> {
 
 impl Column {
     pub const fn text(name: &'static str, sql_type: &'static str) -> Self {
-        Self { name, sql_type, normalize: None }
+        Self {
+            name,
+            sql_type,
+            normalize: None,
+        }
     }
     pub const fn int(name: &'static str, sql_type: &'static str) -> Self {
-        Self { name, sql_type, normalize: None }
+        Self {
+            name,
+            sql_type,
+            normalize: None,
+        }
     }
     pub const fn decimal(name: &'static str, sql_type: &'static str) -> Self {
-        Self { name, sql_type, normalize: Some(normalize_decimal) }
+        Self {
+            name,
+            sql_type,
+            normalize: Some(normalize_decimal),
+        }
     }
     pub const fn date(name: &'static str, normalize: NormalizeFn) -> Self {
-        Self { name, sql_type: "DATE", normalize: Some(normalize) }
+        Self {
+            name,
+            sql_type: "DATE",
+            normalize: Some(normalize),
+        }
     }
     pub const fn bool(name: &'static str, normalize: NormalizeFn) -> Self {
-        Self { name, sql_type: "BOOLEAN", normalize: Some(normalize) }
+        Self {
+            name,
+            sql_type: "BOOLEAN",
+            normalize: Some(normalize),
+        }
     }
-    pub const fn custom(name: &'static str, sql_type: &'static str, normalize: NormalizeFn) -> Self {
-        Self { name, sql_type, normalize: Some(normalize) }
+    pub const fn custom(
+        name: &'static str,
+        sql_type: &'static str,
+        normalize: NormalizeFn,
+    ) -> Self {
+        Self {
+            name,
+            sql_type,
+            normalize: Some(normalize),
+        }
     }
 }
 

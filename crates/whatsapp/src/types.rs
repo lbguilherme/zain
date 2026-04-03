@@ -1,187 +1,149 @@
-//! WhatsApp domain types: message IDs, chat IDs, parsed data-id.
+use serde::{Deserialize, Serialize};
 
-/// A parsed `data-id` attribute from a WhatsApp message element.
-///
-/// Format for 1:1 chats: `{direction}_{chatJid}_{messageId}`
-/// Format for groups:     `{direction}_{groupJid}_{messageId}_{senderLid}`
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataId {
-    /// Raw `data-id` string from the DOM.
-    pub raw: String,
-    /// `true` if the message was sent by us, `false` if received.
-    pub outgoing: bool,
-    /// JID of the chat (contact or group).
-    pub chat_jid: String,
-    /// Unique message identifier (hex hash).
-    pub message_id: String,
-    /// Sender's LID, present in group messages.
-    pub sender_lid: Option<String>,
+// ── Chat types ──────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct ChatsList {
+    pub chats: Vec<Chat>,
+    pub count: i32,
+    pub total: i32,
+    #[serde(default)]
+    pub offset: i32,
 }
 
-impl DataId {
-    /// Parses a `data-id` string.
-    ///
-    /// Returns `None` if the format is unrecognized.
-    pub fn parse(raw: &str) -> Option<Self> {
-        let parts: Vec<&str> = raw.splitn(4, '_').collect();
-        if parts.len() < 3 {
-            return None;
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Chat {
+    pub id: String,
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub chat_type: Option<String>,
+    pub timestamp: Option<i64>,
+    pub chat_pic: Option<String>,
+    pub pin: Option<bool>,
+    pub mute: Option<bool>,
+    pub archive: Option<bool>,
+    pub unread: Option<i32>,
+    pub read_only: Option<bool>,
+    pub last_message: Option<Message>,
+}
+
+// ── Message types ───────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct MessagesList {
+    pub messages: Vec<Message>,
+    pub count: i32,
+    pub total: i32,
+    #[serde(default)]
+    pub offset: i32,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Message {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub msg_type: String,
+    pub subtype: Option<String>,
+    pub chat_id: String,
+    pub from: Option<String>,
+    pub from_me: bool,
+    pub from_name: Option<String>,
+    pub timestamp: Option<f64>,
+    pub source: Option<String>,
+    pub status: Option<String>,
+    pub text: Option<TextBody>,
+    pub image: Option<MediaBody>,
+    pub video: Option<MediaBody>,
+    pub audio: Option<MediaBody>,
+    pub voice: Option<MediaBody>,
+    pub document: Option<DocumentBody>,
+    pub sticker: Option<MediaBody>,
+    pub location: Option<serde_json::Value>,
+    pub contact: Option<serde_json::Value>,
+    pub poll: Option<serde_json::Value>,
+    pub context: Option<MessageContext>,
+    pub reactions: Option<Vec<serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TextBody {
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MediaBody {
+    pub id: Option<String>,
+    pub link: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size: Option<i64>,
+    pub caption: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DocumentBody {
+    pub id: Option<String>,
+    pub link: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_size: Option<i64>,
+    pub filename: Option<String>,
+    pub caption: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MessageContext {
+    pub forwarded: Option<bool>,
+    pub quoted_id: Option<String>,
+}
+
+impl Message {
+    /// Extrai o corpo de texto principal da mensagem, independente do tipo.
+    pub fn text_body(&self) -> Option<&str> {
+        if let Some(t) = &self.text {
+            return t.body.as_deref();
         }
-
-        let outgoing = match parts[0] {
-            "true" => true,
-            "false" => false,
-            _ => return None,
-        };
-        let chat_jid = parts[1].to_owned();
-        if !chat_jid.contains('@') {
-            return None;
+        if let Some(m) = &self.image {
+            return m.caption.as_deref();
         }
-
-        // parts[2] might be "messageId" or "messageId_senderLid"
-        // If the chat is a group (@g.us) and there are 4 parts, the 4th is sender LID
-        if parts.len() == 4 {
-            // Group with sender LID: false_group@g.us_msgId_sender@lid
-            // But splitn(4) means parts[2] = msgId, parts[3] = rest (could contain more _)
-            let message_id = parts[2].to_owned();
-            let sender_lid = Some(parts[3].to_owned());
-            Some(Self {
-                raw: raw.to_owned(),
-                outgoing,
-                chat_jid,
-                message_id,
-                sender_lid,
-            })
-        } else {
-            // 1:1 chat: false_contact@c.us_msgId
-            let message_id = parts[2].to_owned();
-            Some(Self {
-                raw: raw.to_owned(),
-                outgoing,
-                chat_jid,
-                message_id,
-                sender_lid: None,
-            })
+        if let Some(m) = &self.video {
+            return m.caption.as_deref();
         }
-    }
-
-    /// Returns `true` if this is a group chat message.
-    pub fn is_group(&self) -> bool {
-        self.chat_jid.contains("@g.us")
-    }
-}
-
-/// Summary of a chat in the sidebar list.
-#[derive(Debug, Clone)]
-pub struct ChatPreview {
-    /// Chat title (contact name or group name).
-    pub title: String,
-    /// Last message preview text.
-    pub last_message: String,
-    /// Number of unread messages (0 if none).
-    pub unread_count: u32,
-    /// Parsed timestamp of the last message activity.
-    pub timestamp: Option<chrono::NaiveDateTime>,
-}
-
-/// Type of a WhatsApp message.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MessageType {
-    Text,
-    Image,
-    Sticker,
-    Voice,
-    Video,
-    System,
-    Unknown,
-}
-
-impl MessageType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Text => "text",
-            Self::Image => "image",
-            Self::Sticker => "sticker",
-            Self::Voice => "voice",
-            Self::Video => "video",
-            Self::System => "system",
-            Self::Unknown => "unknown",
+        if let Some(d) = &self.document {
+            return d.caption.as_deref();
         }
-    }
-}
-
-/// A message parsed from the WhatsApp Web DOM with all extracted data.
-#[derive(Debug, Clone)]
-pub struct RawMessage {
-    /// Full raw `data-id` string from the DOM.
-    pub raw_id: String,
-    /// Parsed data-id with chat/message/sender identifiers.
-    pub data_id: DataId,
-    /// Message type.
-    pub msg_type: MessageType,
-    /// Text content (body for text, caption for images, label for stickers).
-    pub text: Option<String>,
-    /// Sender JID (from data-id: chat_jid for 1:1 or sender_lid for groups).
-    pub sender_jid: Option<String>,
-    /// Sender display name (from data-pre-plain-text).
-    pub sender_name: Option<String>,
-    /// Whether the message was sent by us.
-    pub is_from_me: bool,
-    /// Parsed timestamp from data-pre-plain-text (minute precision).
-    pub timestamp: Option<chrono::NaiveDateTime>,
-    /// Sticker media filename (saved in media dir as `sticker_{sha256}`).
-    pub sticker_media: Option<String>,
-    /// Image media filename (saved in media dir as `image_{sha256}`).
-    pub image_media: Option<String>,
-}
-
-/// User profile information from the "Edit profile" screen.
-#[derive(Debug, Clone)]
-pub struct UserProfile {
-    /// Display name.
-    pub name: String,
-    /// Phone number (e.g. "+55 71 9934-3413").
-    pub phone: String,
-    /// Avatar image URL from the WhatsApp CDN, or `None` if no photo is set.
-    pub avatar_url: Option<String>,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_1to1() {
-        let id = DataId::parse("false_557193738552@c.us_3AB2DE63CABCBEA800E7").unwrap();
-        assert!(!id.outgoing);
-        assert_eq!(id.chat_jid, "557193738552@c.us");
-        assert_eq!(id.message_id, "3AB2DE63CABCBEA800E7");
-        assert!(id.sender_lid.is_none());
-        assert!(!id.is_group());
+        None
     }
 
-    #[test]
-    fn parse_group_with_lid() {
-        let id = DataId::parse(
-            "false_5511972699834-1553516308@g.us_AC9EFCCCE5BBA2342F8BC46AB241EF82_45982020554835@lid",
-        )
-        .unwrap();
-        assert!(!id.outgoing);
-        assert_eq!(id.chat_jid, "5511972699834-1553516308@g.us");
-        assert_eq!(id.message_id, "AC9EFCCCE5BBA2342F8BC46AB241EF82");
-        assert_eq!(id.sender_lid.as_deref(), Some("45982020554835@lid"));
-        assert!(id.is_group());
+    /// Verifica se a mensagem contém algum tipo de mídia.
+    pub fn has_media(&self) -> bool {
+        self.image.is_some()
+            || self.video.is_some()
+            || self.audio.is_some()
+            || self.voice.is_some()
+            || self.document.is_some()
+            || self.sticker.is_some()
     }
 
-    #[test]
-    fn parse_sent() {
-        let id = DataId::parse("true_557193738552@c.us_AABBCCDD").unwrap();
-        assert!(id.outgoing);
+    /// Retorna o mime_type da mídia, se houver.
+    pub fn media_mime(&self) -> Option<&str> {
+        self.image
+            .as_ref()
+            .and_then(|m| m.mime_type.as_deref())
+            .or_else(|| self.video.as_ref().and_then(|m| m.mime_type.as_deref()))
+            .or_else(|| self.audio.as_ref().and_then(|m| m.mime_type.as_deref()))
+            .or_else(|| self.voice.as_ref().and_then(|m| m.mime_type.as_deref()))
+            .or_else(|| self.document.as_ref().and_then(|d| d.mime_type.as_deref()))
+            .or_else(|| self.sticker.as_ref().and_then(|m| m.mime_type.as_deref()))
     }
 
-    #[test]
-    fn parse_invalid() {
-        assert!(DataId::parse("garbage").is_none());
-        assert!(DataId::parse("false_only_two").is_none());
+    /// Retorna o link de download da mídia, se houver.
+    pub fn media_url(&self) -> Option<&str> {
+        self.image
+            .as_ref()
+            .and_then(|m| m.link.as_deref())
+            .or_else(|| self.video.as_ref().and_then(|m| m.link.as_deref()))
+            .or_else(|| self.audio.as_ref().and_then(|m| m.link.as_deref()))
+            .or_else(|| self.voice.as_ref().and_then(|m| m.link.as_deref()))
+            .or_else(|| self.document.as_ref().and_then(|d| d.link.as_deref()))
+            .or_else(|| self.sticker.as_ref().and_then(|m| m.link.as_deref()))
     }
 }

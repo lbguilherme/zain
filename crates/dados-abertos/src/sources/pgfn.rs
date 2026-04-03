@@ -87,8 +87,16 @@ impl DataSource for PgfnSource {
 // DATA_INSCRICAO;INDICADOR_AJUIZADO;VALOR_CONSOLIDADO
 static COLUMNS_NAO_PREV: &[Column] = &[
     Column::custom("cpf_cnpj", "TEXT NOT NULL", strip_cpf_cnpj),
-    Column::custom("tipo_pessoa", "\"{schema}\".tipo_pessoa", normalize_tipo_pessoa),
-    Column::custom("tipo_devedor", "\"{schema}\".tipo_devedor", normalize_tipo_devedor),
+    Column::custom(
+        "tipo_pessoa",
+        "\"{schema}\".tipo_pessoa",
+        normalize_tipo_pessoa,
+    ),
+    Column::custom(
+        "tipo_devedor",
+        "\"{schema}\".tipo_devedor",
+        normalize_tipo_devedor,
+    ),
     Column::text("nome_devedor", "TEXT"),
     Column::text("uf_devedor", "CHAR(2)"),
     Column::text("unidade_responsavel", "TEXT"),
@@ -106,8 +114,16 @@ static COLUMNS_NAO_PREV: &[Column] = &[
 // DATA_INSCRICAO;INDICADOR_AJUIZADO;VALOR_CONSOLIDADO
 static COLUMNS_PREV: &[Column] = &[
     Column::custom("cpf_cnpj", "TEXT NOT NULL", strip_cpf_cnpj),
-    Column::custom("tipo_pessoa", "\"{schema}\".tipo_pessoa", normalize_tipo_pessoa),
-    Column::custom("tipo_devedor", "\"{schema}\".tipo_devedor", normalize_tipo_devedor),
+    Column::custom(
+        "tipo_pessoa",
+        "\"{schema}\".tipo_pessoa",
+        normalize_tipo_pessoa,
+    ),
+    Column::custom(
+        "tipo_devedor",
+        "\"{schema}\".tipo_devedor",
+        normalize_tipo_devedor,
+    ),
     Column::text("nome_devedor", "TEXT"),
     Column::text("uf_devedor", "CHAR(2)"),
     Column::text("unidade_responsavel", "TEXT"),
@@ -125,8 +141,16 @@ static COLUMNS_PREV: &[Column] = &[
 // SITUACAO_INSCRICAO;RECEITA_PRINCIPAL;DATA_INSCRICAO;INDICADOR_AJUIZADO;VALOR_CONSOLIDADO
 static COLUMNS_FGTS: &[Column] = &[
     Column::custom("cpf_cnpj", "TEXT NOT NULL", strip_cpf_cnpj),
-    Column::custom("tipo_pessoa", "\"{schema}\".tipo_pessoa", normalize_tipo_pessoa),
-    Column::custom("tipo_devedor", "\"{schema}\".tipo_devedor", normalize_tipo_devedor),
+    Column::custom(
+        "tipo_pessoa",
+        "\"{schema}\".tipo_pessoa",
+        normalize_tipo_pessoa,
+    ),
+    Column::custom(
+        "tipo_devedor",
+        "\"{schema}\".tipo_devedor",
+        normalize_tipo_devedor,
+    ),
     Column::text("nome_devedor", "TEXT"),
     Column::text("uf_devedor", "CHAR(2)"),
     Column::text("unidade_responsavel", "TEXT"),

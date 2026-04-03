@@ -1,33 +1,25 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
 use tokio::sync::OnceCell;
 
-use crate::cdp::target::{AttachToTargetParams, TargetCommands};
+use crate::browser::BrowserContextInner;
+use crate::cdp::target::{AttachToTargetParams, GetTargetInfoParams, TargetCommands};
 use crate::dom::Dom;
 use crate::error::Result;
 use crate::page::PageSession;
 use crate::session::CdpSession;
-use crate::types::TargetId;
+use crate::types::{TargetId, TargetInfo};
 
 pub(crate) struct TargetInner {
     pub(crate) target_id: TargetId,
     pub(crate) browser_session: CdpSession,
     pub(crate) dom: OnceCell<Dom>,
-    closed: AtomicBool,
-}
-
-impl TargetInner {
-    pub(crate) fn mark_closed(&self) {
-        self.closed.store(true, Ordering::Release);
-    }
+    /// Holds an Arc to the parent BrowserContext (if any), preventing it
+    /// from being dropped (and disposed) while this target is alive.
+    pub(crate) _context: Option<Arc<BrowserContextInner>>,
 }
 
 impl Drop for TargetInner {
     fn drop(&mut self) {
-        if self.closed.load(Ordering::Acquire) {
-            return;
-        }
         let browser_session = self.browser_session.clone();
         let target_id = self.target_id.clone();
         tokio::spawn(async move {
@@ -57,7 +49,22 @@ impl PageTarget {
                 target_id,
                 browser_session: browser.cdp().clone(),
                 dom: OnceCell::new(),
-                closed: AtomicBool::new(false),
+                _context: None,
+            }),
+        }
+    }
+
+    pub(crate) fn new_with_context(
+        browser: crate::browser::Browser,
+        target_id: TargetId,
+        context: Arc<BrowserContextInner>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(TargetInner {
+                target_id,
+                browser_session: browser.cdp().clone(),
+                dom: OnceCell::new(),
+                _context: Some(context),
             }),
         }
     }
@@ -65,6 +72,20 @@ impl PageTarget {
     /// Returns the unique identifier of this target in the browser.
     pub fn id(&self) -> &TargetId {
         &self.inner.target_id
+    }
+
+    /// Returns detailed information about this target (URL, title, type, etc.).
+    ///
+    /// Does not require the target to be attached.
+    pub async fn info(&self) -> Result<TargetInfo> {
+        let ret = self
+            .inner
+            .browser_session
+            .target_get_target_info(&GetTargetInfoParams {
+                target_id: Some(self.inner.target_id.clone()),
+            })
+            .await?;
+        Ok(ret.target_info)
     }
 
     /// Attaches a CDP session to this target using flattened mode.
@@ -85,23 +106,15 @@ impl PageTarget {
             .browser_session
             .target_attach_to_target(&params)
             .await?;
-        let session = self.inner.browser_session.for_session(ret.session_id.clone());
-        Ok(PageSession::new(session, ret.session_id, self.inner.clone()))
-    }
-
-    /// Closes this target (tab) immediately.
-    ///
-    /// Marks the target as closed so the automatic cleanup on drop is skipped.
-    /// Returns `true` if the target was closed successfully.
-    #[allow(deprecated)]
-    pub async fn close(&self) -> Result<bool> {
-        self.inner.mark_closed();
-        let ret = self
+        let session = self
             .inner
             .browser_session
-            .target_close_target(&self.inner.target_id)
-            .await?;
-        Ok(ret.success)
+            .for_session(ret.session_id.clone());
+        Ok(PageSession::new(
+            session,
+            ret.session_id,
+            self.inner.clone(),
+        ))
     }
 
     /// Brings this target to the foreground in the browser.

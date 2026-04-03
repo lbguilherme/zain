@@ -555,10 +555,8 @@ pub trait InputCommands {
     /// Synthesizes a tap gesture over a time period by issuing appropriate touch events.
     ///
     /// CDP: `Input.synthesizeTapGesture`
-    async fn input_synthesize_tap_gesture(
-        &self,
-        params: &SynthesizeTapGestureParams,
-    ) -> Result<()>;
+    async fn input_synthesize_tap_gesture(&self, params: &SynthesizeTapGestureParams)
+    -> Result<()>;
 }
 
 // ── Impl ────────────────────────────────────────────────────────────────────

@@ -446,10 +446,8 @@ pub trait TargetCommands {
     /// Creates a new page.
     ///
     /// CDP: `Target.createTarget`
-    async fn target_create_target(
-        &self,
-        params: &CreateTargetParams,
-    ) -> Result<CreateTargetReturn>;
+    async fn target_create_target(&self, params: &CreateTargetParams)
+    -> Result<CreateTargetReturn>;
 
     /// Detaches session with given id.
     ///
@@ -503,10 +501,7 @@ pub trait TargetCommands {
     /// `targetCreated/targetInfoChanged/targetDestroyed` events.
     ///
     /// CDP: `Target.setDiscoverTargets`
-    async fn target_set_discover_targets(
-        &self,
-        params: &SetDiscoverTargetsParams,
-    ) -> Result<()>;
+    async fn target_set_discover_targets(&self, params: &SetDiscoverTargetsParams) -> Result<()>;
 
     /// Enables target discovery for the specified locations, when `setDiscoverTargets` was set to
     /// `true`.
@@ -631,9 +626,7 @@ impl TargetCommands for CdpSession {
         &self,
         browser_context_id: &BrowserContextId,
     ) -> Result<()> {
-        let params = DisposeBrowserContextInternalParams {
-            browser_context_id,
-        };
+        let params = DisposeBrowserContextInternalParams { browser_context_id };
         self.call_no_response("Target.disposeBrowserContext", &params)
             .await
     }
@@ -658,10 +651,7 @@ impl TargetCommands for CdpSession {
             .await
     }
 
-    async fn target_set_discover_targets(
-        &self,
-        params: &SetDiscoverTargetsParams,
-    ) -> Result<()> {
+    async fn target_set_discover_targets(&self, params: &SetDiscoverTargetsParams) -> Result<()> {
         self.call_no_response("Target.setDiscoverTargets", params)
             .await
     }

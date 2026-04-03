@@ -18,26 +18,8 @@ pub struct VersionInfo {
     pub web_socket_debugger_url: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TargetEntry {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub target_type: String,
-    pub title: String,
-    pub url: String,
-    pub web_socket_debugger_url: Option<String>,
-    pub dev_tools_frontend_url: Option<String>,
-}
-
 pub async fn get_version(host: &str, port: u16) -> Result<VersionInfo> {
     let url = format!("http://{}:{}/json/version", host, port);
     let info = reqwest::get(&url).await?.json().await?;
     Ok(info)
-}
-
-pub async fn list_targets(host: &str, port: u16) -> Result<Vec<TargetEntry>> {
-    let url = format!("http://{}:{}/json/list", host, port);
-    let targets = reqwest::get(&url).await?.json().await?;
-    Ok(targets)
 }

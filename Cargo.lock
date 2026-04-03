@@ -452,9 +452,9 @@ dependencies = [
 
 [[package]]
 name = "cmov"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de0758edba32d61d1fd9f4d69491b47604b91ee2f7e6b33de7e54ca4ebe55dc3"
+checksum = "3f88a43d011fc4a6876cb7344703e297c71dda42494fee094d5f7c76bf13f746"
 
 [[package]]
 name = "colorchoice"
@@ -613,9 +613,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1005a6d4446f5120ef475ad3d2af2b30c49c2c9c6904258e3bb30219bebed5e4"
+checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
 dependencies = [
  "cmov",
 ]
@@ -2363,6 +2363,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -2418,6 +2419,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "rpa-mei"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chromium-driver",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2682,6 +2698,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "serde_urlencoded"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
+dependencies = [
+ "form_urlencoded",
+ "itoa",
+ "ryu",
+ "serde",
 ]
 
 [[package]]
@@ -3315,6 +3343,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "unused-whatsapp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "chromium-driver",
+ "chrono",
+ "cubos_sql",
+ "cubos_sql_core",
+ "deadpool-postgres",
+ "dotenvy",
+ "png",
+ "qr2term",
+ "reqwest",
+ "rqrr",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-postgres",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3560,26 +3615,19 @@ name = "whatsapp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64",
- "chromium-driver",
  "chrono",
  "cubos_sql",
  "cubos_sql_core",
  "deadpool-postgres",
  "dotenvy",
- "png",
- "qr2term",
  "reqwest",
- "rqrr",
  "serde",
  "serde_json",
- "sha2 0.10.9",
  "thiserror 2.0.18",
  "tokio",
  "tokio-postgres",
  "tracing",
  "tracing-subscriber",
- "uuid",
 ]
 
 [[package]]

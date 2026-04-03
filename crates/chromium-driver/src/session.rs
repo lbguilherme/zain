@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tokio::sync::broadcast;
 
 use crate::error::Result;

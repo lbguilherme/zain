@@ -2039,10 +2039,7 @@ pub trait PageCommands {
     /// Get Origin Trials on given frame.
     ///
     /// CDP: `Page.getOriginTrials`
-    async fn page_get_origin_trials(
-        &self,
-        frame_id: &FrameId,
-    ) -> Result<GetOriginTrialsReturn>;
+    async fn page_get_origin_trials(&self, frame_id: &FrameId) -> Result<GetOriginTrialsReturn>;
 
     /// Set generic font families.
     ///
@@ -2323,8 +2320,7 @@ impl PageCommands for CdpSession {
     }
 
     async fn page_get_frame_tree(&self) -> Result<GetFrameTreeReturn> {
-        self.call("Page.getFrameTree", &serde_json::json!({}))
-            .await
+        self.call("Page.getFrameTree", &serde_json::json!({})).await
     }
 
     async fn page_get_layout_metrics(&self) -> Result<GetLayoutMetricsReturn> {
@@ -2421,10 +2417,7 @@ impl PageCommands for CdpSession {
         self.call("Page.getPermissionsPolicyState", &params).await
     }
 
-    async fn page_get_origin_trials(
-        &self,
-        frame_id: &FrameId,
-    ) -> Result<GetOriginTrialsReturn> {
+    async fn page_get_origin_trials(&self, frame_id: &FrameId) -> Result<GetOriginTrialsReturn> {
         let params = GetOriginTrialsInternalParams { frame_id };
         self.call("Page.getOriginTrials", &params).await
     }

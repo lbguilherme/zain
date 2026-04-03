@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "out=$(cargo fmt 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
+            "statusMessage": "Running cargo fmt..."
+          },
+          {
+            "type": "command",
+            "command": "out=$(cargo check 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
+            "statusMessage": "Running cargo check..."
+          },
+          {
+            "type": "command",
+            "command": "out=$(cargo test 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
+            "statusMessage": "Running cargo test..."
+          },
+          {
+            "type": "command",
+            "command": "out=$(cargo clippy --fix --allow-dirty --allow-staged -- -D warnings 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
+            "statusMessage": "Running cargo clippy..."
+          }
+        ]
+      }
+    ]
+  }
+}

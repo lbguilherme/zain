@@ -1,10 +1,10 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
-use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::error::{CdpError, Result};
@@ -118,8 +118,9 @@ impl Transport {
     }
 
     async fn reader_loop(
-        mut stream: impl StreamExt<Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>>
-            + Unpin,
+        mut stream: impl StreamExt<
+            Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>,
+        > + Unpin,
         pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>,
         event_tx: broadcast::Sender<CdpEvent>,
     ) {
@@ -149,7 +150,10 @@ impl Transport {
                             .to_owned();
                         Err(CdpError::Protocol { code, message })
                     } else {
-                        Ok(value.get("result").cloned().unwrap_or(Value::Object(Default::default())))
+                        Ok(value
+                            .get("result")
+                            .cloned()
+                            .unwrap_or(Value::Object(Default::default())))
                     };
                     let _ = tx.send(result);
                 }
@@ -162,7 +166,10 @@ impl Transport {
                     .get("sessionId")
                     .and_then(|s| s.as_str())
                     .map(String::from);
-                let params = value.get("params").cloned().unwrap_or(Value::Object(Default::default()));
+                let params = value
+                    .get("params")
+                    .cloned()
+                    .unwrap_or(Value::Object(Default::default()));
 
                 let _ = event_tx.send(CdpEvent {
                     method: method.to_owned(),

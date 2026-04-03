@@ -1,12 +1,19 @@
-use crate::cdp::browser::{BrowserCommands, GetVersionReturn};
+use std::sync::Arc;
+
+use crate::cdp::browser::{
+    Bounds, BrowserCommands, CancelDownloadParams, DownloadBehavior, GetVersionReturn,
+    GetWindowForTargetParams, PermissionDescriptor, PermissionSetting, ResetPermissionsParams,
+    SetDownloadBehaviorParams, SetPermissionParams, SetWindowBoundsParams, WindowId,
+};
 use crate::cdp::target::{
-    AttachedToTargetEvent, CreateTargetParams, DetachedFromTargetEvent, GetTargetsParams,
-    TargetCommands, TargetCreatedEvent, TargetDestroyedEvent, TargetInfoChangedEvent,
+    AttachedToTargetEvent, CreateBrowserContextParams, CreateTargetParams, DetachedFromTargetEvent,
+    GetTargetInfoParams, GetTargetsParams, TargetCommands, TargetCreatedEvent,
+    TargetDestroyedEvent, TargetInfoChangedEvent,
 };
 use crate::error::Result;
 use crate::session::{CdpEventStream, CdpSession};
 use crate::target::PageTarget;
-use crate::types::TargetInfo;
+use crate::types::{BrowserContextId, TargetId, TargetInfo};
 
 /// Typed browser-level event, parsed from raw CDP events.
 ///
@@ -72,23 +79,38 @@ impl BrowserEventStream {
         match raw.method.as_str() {
             "Target.targetCreated" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => BrowserEvent::TargetCreated(e),
-                Err(_) => BrowserEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => BrowserEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             "Target.targetDestroyed" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => BrowserEvent::TargetDestroyed(e),
-                Err(_) => BrowserEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => BrowserEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             "Target.targetInfoChanged" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => BrowserEvent::TargetInfoChanged(e),
-                Err(_) => BrowserEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => BrowserEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             "Target.attachedToTarget" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => BrowserEvent::AttachedToTarget(e),
-                Err(_) => BrowserEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => BrowserEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             "Target.detachedFromTarget" => match serde_json::from_value(raw.params.clone()) {
                 Ok(e) => BrowserEvent::DetachedFromTarget(e),
-                Err(_) => BrowserEvent::Other { method: raw.method, params: raw.params },
+                Err(_) => BrowserEvent::Other {
+                    method: raw.method,
+                    params: raw.params,
+                },
             },
             _ => BrowserEvent::Other {
                 method: raw.method,
@@ -177,11 +199,210 @@ impl Browser {
         }
     }
 
+    // ── Permissions ──────────────────────────────────────────────────────
+
+    /// Grants, denies or resets a browser permission for all origins.
+    ///
+    /// - `name`: permission name (e.g. `"geolocation"`, `"notifications"`, `"clipboard-read"`).
+    /// - `setting`: whether to grant, deny or prompt.
+    ///
+    /// See [`PermissionSetting`] for possible values.
+    pub async fn set_permission(&self, name: &str, setting: PermissionSetting) -> Result<()> {
+        self.session
+            .browser_set_permission(&SetPermissionParams {
+                permission: PermissionDescriptor {
+                    name: name.to_owned(),
+                    ..Default::default()
+                },
+                setting,
+                origin: None,
+                embedded_origin: None,
+                browser_context_id: None,
+            })
+            .await
+    }
+
+    /// Grants, denies or resets a browser permission for a specific origin.
+    pub async fn set_permission_for_origin(
+        &self,
+        name: &str,
+        setting: PermissionSetting,
+        origin: &str,
+    ) -> Result<()> {
+        self.session
+            .browser_set_permission(&SetPermissionParams {
+                permission: PermissionDescriptor {
+                    name: name.to_owned(),
+                    ..Default::default()
+                },
+                setting,
+                origin: Some(origin.to_owned()),
+                embedded_origin: None,
+                browser_context_id: None,
+            })
+            .await
+    }
+
+    /// Resets all permission overrides.
+    pub async fn reset_permissions(&self) -> Result<()> {
+        self.session
+            .browser_reset_permissions(&ResetPermissionsParams::default())
+            .await
+    }
+
+    // ── Downloads ─────────────────────────────────────────────────────────
+
+    /// Configures the download behavior for the browser.
+    ///
+    /// - `behavior`: allow, deny, or default.
+    /// - `download_path`: directory to save files (required for `Allow` / `AllowAndName`).
+    pub async fn set_download_behavior(
+        &self,
+        behavior: DownloadBehavior,
+        download_path: Option<&str>,
+    ) -> Result<()> {
+        self.session
+            .browser_set_download_behavior(&SetDownloadBehaviorParams {
+                behavior,
+                browser_context_id: None,
+                download_path: download_path.map(|s| s.to_owned()),
+                events_enabled: Some(true),
+            })
+            .await
+    }
+
+    /// Cancels a download in progress by its GUID.
+    pub async fn cancel_download(&self, guid: &str) -> Result<()> {
+        self.session
+            .browser_cancel_download(&CancelDownloadParams {
+                guid: guid.to_owned(),
+                browser_context_id: None,
+            })
+            .await
+    }
+
+    // ── Target info ───────────────────────────────────────────────────────
+
+    /// Returns detailed information about a specific target.
+    pub async fn get_target_info(&self, target_id: &TargetId) -> Result<TargetInfo> {
+        let ret = self
+            .session
+            .target_get_target_info(&GetTargetInfoParams {
+                target_id: Some(target_id.clone()),
+            })
+            .await?;
+        Ok(ret.target_info)
+    }
+
+    // ── Window management ─────────────────────────────────────────────────
+
+    /// Returns the window ID and bounds for the given target.
+    pub async fn get_window_for_target(&self, target_id: &TargetId) -> Result<(WindowId, Bounds)> {
+        let ret = self
+            .session
+            .browser_get_window_for_target(&GetWindowForTargetParams {
+                target_id: Some(target_id.clone()),
+            })
+            .await?;
+        Ok((ret.window_id, ret.bounds))
+    }
+
+    /// Sets position and/or size of a browser window.
+    pub async fn set_window_bounds(&self, window_id: WindowId, bounds: Bounds) -> Result<()> {
+        self.session
+            .browser_set_window_bounds(&SetWindowBoundsParams { window_id, bounds })
+            .await
+    }
+
+    // ── Browser contexts (incognito) ──────────────────────────────────────
+
+    /// Creates a new browser context (similar to an incognito profile).
+    ///
+    /// The returned [`BrowserContext`] automatically disposes itself when
+    /// dropped, closing all pages that belong to it.
+    pub async fn create_context(&self) -> Result<BrowserContext> {
+        let ret = self
+            .session
+            .target_create_browser_context(&CreateBrowserContextParams {
+                dispose_on_detach: Some(true),
+                ..Default::default()
+            })
+            .await?;
+        Ok(BrowserContext {
+            inner: Arc::new(BrowserContextInner {
+                context_id: ret.browser_context_id,
+                session: self.session.clone(),
+                browser: self.clone(),
+            }),
+        })
+    }
+
     /// Direct access to the raw CDP session for commands not covered by the typed API.
     ///
     /// Useful for accessing CDP domains or methods that don't have a wrapper yet,
     /// such as `Target.setDiscoverTargets` or experimental domains.
     pub fn cdp(&self) -> &CdpSession {
         &self.session
+    }
+}
+
+// ── BrowserContext (incognito RAII) ─────────────────────────────────────────
+
+pub(crate) struct BrowserContextInner {
+    context_id: BrowserContextId,
+    session: CdpSession,
+    browser: Browser,
+}
+
+impl Drop for BrowserContextInner {
+    fn drop(&mut self) {
+        let session = self.session.clone();
+        let context_id = self.context_id.clone();
+        tokio::spawn(async move {
+            let _ = session.target_dispose_browser_context(&context_id).await;
+        });
+    }
+}
+
+/// An isolated browser context (similar to incognito mode).
+///
+/// Pages created via [`create_page`](Self::create_page) are scoped to this
+/// context and share cookies/storage only with each other.
+///
+/// The context is automatically disposed (and all its pages closed) when
+/// every `BrowserContext` handle **and** every [`PageTarget`] created from
+/// it are dropped. This is pure RAII — there is no explicit close method.
+#[derive(Clone)]
+pub struct BrowserContext {
+    inner: Arc<BrowserContextInner>,
+}
+
+impl BrowserContext {
+    /// Returns the unique identifier of this browser context.
+    pub fn id(&self) -> &BrowserContextId {
+        &self.inner.context_id
+    }
+
+    /// Creates a new page (tab) within this isolated context.
+    ///
+    /// The returned [`PageTarget`] holds a reference to this context,
+    /// keeping it alive until all pages (and the `BrowserContext` itself)
+    /// are dropped.
+    pub async fn create_page(&self, url: &str) -> Result<PageTarget> {
+        let ret = self
+            .inner
+            .session
+            .target_create_target(&CreateTargetParams {
+                url: url.to_owned(),
+                browser_context_id: Some(self.inner.context_id.clone()),
+                ..Default::default()
+            })
+            .await?;
+
+        Ok(PageTarget::new_with_context(
+            self.inner.browser.clone(),
+            ret.target_id,
+            self.inner.clone(),
+        ))
     }
 }

@@ -11,6 +11,8 @@ pub struct ChromiumProcess {
     pub ws_url: String,
     pub debug_port: u16,
     temp_user_data_dir: Option<PathBuf>,
+    /// Held to limit concurrent browser instances. Dropped with the process.
+    pub(crate) _launch_permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
 pub struct LaunchOptions {
@@ -50,9 +52,7 @@ fn detect_executable() -> String {
             return candidate.into();
         }
         if !candidate.contains('/')
-            && let Ok(output) = std::process::Command::new("which")
-                .arg(candidate)
-                .output()
+            && let Ok(output) = std::process::Command::new("which").arg(candidate).output()
             && output.status.success()
         {
             return candidate.into();
@@ -147,6 +147,7 @@ impl ChromiumProcess {
             ws_url,
             debug_port: port,
             temp_user_data_dir,
+            _launch_permit: None,
         })
     }
 

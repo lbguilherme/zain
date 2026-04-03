@@ -3,3 +3,5 @@
 /.dados_abertos
 .cubos_sql/
 .env
+/dumps
+/.playwright-mcp

@@ -6,12 +6,12 @@ use rand::RngExt;
 use rand_distr::{Distribution, Normal};
 
 use crate::cdp::dom::{
-    BoxModel, DomCommands, EnableParams, GetBoxModelParams, GetDocumentParams, GetOuterHtmlParams,
-    NodeId, ResolveNodeParams,
+    BackendNodeId, BoxModel, DomCommands, EnableParams, GetBoxModelParams, GetDocumentParams,
+    GetOuterHtmlParams, NodeId, ResolveNodeParams,
 };
 use crate::cdp::input::{
-    DispatchKeyEventParams, DispatchKeyEventType, DispatchTouchEventParams,
-    DispatchTouchEventType, InputCommands, TouchPoint,
+    DispatchKeyEventParams, DispatchKeyEventType, DispatchTouchEventParams, DispatchTouchEventType,
+    InputCommands, TouchPoint,
 };
 use crate::cdp::page::{CaptureScreenshotFormat, CaptureScreenshotParams, PageCommands, Viewport};
 use crate::error::{CdpError, Result};
@@ -19,90 +19,17 @@ use crate::keyboard::{self, KeySequence};
 use crate::runtime::JsObject;
 use crate::session::CdpSession;
 
-/// Timing configuration for human-like input simulation.
-///
-/// All delays are sampled from a gaussian (normal) distribution clamped to
-/// avoid negative or extreme values. Use [`HumanDelay::default()`] for
-/// realistic typing, or [`HumanDelay::INSTANT`] for tests.
-///
-/// # Example
-///
-/// ```rust
-/// use chromium_driver::dom::HumanDelay;
-///
-/// // Realistic defaults
-/// let timing = HumanDelay::default();
-///
-/// // Zero delays for tests
-/// let fast = HumanDelay::INSTANT;
-///
-/// // Custom
-/// let custom = HumanDelay {
-///     key_interval_mean_ms: 150.0,
-///     key_interval_stddev_ms: 40.0,
-///     ..Default::default()
-/// };
-/// ```
-#[derive(Debug, Clone, Copy)]
-pub struct HumanDelay {
-    /// Mean delay between keystrokes in milliseconds (default: 100).
-    pub key_interval_mean_ms: f64,
-    /// Stddev for keystroke interval in milliseconds (default: 30).
-    pub key_interval_stddev_ms: f64,
-    /// Mean duration a key is held down in milliseconds (default: 50).
-    pub key_hold_mean_ms: f64,
-    /// Stddev for key hold in milliseconds (default: 15).
-    pub key_hold_stddev_ms: f64,
-    /// Max random offset in pixels from element center for taps (default: 3.0).
-    pub click_offset_max_px: f64,
-    /// Mean delay before tapping — simulates locating the element (default: 200).
-    pub pre_click_mean_ms: f64,
-    /// Stddev for pre-tap delay (default: 80).
-    pub pre_click_stddev_ms: f64,
-    /// Mean duration finger stays on screen during tap (default: 70).
-    pub touch_hold_mean_ms: f64,
-    /// Stddev for touch hold (default: 25).
-    pub touch_hold_stddev_ms: f64,
-    /// Mean delay after tapping — waits for UI reaction (default: 300).
-    pub post_click_mean_ms: f64,
-    /// Stddev for post-tap delay (default: 100).
-    pub post_click_stddev_ms: f64,
-}
+// ── Human-like timing constants ───────────────────────────────────────────
 
-impl HumanDelay {
-    /// Zero delays and no jitter. Use in tests for deterministic, fast execution.
-    pub const INSTANT: Self = Self {
-        key_interval_mean_ms: 0.0,
-        key_interval_stddev_ms: 0.0,
-        key_hold_mean_ms: 0.0,
-        key_hold_stddev_ms: 0.0,
-        click_offset_max_px: 0.0,
-        pre_click_mean_ms: 0.0,
-        pre_click_stddev_ms: 0.0,
-        touch_hold_mean_ms: 0.0,
-        touch_hold_stddev_ms: 0.0,
-        post_click_mean_ms: 0.0,
-        post_click_stddev_ms: 0.0,
-    };
-}
-
-impl Default for HumanDelay {
-    fn default() -> Self {
-        Self {
-            key_interval_mean_ms: 100.0,
-            key_interval_stddev_ms: 30.0,
-            key_hold_mean_ms: 50.0,
-            key_hold_stddev_ms: 15.0,
-            click_offset_max_px: 3.0,
-            pre_click_mean_ms: 200.0,
-            pre_click_stddev_ms: 80.0,
-            touch_hold_mean_ms: 70.0,
-            touch_hold_stddev_ms: 25.0,
-            post_click_mean_ms: 300.0,
-            post_click_stddev_ms: 100.0,
-        }
-    }
-}
+const KEY_HOLD_MEAN_MS: f64 = 50.0;
+const KEY_HOLD_STDDEV_MS: f64 = 15.0;
+const CLICK_OFFSET_MAX_PX: f64 = 3.0;
+const PRE_CLICK_MEAN_MS: f64 = 200.0;
+const PRE_CLICK_STDDEV_MS: f64 = 80.0;
+const TOUCH_HOLD_MEAN_MS: f64 = 70.0;
+const TOUCH_HOLD_STDDEV_MS: f64 = 25.0;
+const POST_CLICK_MEAN_MS: f64 = 300.0;
+const POST_CLICK_STDDEV_MS: f64 = 100.0;
 
 /// Samples a duration from a gaussian distribution, clamped to [mean/4, mean*3].
 /// Returns Duration::ZERO if mean is zero.
@@ -122,6 +49,25 @@ fn jitter_offset(max_px: f64) -> f64 {
         return 0.0;
     }
     rand::rng().random_range(-max_px..=max_px)
+}
+
+/// Returns (mean_ms, stddev_ms) for inter-key delay based on text length.
+///
+/// Short texts (≤10 chars): ~100ms/key (careful typing).
+/// Longer texts ramp down to ~40ms/key (fluent typing), which is still
+/// within human range (~150 WPM). The curve is a simple linear interpolation
+/// clamped at both ends.
+fn typing_speed(char_count: usize) -> (f64, f64) {
+    const SLOW_MEAN: f64 = 100.0; // short messages
+    const FAST_MEAN: f64 = 40.0; // long messages
+    const RAMP_START: f64 = 10.0; // chars where speedup begins
+    const RAMP_END: f64 = 100.0; // chars where speedup plateaus
+
+    let n = char_count as f64;
+    let t = ((n - RAMP_START) / (RAMP_END - RAMP_START)).clamp(0.0, 1.0);
+    let mean = SLOW_MEAN + t * (FAST_MEAN - SLOW_MEAN);
+    let stddev = mean * 0.3;
+    (mean, stddev)
 }
 
 async fn human_sleep(mean_ms: f64, stddev_ms: f64) {
@@ -144,15 +90,14 @@ async fn human_sleep(mean_ms: f64, stddev_ms: f64) {
 ///
 /// ```rust,no_run
 /// # async fn example(page: &chromium_driver::PageSession) -> chromium_driver::Result<()> {
-/// use chromium_driver::dom::{Dom, HumanDelay};
+/// use chromium_driver::dom::Dom;
 /// use std::time::Duration;
 ///
 /// let dom = Dom::enable(page.cdp()).await?;
-/// let timing = HumanDelay::default();
 /// let el = dom.wait_for("div[role='textbox']", Duration::from_secs(5)).await?;
-/// el.click(&timing).await?;
-/// el.type_text("hello", &timing).await?;
-/// el.press_key("Enter", &timing).await?;
+/// el.click().await?;
+/// el.type_text("hello").await?;
+/// el.press_key("Enter").await?;
 /// dom.disable().await?;
 /// # Ok(())
 /// # }
@@ -160,6 +105,9 @@ async fn human_sleep(mean_ms: f64, stddev_ms: f64) {
 pub struct Dom {
     cdp: CdpSession,
     cached_root: std::sync::Mutex<Option<NodeId>>,
+    /// For frame-rooted Doms: the stable backend node ID of the frame's document.
+    /// Used to re-resolve a fresh NodeId when the cached root is invalidated.
+    frame_backend_id: Option<BackendNodeId>,
 }
 
 impl Dom {
@@ -167,6 +115,18 @@ impl Dom {
         Self {
             cdp,
             cached_root: std::sync::Mutex::new(None),
+            frame_backend_id: None,
+        }
+    }
+
+    /// Creates a `Dom` rooted at a frame's document, identified by its stable
+    /// `BackendNodeId`. The `NodeId` is resolved lazily on each `root_id()` call
+    /// after invalidation, so it survives across `DOM.getDocument` calls.
+    pub(crate) fn for_frame(cdp: CdpSession, backend_node_id: BackendNodeId) -> Self {
+        Self {
+            cdp,
+            cached_root: std::sync::Mutex::new(None),
+            frame_backend_id: Some(backend_node_id),
         }
     }
 
@@ -176,6 +136,7 @@ impl Dom {
         Ok(Self {
             cdp: cdp.clone(),
             cached_root: std::sync::Mutex::new(None),
+            frame_backend_id: None,
         })
     }
 
@@ -256,13 +217,7 @@ impl Dom {
     /// Use this for virtualised containers where the element box model height is
     /// the full virtual scrollable height (far larger than the visible viewport),
     /// which would place touch events outside the screen if element methods were used.
-    pub async fn swipe_vertical(
-        &self,
-        x: f64,
-        start_y: f64,
-        end_y: f64,
-        timing: &HumanDelay,
-    ) -> Result<()> {
+    pub async fn swipe_vertical(&self, x: f64, start_y: f64, end_y: f64) -> Result<()> {
         let distance = (end_y - start_y).abs();
         let steps = 5 + (distance / 100.0) as usize;
         let step_dy = (end_y - start_y) / steps as f64;
@@ -270,7 +225,11 @@ impl Dom {
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
                 event_type: DispatchTouchEventType::TouchStart,
-                touch_points: vec![TouchPoint { x, y: start_y, ..Default::default() }],
+                touch_points: vec![TouchPoint {
+                    x,
+                    y: start_y,
+                    ..Default::default()
+                }],
                 ..Default::default()
             })
             .await?;
@@ -278,18 +237,26 @@ impl Dom {
         let mut y = start_y;
         for _ in 0..steps {
             y += step_dy + jitter_offset(2.0);
-            y = if step_dy > 0.0 { y.min(end_y) } else { y.max(end_y) };
+            y = if step_dy > 0.0 {
+                y.min(end_y)
+            } else {
+                y.max(end_y)
+            };
             human_sleep(20.0, 8.0).await;
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
                     event_type: DispatchTouchEventType::TouchMove,
-                    touch_points: vec![TouchPoint { x: x + jitter_offset(1.0), y, ..Default::default() }],
+                    touch_points: vec![TouchPoint {
+                        x: x + jitter_offset(1.0),
+                        y,
+                        ..Default::default()
+                    }],
                     ..Default::default()
                 })
                 .await?;
         }
 
-        human_sleep(timing.touch_hold_mean_ms, timing.touch_hold_stddev_ms).await;
+        human_sleep(TOUCH_HOLD_MEAN_MS, TOUCH_HOLD_STDDEV_MS).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
                 event_type: DispatchTouchEventType::TouchEnd,
@@ -313,11 +280,44 @@ impl Dom {
                 return Ok(id);
             }
         }
-        let doc = self
-            .cdp
-            .dom_get_document(&GetDocumentParams::default())
-            .await?;
-        let id = doc.root.node_id;
+
+        let id = if let Some(backend_id) = self.frame_backend_id {
+            // Frame-rooted Dom: get full tree first, then resolve the backend ID.
+            let _ = self
+                .cdp
+                .dom_get_document(&GetDocumentParams {
+                    depth: Some(-1),
+                    pierce: Some(true),
+                })
+                .await?;
+            let ret = self
+                .cdp
+                .dom_push_nodes_by_backend_ids_to_frontend(&[backend_id])
+                .await?;
+            let node_id = ret
+                .node_ids
+                .first()
+                .copied()
+                .ok_or_else(|| CdpError::Protocol {
+                    code: -1,
+                    message: "pushNodesByBackendIds returned empty".into(),
+                })?;
+            if node_id.0 <= 0 {
+                return Err(CdpError::Protocol {
+                    code: -1,
+                    message: "pushNodesByBackendIds returned invalid node id".into(),
+                });
+            }
+            node_id
+        } else {
+            // Top-level Dom: use default getDocument.
+            let doc = self
+                .cdp
+                .dom_get_document(&GetDocumentParams::default())
+                .await?;
+            doc.root.node_id
+        };
+
         *self.cached_root.lock().unwrap() = Some(id);
         Ok(id)
     }
@@ -328,8 +328,8 @@ impl Dom {
 /// Obtained from [`Dom::query_selector`], [`Dom::query_selector_all`],
 /// [`Dom::wait_for`], or [`Element::query_selector`].
 ///
-/// Interaction methods (`click`, `type_text`, `press_key`) take a [`HumanDelay`]
-/// parameter that controls gaussian-distributed timing for realistic behavior.
+/// Interaction methods (`click`, `type_text`, `press_key`) use built-in
+/// gaussian-distributed timing for realistic human-like behavior.
 pub struct Element {
     cdp: CdpSession,
     node_id: NodeId,
@@ -467,29 +467,29 @@ impl Element {
     ///
     /// **The caller is responsible for ensuring the element is visible and
     /// not obscured before calling this method.**
-    pub async fn click(&self, timing: &HumanDelay) -> Result<()> {
+    pub async fn click(&self) -> Result<()> {
         let (cx, cy) = self.center().await?;
-        let x = cx + jitter_offset(timing.click_offset_max_px);
-        let y = cy + jitter_offset(timing.click_offset_max_px);
+        let x = cx + jitter_offset(CLICK_OFFSET_MAX_PX);
+        let y = cy + jitter_offset(CLICK_OFFSET_MAX_PX);
 
         // Pre-tap delay: human locates the element and moves finger
-        human_sleep(
-            timing.pre_click_mean_ms,
-            timing.pre_click_stddev_ms,
-        )
-        .await;
+        human_sleep(PRE_CLICK_MEAN_MS, PRE_CLICK_STDDEV_MS).await;
 
         // Finger touches screen
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
                 event_type: DispatchTouchEventType::TouchStart,
-                touch_points: vec![TouchPoint { x, y, ..Default::default() }],
+                touch_points: vec![TouchPoint {
+                    x,
+                    y,
+                    ..Default::default()
+                }],
                 ..Default::default()
             })
             .await?;
 
         // Finger hold duration
-        human_sleep(timing.touch_hold_mean_ms, timing.touch_hold_stddev_ms).await;
+        human_sleep(TOUCH_HOLD_MEAN_MS, TOUCH_HOLD_STDDEV_MS).await;
 
         // Finger lifts
         self.cdp
@@ -501,11 +501,7 @@ impl Element {
             .await?;
 
         // Post-tap delay: wait for UI reaction before next action
-        human_sleep(
-            timing.post_click_mean_ms,
-            timing.post_click_stddev_ms,
-        )
-        .await;
+        human_sleep(POST_CLICK_MEAN_MS, POST_CLICK_STDDEV_MS).await;
 
         Ok(())
     }
@@ -518,41 +514,56 @@ impl Element {
     /// - Unmapped characters (emoji, symbols): simulated Ctrl+V paste
     ///
     /// All events are `isTrusted: true` with gaussian-distributed timing.
-    pub async fn type_text(&self, text: &str, timing: &HumanDelay) -> Result<()> {
+    pub async fn type_text(&self, text: &str) -> Result<()> {
+        let char_count = text.chars().count();
+        let (interval_mean, interval_stddev) = typing_speed(char_count);
+
         for ch in text.chars() {
             let seq = keyboard::abnt2_sequence(ch);
             let ch_str = ch.to_string();
 
             match seq {
-                KeySequence::Simple { key, code, shift, vk } => {
-                    self.dispatch_key_press(key, code, &ch_str, shift, vk, timing).await?;
+                KeySequence::Simple {
+                    key,
+                    code,
+                    shift,
+                    vk,
+                } => {
+                    self.dispatch_key_press(key, code, &ch_str, shift, vk)
+                        .await?;
                 }
                 KeySequence::DeadKey {
-                    dead_key, dead_code, dead_shift, dead_vk,
-                    base_key, base_code, base_shift, base_vk,
+                    dead_key,
+                    dead_code,
+                    dead_shift,
+                    dead_vk,
+                    base_key,
+                    base_code,
+                    base_shift,
+                    base_vk,
                 } => {
-                    // Dead key press (no text inserted)
-                    self.dispatch_dead_key(dead_key, dead_code, dead_shift, dead_vk, timing).await?;
+                    self.dispatch_dead_key(dead_key, dead_code, dead_shift, dead_vk)
+                        .await?;
 
-                    human_sleep(timing.key_interval_mean_ms, timing.key_interval_stddev_ms).await;
+                    human_sleep(interval_mean, interval_stddev).await;
 
-                    // Base key press (produces the composed character)
-                    self.dispatch_key_press(base_key, base_code, &ch_str, base_shift, base_vk, timing).await?;
+                    self.dispatch_key_press(base_key, base_code, &ch_str, base_shift, base_vk)
+                        .await?;
                 }
                 KeySequence::Paste => {
-                    self.dispatch_paste(&ch_str, timing).await?;
+                    self.dispatch_paste(&ch_str).await?;
                 }
             }
 
             // Inter-key delay
-            human_sleep(timing.key_interval_mean_ms, timing.key_interval_stddev_ms).await;
+            human_sleep(interval_mean, interval_stddev).await;
         }
         Ok(())
     }
 
     /// Presses a special key (e.g. `"Enter"`, `"Tab"`, `"Escape"`, `"Backspace"`)
     /// with human-like key hold timing.
-    pub async fn press_key(&self, key: &str, timing: &HumanDelay) -> Result<()> {
+    pub async fn press_key(&self, key: &str) -> Result<()> {
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
                 event_type: DispatchKeyEventType::KeyDown,
@@ -561,7 +572,7 @@ impl Element {
             })
             .await?;
 
-        human_sleep(timing.key_hold_mean_ms, timing.key_hold_stddev_ms).await;
+        human_sleep(KEY_HOLD_MEAN_MS, KEY_HOLD_STDDEV_MS).await;
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
@@ -582,7 +593,6 @@ impl Element {
         text: &str,
         shift: bool,
         _vk: i32,
-        timing: &HumanDelay,
     ) -> Result<()> {
         let modifiers = if shift { Some(8) } else { None };
 
@@ -597,7 +607,7 @@ impl Element {
             })
             .await?;
 
-        human_sleep(timing.key_hold_mean_ms, timing.key_hold_stddev_ms).await;
+        human_sleep(KEY_HOLD_MEAN_MS, KEY_HOLD_STDDEV_MS).await;
 
         // char (inserts the text)
         self.cdp
@@ -623,14 +633,7 @@ impl Element {
     }
 
     /// Dispatches a dead key press/release (no text inserted).
-    async fn dispatch_dead_key(
-        &self,
-        key: &str,
-        code: &str,
-        shift: bool,
-        _vk: i32,
-        timing: &HumanDelay,
-    ) -> Result<()> {
+    async fn dispatch_dead_key(&self, key: &str, code: &str, shift: bool, _vk: i32) -> Result<()> {
         let modifiers = if shift { Some(8) } else { None };
 
         self.cdp
@@ -643,7 +646,7 @@ impl Element {
             })
             .await?;
 
-        human_sleep(timing.key_hold_mean_ms, timing.key_hold_stddev_ms).await;
+        human_sleep(KEY_HOLD_MEAN_MS, KEY_HOLD_STDDEV_MS).await;
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
@@ -662,7 +665,7 @@ impl Element {
     ///
     /// Uses `Input.insertText` which directly inserts into the focused element,
     /// similar to how a paste operation works.
-    async fn dispatch_paste(&self, text: &str, _timing: &HumanDelay) -> Result<()> {
+    async fn dispatch_paste(&self, text: &str) -> Result<()> {
         self.cdp.input_insert_text(text).await
     }
 
@@ -716,7 +719,7 @@ impl Element {
     /// Simulates a human finger drag: touch near the bottom, move upward in
     /// several steps with gaussian-distributed timing, then release.
     /// `distance` is the total vertical pixels to drag.
-    pub async fn swipe_up(&self, distance: f64, timing: &HumanDelay) -> Result<()> {
+    pub async fn swipe_up(&self, distance: f64) -> Result<()> {
         let bm = self.box_model().await?;
         let q = &bm.content;
         if q.len() < 8 {
@@ -726,20 +729,24 @@ impl Element {
             });
         }
 
-        let cx = (q[0] + q[2]) / 2.0 + jitter_offset(timing.click_offset_max_px);
+        let cx = (q[0] + q[2]) / 2.0 + jitter_offset(CLICK_OFFSET_MAX_PX);
         let top_y = q[1];
         let bottom_y = q[5];
         let height = bottom_y - top_y;
 
         // Start near the bottom 75% of the element
-        let start_y = top_y + height * 0.75 + jitter_offset(timing.click_offset_max_px);
+        let start_y = top_y + height * 0.75 + jitter_offset(CLICK_OFFSET_MAX_PX);
         let end_y = (start_y - distance).max(top_y + 10.0);
 
         // Touch down
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
                 event_type: DispatchTouchEventType::TouchStart,
-                touch_points: vec![TouchPoint { x: cx, y: start_y, ..Default::default() }],
+                touch_points: vec![TouchPoint {
+                    x: cx,
+                    y: start_y,
+                    ..Default::default()
+                }],
                 ..Default::default()
             })
             .await?;
@@ -755,14 +762,18 @@ impl Element {
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
                     event_type: DispatchTouchEventType::TouchMove,
-                    touch_points: vec![TouchPoint { x: cx + jitter_offset(1.0), y, ..Default::default() }],
+                    touch_points: vec![TouchPoint {
+                        x: cx + jitter_offset(1.0),
+                        y,
+                        ..Default::default()
+                    }],
                     ..Default::default()
                 })
                 .await?;
         }
 
         // Release
-        human_sleep(timing.touch_hold_mean_ms, timing.touch_hold_stddev_ms).await;
+        human_sleep(TOUCH_HOLD_MEAN_MS, TOUCH_HOLD_STDDEV_MS).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
                 event_type: DispatchTouchEventType::TouchEnd,
@@ -778,7 +789,7 @@ impl Element {
     ///
     /// Opposite of [`swipe_up`](Self::swipe_up): touch near the top, drag
     /// downward. `distance` is the total vertical pixels to drag.
-    pub async fn swipe_down(&self, distance: f64, timing: &HumanDelay) -> Result<()> {
+    pub async fn swipe_down(&self, distance: f64) -> Result<()> {
         let bm = self.box_model().await?;
         let q = &bm.content;
         if q.len() < 8 {
@@ -788,19 +799,23 @@ impl Element {
             });
         }
 
-        let cx = (q[0] + q[2]) / 2.0 + jitter_offset(timing.click_offset_max_px);
+        let cx = (q[0] + q[2]) / 2.0 + jitter_offset(CLICK_OFFSET_MAX_PX);
         let top_y = q[1];
         let bottom_y = q[5];
         let height = bottom_y - top_y;
 
         // Start near the top 25% of the element
-        let start_y = top_y + height * 0.25 + jitter_offset(timing.click_offset_max_px);
+        let start_y = top_y + height * 0.25 + jitter_offset(CLICK_OFFSET_MAX_PX);
         let end_y = (start_y + distance).min(bottom_y - 10.0);
 
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
                 event_type: DispatchTouchEventType::TouchStart,
-                touch_points: vec![TouchPoint { x: cx, y: start_y, ..Default::default() }],
+                touch_points: vec![TouchPoint {
+                    x: cx,
+                    y: start_y,
+                    ..Default::default()
+                }],
                 ..Default::default()
             })
             .await?;
@@ -815,13 +830,17 @@ impl Element {
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
                     event_type: DispatchTouchEventType::TouchMove,
-                    touch_points: vec![TouchPoint { x: cx + jitter_offset(1.0), y, ..Default::default() }],
+                    touch_points: vec![TouchPoint {
+                        x: cx + jitter_offset(1.0),
+                        y,
+                        ..Default::default()
+                    }],
                     ..Default::default()
                 })
                 .await?;
         }
 
-        human_sleep(timing.touch_hold_mean_ms, timing.touch_hold_stddev_ms).await;
+        human_sleep(TOUCH_HOLD_MEAN_MS, TOUCH_HOLD_STDDEV_MS).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
                 event_type: DispatchTouchEventType::TouchEnd,

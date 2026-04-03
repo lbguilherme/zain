@@ -20,7 +20,11 @@ fn parse_date_ymd(val: &str) -> Result<String, &'static str> {
 }
 
 fn parse_text_array(val: &str) -> Result<String, &'static str> {
-    let items: Vec<&str> = val.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    let items: Vec<&str> = val
+        .split(',')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
     if items.is_empty() {
         return Ok("\\N".to_string());
     }

@@ -251,17 +251,35 @@ mod tests {
 
     #[test]
     fn basic_chars() {
-        assert!(matches!(abnt2_sequence('a'), KeySequence::Simple { shift: false, .. }));
-        assert!(matches!(abnt2_sequence('A'), KeySequence::Simple { shift: true, .. }));
-        assert!(matches!(abnt2_sequence('1'), KeySequence::Simple { shift: false, .. }));
-        assert!(matches!(abnt2_sequence('!'), KeySequence::Simple { shift: true, .. }));
+        assert!(matches!(
+            abnt2_sequence('a'),
+            KeySequence::Simple { shift: false, .. }
+        ));
+        assert!(matches!(
+            abnt2_sequence('A'),
+            KeySequence::Simple { shift: true, .. }
+        ));
+        assert!(matches!(
+            abnt2_sequence('1'),
+            KeySequence::Simple { shift: false, .. }
+        ));
+        assert!(matches!(
+            abnt2_sequence('!'),
+            KeySequence::Simple { shift: true, .. }
+        ));
         assert!(matches!(abnt2_sequence(' '), KeySequence::Simple { .. }));
     }
 
     #[test]
     fn cedilla_direct() {
-        assert!(matches!(abnt2_sequence('ç'), KeySequence::Simple { shift: false, .. }));
-        assert!(matches!(abnt2_sequence('Ç'), KeySequence::Simple { shift: true, .. }));
+        assert!(matches!(
+            abnt2_sequence('ç'),
+            KeySequence::Simple { shift: false, .. }
+        ));
+        assert!(matches!(
+            abnt2_sequence('Ç'),
+            KeySequence::Simple { shift: true, .. }
+        ));
     }
 
     #[test]

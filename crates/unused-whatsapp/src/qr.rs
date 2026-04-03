@@ -28,41 +28,43 @@ pub(crate) async fn extract_from_element(el: &Element) -> Result<String> {
 /// Decodes a QR code from PNG image bytes using rqrr.
 fn decode_qr(png_bytes: &[u8]) -> Result<String> {
     let decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
-    let mut reader = decoder.read_info().map_err(|e| WhatsappError::QrCodeDecode(e.to_string()))?;
-    let buf_size = reader.output_buffer_size()
+    let mut reader = decoder
+        .read_info()
+        .map_err(|e| WhatsappError::QrCodeDecode(e.to_string()))?;
+    let buf_size = reader
+        .output_buffer_size()
         .ok_or_else(|| WhatsappError::QrCodeDecode("unknown PNG output size".into()))?;
     let mut buf = vec![0u8; buf_size];
-    let info = reader.next_frame(&mut buf).map_err(|e| WhatsappError::QrCodeDecode(e.to_string()))?;
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| WhatsappError::QrCodeDecode(e.to_string()))?;
     let width = info.width as usize;
     let height = info.height as usize;
 
     // Convert to luma (grayscale) depending on color type.
     let luma: Vec<u8> = match info.color_type {
         png::ColorType::Grayscale => buf[..width * height].to_vec(),
-        png::ColorType::GrayscaleAlpha => {
-            buf[..width * height * 2]
-                .chunks_exact(2)
-                .map(|px| px[0])
-                .collect()
+        png::ColorType::GrayscaleAlpha => buf[..width * height * 2]
+            .chunks_exact(2)
+            .map(|px| px[0])
+            .collect(),
+        png::ColorType::Rgb => buf[..width * height * 3]
+            .chunks_exact(3)
+            .map(|px| ((px[0] as u32 * 299 + px[1] as u32 * 587 + px[2] as u32 * 114) / 1000) as u8)
+            .collect(),
+        png::ColorType::Rgba => buf[..width * height * 4]
+            .chunks_exact(4)
+            .map(|px| ((px[0] as u32 * 299 + px[1] as u32 * 587 + px[2] as u32 * 114) / 1000) as u8)
+            .collect(),
+        _ => {
+            return Err(WhatsappError::QrCodeDecode(
+                "unsupported PNG color type".into(),
+            ));
         }
-        png::ColorType::Rgb => {
-            buf[..width * height * 3]
-                .chunks_exact(3)
-                .map(|px| ((px[0] as u32 * 299 + px[1] as u32 * 587 + px[2] as u32 * 114) / 1000) as u8)
-                .collect()
-        }
-        png::ColorType::Rgba => {
-            buf[..width * height * 4]
-                .chunks_exact(4)
-                .map(|px| ((px[0] as u32 * 299 + px[1] as u32 * 587 + px[2] as u32 * 114) / 1000) as u8)
-                .collect()
-        }
-        _ => return Err(WhatsappError::QrCodeDecode("unsupported PNG color type".into())),
     };
 
-    let mut grid = rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| {
-        luma[y * width + x]
-    });
+    let mut grid =
+        rqrr::PreparedImage::prepare_from_greyscale(width, height, |x, y| luma[y * width + x]);
 
     let grids = grid.detect_grids();
     let grid = grids

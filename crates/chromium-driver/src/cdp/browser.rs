@@ -450,10 +450,8 @@ pub trait BrowserCommands {
     /// Set the behavior when downloading a file.
     ///
     /// CDP: `Browser.setDownloadBehavior`
-    async fn browser_set_download_behavior(
-        &self,
-        params: &SetDownloadBehaviorParams,
-    ) -> Result<()>;
+    async fn browser_set_download_behavior(&self, params: &SetDownloadBehaviorParams)
+    -> Result<()>;
 
     /// Cancel a download if in progress.
     ///
@@ -497,16 +495,16 @@ pub trait BrowserCommands {
     /// Get a Chrome histogram by name.
     ///
     /// CDP: `Browser.getHistogram`
-    async fn browser_get_histogram(&self, params: &GetHistogramParams)
-        -> Result<GetHistogramReturn>;
+    async fn browser_get_histogram(
+        &self,
+        params: &GetHistogramParams,
+    ) -> Result<GetHistogramReturn>;
 
     /// Get position and size of the browser window.
     ///
     /// CDP: `Browser.getWindowBounds`
-    async fn browser_get_window_bounds(
-        &self,
-        window_id: WindowId,
-    ) -> Result<GetWindowBoundsReturn>;
+    async fn browser_get_window_bounds(&self, window_id: WindowId)
+    -> Result<GetWindowBoundsReturn>;
 
     /// Get the browser window that contains the devtools target.
     ///
@@ -613,7 +611,8 @@ impl BrowserCommands for CdpSession {
     }
 
     async fn browser_get_version(&self) -> Result<GetVersionReturn> {
-        self.call("Browser.getVersion", &serde_json::json!({})).await
+        self.call("Browser.getVersion", &serde_json::json!({}))
+            .await
     }
 
     async fn browser_get_browser_command_line(&self) -> Result<GetBrowserCommandLineReturn> {

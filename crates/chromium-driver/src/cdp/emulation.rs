@@ -1216,8 +1216,11 @@ struct SetPrimaryScreenInternalParams<'a> {
 
 impl EmulationCommands for CdpSession {
     async fn emulation_clear_device_metrics_override(&self) -> Result<()> {
-        self.call_no_response("Emulation.clearDeviceMetricsOverride", &serde_json::json!({}))
-            .await
+        self.call_no_response(
+            "Emulation.clearDeviceMetricsOverride",
+            &serde_json::json!({}),
+        )
+        .await
     }
 
     async fn emulation_clear_geolocation_override(&self) -> Result<()> {
@@ -1281,8 +1284,11 @@ impl EmulationCommands for CdpSession {
     }
 
     async fn emulation_clear_device_posture_override(&self) -> Result<()> {
-        self.call_no_response("Emulation.clearDevicePostureOverride", &serde_json::json!({}))
-            .await
+        self.call_no_response(
+            "Emulation.clearDevicePostureOverride",
+            &serde_json::json!({}),
+        )
+        .await
     }
 
     async fn emulation_set_display_features_override(
@@ -1503,8 +1509,11 @@ impl EmulationCommands for CdpSession {
         difference: i64,
     ) -> Result<()> {
         let params = SetSmallViewportHeightDifferenceOverrideInternalParams { difference };
-        self.call_no_response("Emulation.setSmallViewportHeightDifferenceOverride", &params)
-            .await
+        self.call_no_response(
+            "Emulation.setSmallViewportHeightDifferenceOverride",
+            &params,
+        )
+        .await
     }
 
     async fn emulation_get_screen_infos(&self) -> Result<GetScreenInfosReturn> {

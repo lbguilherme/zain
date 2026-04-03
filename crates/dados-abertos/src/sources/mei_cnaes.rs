@@ -131,8 +131,6 @@ static TABLES: &[Table] = &[Table {
         Column::text("iss", "BOOLEAN NOT NULL"),
         Column::text("icms", "BOOLEAN NOT NULL"),
     ],
-    extra_ddl: &[
-        "CREATE INDEX ON \"{schema}\".\"ocupacoes\" (\"cnae_subclasse_id\")",
-    ],
+    extra_ddl: &["CREATE INDEX ON \"{schema}\".\"ocupacoes\" (\"cnae_subclasse_id\")"],
     has_headers: false,
 }];

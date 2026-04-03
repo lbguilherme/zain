@@ -1,9 +1,7 @@
 use std::time::Duration;
 
-use chromium_driver::dom::{Dom, HumanDelay};
-use chromium_driver::{launch, LaunchOptions};
-
-const FAST: HumanDelay = HumanDelay::INSTANT;
+use chromium_driver::dom::Dom;
+use chromium_driver::{LaunchOptions, launch};
 
 fn opts() -> LaunchOptions {
     LaunchOptions {
@@ -74,9 +72,7 @@ async fn try_query_selector_not_found() {
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
     page.enable().await.unwrap();
-    page.navigate("data:text/html,<div>hi</div>")
-        .await
-        .unwrap();
+    page.navigate("data:text/html,<div>hi</div>").await.unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let dom = Dom::enable(page.cdp()).await.unwrap();
@@ -96,15 +92,20 @@ async fn element_attributes() {
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
     page.enable().await.unwrap();
-    page.navigate(r#"data:text/html,<a id="link" href="https://example.com" class="btn primary">Click</a>"#)
-        .await
-        .unwrap();
+    page.navigate(
+        r#"data:text/html,<a id="link" href="https://example.com" class="btn primary">Click</a>"#,
+    )
+    .await
+    .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let dom = Dom::enable(page.cdp()).await.unwrap();
 
     let el = dom.query_selector("#link").await.unwrap();
-    assert_eq!(el.attribute("href").await.unwrap().unwrap(), "https://example.com");
+    assert_eq!(
+        el.attribute("href").await.unwrap().unwrap(),
+        "https://example.com"
+    );
     assert_eq!(el.attribute("class").await.unwrap().unwrap(), "btn primary");
     assert!(el.attribute("data-nope").await.unwrap().is_none());
 
@@ -123,9 +124,11 @@ async fn element_box_model_and_screenshot() {
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
     page.enable().await.unwrap();
-    page.navigate("data:text/html,<div id='box' style='width:100px;height:100px;background:red'></div>")
-        .await
-        .unwrap();
+    page.navigate(
+        "data:text/html,<div id='box' style='width:100px;height:100px;background:red'></div>",
+    )
+    .await
+    .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let dom = Dom::enable(page.cdp()).await.unwrap();
@@ -188,8 +191,8 @@ async fn click_and_type() {
     let dom = Dom::enable(page.cdp()).await.unwrap();
 
     let input = dom.query_selector("#inp").await.unwrap();
-    input.click(&FAST).await.unwrap();
-    input.type_text("hello", &FAST).await.unwrap();
+    input.click().await.unwrap();
+    input.type_text("hello").await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -217,8 +220,8 @@ async fn press_key_enter() {
     let dom = Dom::enable(page.cdp()).await.unwrap();
 
     let input = dom.query_selector("#inp").await.unwrap();
-    input.click(&FAST).await.unwrap();
-    input.press_key("Enter", &FAST).await.unwrap();
+    input.click().await.unwrap();
+    input.press_key("Enter").await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(100)).await;
 
@@ -246,8 +249,8 @@ async fn type_accented_chars() {
     let dom = Dom::enable(page.cdp()).await.unwrap();
 
     let input = dom.query_selector("#inp").await.unwrap();
-    input.click(&FAST).await.unwrap();
-    input.type_text("ação", &FAST).await.unwrap();
+    input.click().await.unwrap();
+    input.type_text("ação").await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -275,8 +278,8 @@ async fn type_emoji_via_paste() {
     let dom = Dom::enable(page.cdp()).await.unwrap();
 
     let input = dom.query_selector("#inp").await.unwrap();
-    input.click(&FAST).await.unwrap();
-    input.type_text("hi 🎉", &FAST).await.unwrap();
+    input.click().await.unwrap();
+    input.type_text("hi 🎉").await.unwrap();
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
