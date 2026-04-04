@@ -1,9 +1,14 @@
+use chrono::{DateTime, Utc};
 use cubos_sql::sql;
 use deadpool_postgres::{Config, Runtime};
 use tokio_postgres::NoTls;
 
 use whatsapp::client::WhapiClient;
 use whatsapp::types::Message;
+
+fn unix_to_utc(ts: i64) -> DateTime<Utc> {
+    DateTime::from_timestamp(ts, 0).unwrap_or_default()
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -59,7 +64,7 @@ async fn sync_all(pool: &deadpool_postgres::Pool, api: &WhapiClient) -> anyhow::
             }
 
             let chat_id = &chat.id;
-            let chat_timestamp = chat.timestamp;
+            let chat_timestamp = chat.timestamp.map(unix_to_utc);
 
             // Buscar timestamp salvo no banco
             let existing = sql!(
@@ -69,11 +74,11 @@ async fn sync_all(pool: &deadpool_postgres::Pool, api: &WhapiClient) -> anyhow::
             .fetch_optional()
             .await?;
 
-            let saved_ts: Option<i64> = existing.as_ref().and_then(|r| r.timestamp);
+            let saved_ts: Option<DateTime<Utc>> = existing.as_ref().and_then(|r| r.timestamp);
 
             let is_new = existing.is_none();
             let is_updated = !is_new
-                && match (chat_timestamp, saved_ts) {
+                && match (&chat_timestamp, &saved_ts) {
                     (Some(api_ts), Some(db_ts)) => api_ts > db_ts,
                     (Some(_), None) => true,
                     _ => false,
@@ -128,7 +133,8 @@ async fn sync_all(pool: &deadpool_postgres::Pool, api: &WhapiClient) -> anyhow::
                 "Sincronizando mensagens do chat"
             );
 
-            if let Err(e) = sync_messages(pool, api, chat_id, saved_ts).await {
+            let saved_unix = saved_ts.map(|ts| ts.timestamp());
+            if let Err(e) = sync_messages(pool, api, chat_id, saved_unix).await {
                 tracing::error!(chat_id, "Erro sincronizando mensagens: {e:#}");
             } else {
                 chats_synced += 1;
@@ -218,7 +224,7 @@ async fn save_message(pool: &deadpool_postgres::Pool, msg: &Message) -> anyhow::
     let from_number = msg.from.as_deref();
     let from_me = msg.from_me;
     let from_name = msg.from_name.as_deref();
-    let timestamp = msg.timestamp.map(|t| t as i64);
+    let timestamp = msg.timestamp.map(|t| unix_to_utc(t as i64));
     let source = msg.source.as_deref();
     let status = msg.status.as_deref();
     let text_body = msg.text_body();

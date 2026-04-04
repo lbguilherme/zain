@@ -6,7 +6,7 @@ use chrono::{Local, Timelike};
 use cubos_sql::sql;
 use deadpool_postgres::{Config, Runtime};
 use tokio_postgres::NoTls;
-use whatsapp::{WhatsAppClient, WhatsAppOptions};
+use unused_whatsapp::{WhatsAppClient, WhatsAppOptions};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -104,7 +104,7 @@ async fn run_account(
 }
 
 async fn maybe_sync_profile(
-    session: &whatsapp::WhatsAppSession,
+    session: &unused_whatsapp::WhatsAppSession,
     pool: &deadpool_postgres::Pool,
     account_id: uuid::Uuid,
     media_dir: &Path,
@@ -157,7 +157,7 @@ async fn maybe_sync_profile(
 }
 
 async fn sync_chats(
-    session: &whatsapp::WhatsAppSession,
+    session: &unused_whatsapp::WhatsAppSession,
     pool: &deadpool_postgres::Pool,
     account_id: uuid::Uuid,
     media_dir: &Path,
@@ -224,7 +224,7 @@ async fn sync_chats(
         // Messages are read in DOM order (oldest at top, newest at bottom).
         // We iterate in REVERSE (newest first) so the cutoff/dedup check works
         // correctly — we collect recent messages and stop when we hit old ones.
-        let mut all_new: Vec<whatsapp::RawMessage> = Vec::new();
+        let mut all_new: Vec<unused_whatsapp::RawMessage> = Vec::new();
         let mut seen_ids: HashSet<String> = HashSet::new();
         let mut stop = false;
         let mut no_new_rounds = 0;
@@ -412,7 +412,7 @@ async fn sync_chats(
 /// the first message gets `:00.000000`, the next `:00.000001`, etc.
 /// System messages without timestamps inherit from the previous message
 /// (or epoch if first).
-fn assign_ordered_timestamps(msgs: &mut [whatsapp::RawMessage]) {
+fn assign_ordered_timestamps(msgs: &mut [unused_whatsapp::RawMessage]) {
     let epoch = chrono::DateTime::from_timestamp(0, 0).unwrap().naive_utc();
     let mut last_ts = epoch;
 
