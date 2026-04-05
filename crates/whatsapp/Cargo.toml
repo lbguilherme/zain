@@ -8,7 +8,7 @@ cubos_sql = { path = "../../../cubos_rust_libs/cubos_sql/cubos_sql" }
 cubos_sql_core = { path = "../../../cubos_rust_libs/cubos_sql/cubos_sql_core" }
 deadpool-postgres = "0.14"
 tokio-postgres = "0.7"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "signal"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "signal", "net"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -17,7 +17,10 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 anyhow = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query"] }
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
 dotenvy = "0.15"
 
 [package.metadata.cubos_sql.database]
-migrations = "./migrations"
+migrations = "../../migrations"

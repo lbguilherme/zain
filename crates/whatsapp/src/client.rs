@@ -1,4 +1,5 @@
 use reqwest::Client;
+use serde::Deserialize;
 
 use crate::types::{ChatsList, MessagesList};
 
@@ -6,6 +7,21 @@ pub struct WhapiClient {
     http: Client,
     base_url: String,
     token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SendMessageResponse {
+    #[serde(default)]
+    message_id: Option<String>,
+    // whapi retorna "sent" com o id
+    #[serde(default)]
+    sent: Option<SendSent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SendSent {
+    #[serde(default)]
+    id: Option<String>,
 }
 
 impl WhapiClient {
@@ -76,5 +92,32 @@ impl WhapiClient {
             .json::<MessagesList>()
             .await?;
         Ok(resp)
+    }
+
+    /// Envia uma mensagem de texto para um chat. Retorna o ID da mensagem enviada.
+    pub async fn send_text(&self, chat_id: &str, body: &str) -> anyhow::Result<String> {
+        let payload = serde_json::json!({
+            "to": chat_id,
+            "body": body,
+        });
+
+        let resp = self
+            .http
+            .post(format!("{}/messages/text", self.base_url))
+            .bearer_auth(&self.token)
+            .json(&payload)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<SendMessageResponse>()
+            .await?;
+
+        let msg_id = resp
+            .sent
+            .and_then(|s| s.id)
+            .or(resp.message_id)
+            .unwrap_or_default();
+
+        Ok(msg_id)
     }
 }
