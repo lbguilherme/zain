@@ -49,6 +49,8 @@ async fn import_table(
             table.columns.iter().map(|c| c.normalize).collect();
         let table_name = table.name;
         let has_headers = table.has_headers;
+        let delimiter = table.delimiter;
+        let csv_filename = table.csv_filename.map(|s| s.to_string());
         let (sender, mut rx) = mpsc::channel::<String>(10_000);
 
         let zip_path_owned = zip_path.clone();
@@ -58,8 +60,10 @@ async fn import_table(
                 &zip_path_owned,
                 &normalizers,
                 has_headers,
+                delimiter,
                 sender,
                 &filename_owned,
+                csv_filename.as_deref(),
             )
         });
 
@@ -116,8 +120,10 @@ fn read_csv_from_zip(
     zip_path: &Path,
     normalizers: &[Option<NormalizeFn>],
     has_headers: bool,
+    delimiter: u8,
     sender: mpsc::Sender<String>,
     filename: &str,
+    csv_filename: Option<&str>,
 ) -> Result<()> {
     let file = std::fs::File::open(zip_path)
         .with_context(|| format!("falha ao abrir {}", zip_path.display()))?;
@@ -134,6 +140,13 @@ fn read_csv_from_zip(
         let mut csv_file = archive.by_index(i)?;
         let csv_name = csv_file.name().to_string();
 
+        if let Some(target) = csv_filename {
+            let basename = csv_name.rsplit('/').next().unwrap_or(&csv_name);
+            if !basename.eq_ignore_ascii_case(target) {
+                continue;
+            }
+        }
+
         let mut raw_bytes = Vec::new();
         csv_file
             .read_to_end(&mut raw_bytes)
@@ -145,7 +158,7 @@ fn read_csv_from_zip(
         }
 
         let mut reader = csv::ReaderBuilder::new()
-            .delimiter(b';')
+            .delimiter(delimiter)
             .has_headers(has_headers)
             .flexible(true)
             .from_reader(utf8.as_bytes());

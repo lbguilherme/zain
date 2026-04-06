@@ -272,6 +272,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "divisoes",
@@ -284,6 +286,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"divisoes\" (\"secao_id\")"],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "grupos",
@@ -296,6 +300,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"grupos\" (\"divisao_id\")"],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "classes",
@@ -309,6 +315,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"classes\" (\"grupo_id\")"],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "subclasses",
@@ -322,6 +330,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"subclasses\" (\"classe_id\")"],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "subclasse_atividades",
@@ -333,5 +343,7 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"subclasse_atividades\" (\"subclasse_id\")"],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
 ];

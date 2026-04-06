@@ -3,6 +3,10 @@ name = "dados-abertos"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.cubos_sql.database]
+migrations = "../../migrations"
+extra_schema_migrations = ["sql"]
+
 [dependencies]
 anyhow = "1"
 dotenvy = "0.15"

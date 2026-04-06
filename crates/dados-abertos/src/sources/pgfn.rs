@@ -177,6 +177,8 @@ static TABLES: &[Table] = &[
             "CREATE INDEX ON \"{schema}\".\"divida_ativa_geral\" (\"uf_devedor\")",
         ],
         has_headers: true,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "divida_previdenciaria",
@@ -189,6 +191,8 @@ static TABLES: &[Table] = &[
             "CREATE INDEX ON \"{schema}\".\"divida_previdenciaria\" (\"uf_devedor\")",
         ],
         has_headers: true,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "divida_fgts",
@@ -201,5 +205,7 @@ static TABLES: &[Table] = &[
             "CREATE INDEX ON \"{schema}\".\"divida_fgts\" (\"uf_devedor\")",
         ],
         has_headers: true,
+        delimiter: b';',
+        csv_filename: None,
     },
 ];

@@ -70,6 +70,11 @@ pub struct Table {
     pub extra_ddl: &'static [&'static str],
     /// CSVs dentro do zip têm linha de header
     pub has_headers: bool,
+    /// Delimitador do CSV (padrão: b';')
+    pub delimiter: u8,
+    /// Se definido, importa apenas o CSV com este nome dentro do zip.
+    /// Útil quando um único zip contém múltiplos CSVs (ex: CNO).
+    pub csv_filename: Option<&'static str>,
 }
 
 impl Table {

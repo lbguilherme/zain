@@ -10,6 +10,7 @@ use clap::Parser;
 
 use source::DataSource;
 use sources::cnae::CnaeSource;
+use sources::cno::CnoSource;
 use sources::cnpj::CnpjSource;
 use sources::mei_cnaes::MeiCnaesSource;
 use sources::pgfn::PgfnSource;
@@ -34,8 +35,7 @@ async fn main() -> Result<()> {
     dotenvy::dotenv_override().ok();
     let cli = Cli::parse();
 
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap();
+    let database_url = std::env::var("DATABASE_URL").unwrap();
 
     println!("=== Conectando ao banco de dados ===");
     let mut client = db::connect(&database_url).await?;
@@ -43,6 +43,7 @@ async fn main() -> Result<()> {
 
     let sources: Vec<Box<dyn DataSource>> = vec![
         Box::new(CnpjSource),
+        Box::new(CnoSource),
         Box::new(PgfnSource),
         Box::new(CnaeSource),
         Box::new(MeiCnaesSource),

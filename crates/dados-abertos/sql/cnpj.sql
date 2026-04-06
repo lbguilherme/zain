@@ -1,3 +1,4 @@
+
 CREATE SCHEMA IF NOT EXISTS cnpj;
 
 CREATE TABLE cnpj.cnaes (

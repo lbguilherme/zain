@@ -131,7 +131,7 @@ impl ChromiumProcess {
         let stderr = child.stderr.take().expect("stderr was piped");
         let mut reader = BufReader::new(stderr).lines();
 
-        let ws_url = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let ws_url = tokio::time::timeout(std::time::Duration::from_secs(30), async {
             while let Ok(Some(line)) = reader.next_line().await {
                 if let Some(url) = line.strip_prefix("DevTools listening on ") {
                     return Ok(url.trim().to_owned());
@@ -140,7 +140,7 @@ impl ChromiumProcess {
             Err(CdpError::BrowserCrashed)
         })
         .await
-        .map_err(|_| CdpError::Timeout(std::time::Duration::from_secs(10)))??;
+        .map_err(|_| CdpError::Timeout(std::time::Duration::from_secs(30)))??;
 
         Ok(Self {
             child,

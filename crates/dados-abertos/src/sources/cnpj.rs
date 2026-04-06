@@ -1,12 +1,11 @@
 use crate::schema::{Column, Table};
 use crate::source::{DataSource, Download};
 
-// https://arquivos.receitafederal.gov.br/index.php/s/YggdBLfdninEJX9
+// http://arquivos.receitafederal.gov.br/index.php/s/gn672Ad4CF8N6TK?dir=/Dados/Cadastros/CNPJ
 
 const DATA_VERSION: &str = "2026-03";
 const EXTRACTOR_VERSION: u32 = 3;
-const BASE_URL: &str =
-    "https://arquivos.receitafederal.gov.br/public.php/dav/files/YggdBLfdninEJX9/2026-03";
+const BASE_URL: &str = "http://arquivos.receitafederal.gov.br/index.php/s/gn672Ad4CF8N6TK?dir=/Dados/Cadastros/CNPJ/2026-03";
 
 fn parse_date_ymd(val: &str) -> Result<String, &'static str> {
     if val == "00000000" || val == "0" {
@@ -82,6 +81,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "motivos",
@@ -93,6 +94,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "municipios",
@@ -104,6 +107,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "naturezas",
@@ -115,6 +120,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "paises",
@@ -126,6 +133,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "qualificacoes",
@@ -137,6 +146,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     // Tabelas principais
     Table {
@@ -154,6 +165,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &[],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "estabelecimentos",
@@ -200,6 +213,8 @@ static TABLES: &[Table] = &[
             "CREATE INDEX ON \"{schema}\".\"estabelecimentos\" (\"uf\")",
         ],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "simples",
@@ -216,6 +231,8 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"simples\" (\"opcao_mei\")"],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
     Table {
         name: "socios",
@@ -236,5 +253,7 @@ static TABLES: &[Table] = &[
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"socios\" (\"cnpj_basico\")"],
         has_headers: false,
+        delimiter: b';',
+        csv_filename: None,
     },
 ];

@@ -86,7 +86,7 @@ async fn save_webhook(pool: &Pool, body: &serde_json::Value) -> anyhow::Result<u
 
     let id = sql!(
         pool,
-        "INSERT INTO whatsapp.webhooks (body)
+        "INSERT INTO whatsapp.webhook_events (body)
          VALUES ($body)
          RETURNING id"
     )

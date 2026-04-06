@@ -133,4 +133,6 @@ static TABLES: &[Table] = &[Table {
     ],
     extra_ddl: &["CREATE INDEX ON \"{schema}\".\"ocupacoes\" (\"cnae_subclasse_id\")"],
     has_headers: false,
+    delimiter: b';',
+    csv_filename: None,
 }];
