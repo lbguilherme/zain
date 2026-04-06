@@ -36,7 +36,7 @@ CREATE INDEX ON cno.obras (cep);
 
 CREATE TABLE cno.cnaes (
     cno CHAR(12) NOT NULL,
-    cnae INT NOT NULL,
+    cnae TEXT NOT NULL,
     data_registro DATE
 );
 
