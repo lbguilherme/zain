@@ -183,14 +183,14 @@ pub enum EvalResult {
     /// The result is a JS object with a remote reference.
     Object(JsObject),
     /// The result is a primitive (or null/undefined) with no remote reference.
-    Value(RemoteObject),
+    Value(Box<RemoteObject>),
 }
 
 impl EvalResult {
     fn from_remote(cdp: CdpSession, remote: RemoteObject) -> Self {
         match JsObject::new(cdp, remote.clone()) {
             Some(obj) => Self::Object(obj),
-            None => Self::Value(remote),
+            None => Self::Value(Box::new(remote)),
         }
     }
 

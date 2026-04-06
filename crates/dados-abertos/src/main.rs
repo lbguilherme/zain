@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://localhost/pjtei".into());
+        std::env::var("DATABASE_URL").unwrap();
 
     println!("=== Conectando ao banco de dados ===");
     let mut client = db::connect(&database_url).await?;

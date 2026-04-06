@@ -68,8 +68,8 @@ async fn handle_request(
 
     match save_webhook(pool, &body).await {
         Ok(id) => {
-            tracing::info!(id, "Webhook recebido");
-            Ok(Response::new(format!("{{\"ok\":true,\"id\":{id}}}")))
+            tracing::info!(%id, "Webhook recebido");
+            Ok(Response::new(format!("{{\"ok\":true,\"id\":\"{id}\"}}")))
         }
         Err(e) => {
             tracing::error!("Erro salvando webhook: {e:#}");
@@ -81,17 +81,17 @@ async fn handle_request(
     }
 }
 
-async fn save_webhook(pool: &Pool, body: &serde_json::Value) -> anyhow::Result<i64> {
+async fn save_webhook(pool: &Pool, body: &serde_json::Value) -> anyhow::Result<uuid::Uuid> {
     let body = body.clone();
 
-    let row = sql!(
+    let id = sql!(
         pool,
         "INSERT INTO whatsapp.webhooks (body)
          VALUES ($body)
          RETURNING id"
     )
-    .fetch_one()
+    .fetch_value()
     .await?;
 
-    Ok(row.id)
+    Ok(id)
 }

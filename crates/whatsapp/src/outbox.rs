@@ -33,7 +33,7 @@ async fn process_outbox_batch(pool: &Pool, api: &WhapiClient) -> anyhow::Result<
     .await?;
 
     for msg in &messages {
-        let msg_id: i64 = msg.id;
+        let msg_id: uuid::Uuid = msg.id;
         let chat_id: &str = &msg.chat_id;
         let content: &serde_json::Value = &msg.content;
 
@@ -41,18 +41,18 @@ async fn process_outbox_batch(pool: &Pool, api: &WhapiClient) -> anyhow::Result<
         let body = content.get("body").and_then(|v| v.as_str()).unwrap_or("");
 
         if body.is_empty() {
-            tracing::warn!(msg_id, "Mensagem do outbox sem body, pulando");
+            tracing::warn!(%msg_id, "Mensagem do outbox sem body, pulando");
             mark_failed(pool, msg_id, "body vazio").await?;
             continue;
         }
 
         match api.send_text(chat_id, body).await {
             Ok(sent_id) => {
-                tracing::info!(msg_id, %chat_id, "Mensagem enviada");
+                tracing::info!(%msg_id, %chat_id, "Mensagem enviada");
                 mark_sent(pool, msg_id, &sent_id).await?;
             }
             Err(e) => {
-                tracing::error!(msg_id, %chat_id, "Erro enviando mensagem: {e:#}");
+                tracing::error!(%msg_id, %chat_id, "Erro enviando mensagem: {e:#}");
                 mark_failed(pool, msg_id, &e.to_string()).await?;
             }
         }
@@ -61,7 +61,7 @@ async fn process_outbox_batch(pool: &Pool, api: &WhapiClient) -> anyhow::Result<
     Ok(())
 }
 
-async fn mark_sent(pool: &Pool, msg_id: i64, sent_message_id: &str) -> anyhow::Result<()> {
+async fn mark_sent(pool: &Pool, msg_id: uuid::Uuid, sent_message_id: &str) -> anyhow::Result<()> {
     let sent_message_id = Some(sent_message_id);
 
     sql!(
@@ -75,7 +75,7 @@ async fn mark_sent(pool: &Pool, msg_id: i64, sent_message_id: &str) -> anyhow::R
     Ok(())
 }
 
-async fn mark_failed(pool: &Pool, msg_id: i64, error: &str) -> anyhow::Result<()> {
+async fn mark_failed(pool: &Pool, msg_id: uuid::Uuid, error: &str) -> anyhow::Result<()> {
     let error = Some(error);
 
     sql!(

@@ -26,7 +26,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "cubos_sql",
- "cubos_sql_core",
  "deadpool-postgres",
  "dotenvy",
  "reqwest",
@@ -37,6 +36,7 @@ dependencies = [
  "tokio-postgres",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -615,11 +615,13 @@ dependencies = [
 [[package]]
 name = "cubos_sql"
 version = "0.1.0"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#298d6d8091b28a38d15195241dfa22b493e42c74"
 dependencies = [
  "chrono",
  "cubos_sql_core",
  "cubos_sql_macros",
  "deadpool-postgres",
+ "md5",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -632,6 +634,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_analyzer"
 version = "0.1.0"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#298d6d8091b28a38d15195241dfa22b493e42c74"
 dependencies = [
  "cubos_sql_core",
  "pg_query",
@@ -644,6 +647,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_core"
 version = "0.1.0"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#298d6d8091b28a38d15195241dfa22b493e42c74"
 dependencies = [
  "serde",
  "serde_json",
@@ -654,6 +658,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_macros"
 version = "0.1.0"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#298d6d8091b28a38d15195241dfa22b493e42c74"
 dependencies = [
  "cubos_sql_analyzer",
  "cubos_sql_core",
@@ -663,7 +668,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "syn 2.0.117",
 ]
 
@@ -1616,6 +1621,12 @@ dependencies = [
  "cfg-if",
  "digest 0.11.2",
 ]
+
+[[package]]
+name = "md5"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae960838283323069879657ca3de837e9f7bbb4c7bf6ea7f1b290d5e9476d2e0"
 
 [[package]]
 name = "memchr"
@@ -3492,7 +3503,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "cubos_sql",
- "cubos_sql_core",
  "deadpool-postgres",
  "dotenvy",
  "http-body-util",
@@ -3506,6 +3516,7 @@ dependencies = [
  "tokio-postgres",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

@@ -155,6 +155,7 @@ fn read_csv_from_zip(
                 result.with_context(|| format!("erro na linha {line_num} de {csv_name}"))?;
 
             let mut fields = Vec::with_capacity(col_count);
+            #[allow(clippy::needless_range_loop)]
             for j in 0..col_count {
                 let val = record.get(j).unwrap_or("").trim();
                 let normalized = if val.is_empty() {

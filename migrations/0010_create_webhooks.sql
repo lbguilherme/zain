@@ -1,5 +1,5 @@
 CREATE TABLE whatsapp.webhooks (
-    id          BIGSERIAL PRIMARY KEY,
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     body        JSONB NOT NULL,
     processed   BOOLEAN NOT NULL DEFAULT false,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()

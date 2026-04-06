@@ -1,5 +1,5 @@
 CREATE TABLE zain.clients (
-    id                          BIGSERIAL PRIMARY KEY,
+    id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     chat_id                     TEXT NOT NULL UNIQUE,
     phone                       TEXT,
     name                        TEXT,

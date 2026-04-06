@@ -1,6 +1,7 @@
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
 use serde_json::{Value, json};
+use uuid::Uuid;
 
 use crate::llm::{ChatMessage, OllamaClient};
 use crate::states::{self, ConversationMessage};
@@ -8,7 +9,7 @@ use crate::tools::{self, ToolResult};
 
 #[derive(Debug, Clone)]
 pub struct ClientRow {
-    pub id: i64,
+    pub id: Uuid,
     pub chat_id: String,
     pub phone: Option<String>,
     pub name: Option<String>,
@@ -31,7 +32,7 @@ pub async fn recover_crashed(pool: &Pool) -> anyhow::Result<()> {
     .await?;
 
     for row in &crashed {
-        let client_id: i64 = row.client_id;
+        let client_id: Uuid = row.client_id;
         sql!(
             pool,
             "UPDATE zain.clients SET needs_processing = true WHERE id = $client_id"
@@ -151,7 +152,7 @@ async fn run_workflow(
                 let tool_name = &call.function.name;
                 let tool_args = &call.function.arguments;
 
-                tracing::info!(client_id = client.id, tool_name, "Executando tool");
+                tracing::info!(client_id = %client.id, tool_name, "Executando tool");
 
                 if tool_name == "send_whatsapp_message" {
                     let msg_text = tool_args
@@ -195,7 +196,7 @@ async fn run_workflow(
             }
         } else {
             tracing::debug!(
-                client_id = client.id,
+                client_id = %client.id,
                 "LLM respondeu com texto cru (ignorado)"
             );
             break;
@@ -210,26 +211,26 @@ async fn run_workflow(
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-async fn create_execution(pool: &Pool, client: &ClientRow) -> anyhow::Result<i64> {
+async fn create_execution(pool: &Pool, client: &ClientRow) -> anyhow::Result<Uuid> {
     let client_id = client.id;
     let state_before = &client.state;
     let trigger_type = "message";
 
-    let row = sql!(
+    let id = sql!(
         pool,
         "INSERT INTO zain.executions (client_id, state_before, trigger_type)
          VALUES ($client_id, $state_before, $trigger_type)
          RETURNING id"
     )
-    .fetch_one()
+    .fetch_value()
     .await?;
 
-    Ok(row.id)
+    Ok(id)
 }
 
 async fn complete_execution(
     pool: &Pool,
-    exec_id: i64,
+    exec_id: Uuid,
     state_after: &str,
     llm_messages: &[ChatMessage],
 ) -> anyhow::Result<()> {
@@ -249,7 +250,7 @@ async fn complete_execution(
     Ok(())
 }
 
-async fn fail_execution(pool: &Pool, exec_id: i64, error: &str) -> anyhow::Result<()> {
+async fn fail_execution(pool: &Pool, exec_id: Uuid, error: &str) -> anyhow::Result<()> {
     let error = Some(error);
 
     sql!(
@@ -266,7 +267,7 @@ async fn fail_execution(pool: &Pool, exec_id: i64, error: &str) -> anyhow::Resul
 
 async fn save_client_state(
     pool: &Pool,
-    client_id: i64,
+    client_id: Uuid,
     state: &str,
     state_props: &Value,
     memory: &Value,

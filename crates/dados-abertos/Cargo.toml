@@ -10,7 +10,7 @@ bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 csv = "1"
-cubos_sql = { path = "../../../cubos_rust_libs/cubos_sql/cubos_sql", default-features = false }
+cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main", default-features = false }
 encoding_rs = "0.8"
 futures-util = "0.3"
 indicatif = "0.18"

@@ -1,6 +1,6 @@
 CREATE TABLE zain.executions (
-    id              BIGSERIAL PRIMARY KEY,
-    client_id       BIGINT NOT NULL REFERENCES zain.clients(id),
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id       UUID NOT NULL REFERENCES zain.clients(id),
     state_before    TEXT NOT NULL,
     state_after     TEXT,
     trigger_type    TEXT NOT NULL,

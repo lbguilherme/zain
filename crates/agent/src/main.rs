@@ -42,9 +42,9 @@ async fn main() -> anyhow::Result<()> {
                     let _permit = permit;
                     let client_id = client.id;
                     let chat_id = client.chat_id.clone();
-                    tracing::info!(client_id, %chat_id, "Processando cliente");
+                    tracing::info!(%client_id, %chat_id, "Processando cliente");
                     if let Err(e) = dispatch::process_client(&pool, &ollama, client).await {
-                        tracing::error!(client_id, "Erro processando cliente: {e:#}");
+                        tracing::error!(%client_id, "Erro processando cliente: {e:#}");
                     }
                 });
             }

@@ -13,10 +13,10 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "postgres://localhost/pjtei".into());
+        std::env::var("DATABASE_URL").unwrap();
     let whapi_token = std::env::var("WHAPI_TOKEN").expect("WHAPI_TOKEN não definido");
     let whapi_base_url =
-        std::env::var("WHAPI_BASE_URL").unwrap_or_else(|_| "https://gate.whapi.cloud".into());
+        std::env::var("WHAPI_BASE_URL").unwrap();
     let webhook_port: u16 = std::env::var("WEBHOOK_PORT")
         .unwrap_or_else(|_| "3100".into())
         .parse()?;

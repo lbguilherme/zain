@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cubos_sql = { path = "../../../cubos_rust_libs/cubos_sql/cubos_sql" }
-cubos_sql_core = { path = "../../../cubos_rust_libs/cubos_sql/cubos_sql_core" }
+cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main" }
 deadpool-postgres = "0.14"
 tokio-postgres = "0.7"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "signal", "net"] }
@@ -20,6 +19,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
+uuid = { version = "1", features = ["v4"] }
 dotenvy = "0.15"
 
 [package.metadata.cubos_sql.database]

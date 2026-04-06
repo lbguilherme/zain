@@ -1,5 +1,5 @@
 CREATE TABLE whatsapp.outbox (
-    id              BIGSERIAL PRIMARY KEY,
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     chat_id         TEXT NOT NULL,
     content_type    TEXT NOT NULL DEFAULT 'text',
     content         JSONB NOT NULL,

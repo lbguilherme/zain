@@ -15,12 +15,12 @@
           },
           {
             "type": "command",
-            "command": "out=$(cargo test 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
+            "command": "out=$(RUSTFLAGS=\"-D warnings\" cargo test 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
             "statusMessage": "Running cargo test..."
           },
           {
             "type": "command",
-            "command": "out=$(cargo clippy --fix --allow-dirty --allow-staged -- -D warnings 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
+            "command": "out=$(cargo clippy -- -D warnings 2>&1); e=$?; [ $e -ne 0 ] && echo \"$out\" >&2 && exit 2; exit 0",
             "statusMessage": "Running cargo clippy..."
           }
         ]
