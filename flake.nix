@@ -42,6 +42,8 @@
         cp -r ${cubos_sql_cache_agent} $sourceRoot/crates/agent/.cubos_sql
         cp -r ${cubos_sql_cache_dados_abertos} $sourceRoot/crates/dados-abertos/.cubos_sql
         cp -r ${cubos_sql_cache_whatsapp} $sourceRoot/crates/whatsapp/.cubos_sql
+        mkdir -p /build/cubos_rust_libs/cubos_sql
+        cp -r ${cubos_sql}/* /build/cubos_rust_libs/cubos_sql/
       '';
     };
   in {
