@@ -8,15 +8,18 @@
       url = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?ref=main";
       flake = false;
     };
+    cubos_sql_cache_agent = { url = "path:./crates/agent/.cubos_sql"; flake = false; };
+    cubos_sql_cache_dados_abertos = { url = "path:./crates/dados-abertos/.cubos_sql"; flake = false; };
+    cubos_sql_cache_whatsapp = { url = "path:./crates/whatsapp/.cubos_sql"; flake = false; };
   };
 
-  outputs = { self, nixpkgs, crane, cubos_sql, ... }: let
+  outputs = { self, nixpkgs, crane, cubos_sql, cubos_sql_cache_agent, cubos_sql_cache_dados_abertos, cubos_sql_cache_whatsapp, ... }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
     lib = pkgs.lib;
     craneLib = crane.mkLib pkgs;
 
-    src = craneLib.cleanCargoSource ./.;
+    src = ./.;
 
     cargoVendorDir = craneLib.vendorCargoDeps {
       inherit src;
@@ -28,25 +31,30 @@
         else drv;
     };
 
-    envFile = builtins.readFile ./.env;
-    parseEnv = text: lib.listToAttrs (lib.concatMap (line:
-      let m = builtins.match "([A-Za-z_][A-Za-z0-9_]*)=(.*)" line;
-      in if m != null then [{ name = builtins.elemAt m 0; value = builtins.elemAt m 1; }] else []
-    ) (lib.splitString "\n" text));
-    env = parseEnv envFile;
-
     whatsapp = craneLib.buildPackage {
       pname = "whatsapp";
       inherit src cargoVendorDir;
       cargoExtraArgs = "-p whatsapp";
-      nativeBuildInputs = with pkgs; [ pkg-config ];
+      LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+      nativeBuildInputs = with pkgs; [ pkg-config clang ];
       buildInputs = with pkgs; [ openssl ];
+      postUnpack = ''
+        cp -r ${cubos_sql_cache_agent} $sourceRoot/crates/agent/.cubos_sql
+        cp -r ${cubos_sql_cache_dados_abertos} $sourceRoot/crates/dados-abertos/.cubos_sql
+        cp -r ${cubos_sql_cache_whatsapp} $sourceRoot/crates/whatsapp/.cubos_sql
+      '';
     };
   in {
     packages.${system}.whatsapp = whatsapp;
 
     nixosModules.default = { config, pkgs, lib, ... }: {
       config = {
+        users.users.zain = {
+          isSystemUser = true;
+          group = "zain";
+        };
+        users.groups.zain = {};
+
         services.postgresql = {
           ensureDatabases = [ "zain" ];
           ensureUsers = [
@@ -63,12 +71,17 @@
           wants = [ "postgresql.service" ];
           wantedBy = [ "multi-user.target" ];
 
-          environment = env // {
+          environment = {
             DATABASE_URL = "postgresql:///zain?host=/run/postgresql";
+            WEBHOOK_PORT = "3100";
+            WHAPI_BASE_URL = "https://gate.whapi.cloud";
+            OLLAMA_URL = "http://localhost:11434";
+            OLLAMA_MODEL = "gemma4:26b-a4b-it-q4_K_M";
           };
 
           serviceConfig = {
             ExecStart = "${whatsapp}/bin/whatsapp";
+            EnvironmentFile = "/etc/zain.env";
             User = "zain";
             Restart = "always";
             RestartSec = 5;

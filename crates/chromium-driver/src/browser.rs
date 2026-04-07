@@ -75,6 +75,30 @@ impl BrowserEventStream {
         self.inner.try_recv().map(Self::parse)
     }
 
+    /// Waits for an event matching `predicate`, with a timeout.
+    ///
+    /// Returns the matching event, or `CdpError::Timeout` if the deadline
+    /// is reached. Non-matching events are discarded.
+    pub async fn wait_for(
+        &mut self,
+        predicate: impl Fn(&BrowserEvent) -> bool,
+        timeout: std::time::Duration,
+    ) -> crate::Result<BrowserEvent> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            match tokio::time::timeout_at(deadline, self.inner.recv()).await {
+                Ok(Some(raw)) => {
+                    let evt = Self::parse(raw);
+                    if predicate(&evt) {
+                        return Ok(evt);
+                    }
+                }
+                Ok(None) => return Err(crate::CdpError::ConnectionClosed),
+                Err(_) => return Err(crate::CdpError::Timeout(timeout)),
+            }
+        }
+    }
+
     fn parse(raw: crate::transport::CdpEvent) -> BrowserEvent {
         match raw.method.as_str() {
             "Target.targetCreated" => match serde_json::from_value(raw.params.clone()) {

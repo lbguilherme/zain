@@ -21,3 +21,4 @@ dotenvy = "0.15"
 
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
+analysis_mode = "static"

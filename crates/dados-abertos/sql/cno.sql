@@ -10,7 +10,7 @@ CREATE TABLE cno.obras (
     cno_vinculado CHAR(12),
     cep CHAR(8),
     ni_responsavel TEXT,
-    qualificacao_responsavel SMALLINT,
+    qualificacao_responsavel TEXT,
     nome TEXT,
     codigo_municipio INT,
     nome_municipio TEXT,
@@ -23,7 +23,7 @@ CREATE TABLE cno.obras (
     complemento TEXT,
     unidade_medida TEXT,
     area_total NUMERIC,
-    situacao SMALLINT,
+    situacao TEXT,
     data_situacao DATE,
     nome_empresarial TEXT,
     localizacao TEXT
@@ -48,7 +48,7 @@ CREATE TABLE cno.vinculos (
     data_inicio DATE,
     data_fim DATE,
     data_registro DATE,
-    qualificacao_contribuinte SMALLINT,
+    qualificacao_contribuinte TEXT,
     ni_responsavel TEXT
 );
 

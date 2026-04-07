@@ -5,3 +5,4 @@
 .env
 /dumps
 /.playwright-mcp
+/whapi-openapi.yaml

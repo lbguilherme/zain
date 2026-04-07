@@ -317,40 +317,29 @@ async fn browser_events_typed() {
 
     let mut events = browser.events();
 
+    let timeout = std::time::Duration::from_secs(5);
+
     // Create a target — should trigger TargetCreated
     let target = browser.create_page("about:blank").await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    let mut received = Vec::new();
-    while let Some(evt) = events.try_recv() {
-        received.push(evt);
-    }
-
-    let has_created = received
-        .iter()
-        .any(|e| matches!(e, chromium_driver::BrowserEvent::TargetCreated(_)));
-    assert!(
-        has_created,
-        "expected TargetCreated event, got: {:?}",
-        received
-    );
+    events
+        .wait_for(
+            |e| matches!(e, chromium_driver::BrowserEvent::TargetCreated(_)),
+            timeout,
+        )
+        .await
+        .expect("expected TargetCreated event");
 
     // Drop target — should trigger TargetDestroyed via RAII
     drop(target);
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    while let Some(evt) = events.try_recv() {
-        received.push(evt);
-    }
-
-    let has_destroyed = received
-        .iter()
-        .any(|e| matches!(e, chromium_driver::BrowserEvent::TargetDestroyed(_)));
-    assert!(
-        has_destroyed,
-        "expected TargetDestroyed event, got: {:?}",
-        received
-    );
+    events
+        .wait_for(
+            |e| matches!(e, chromium_driver::BrowserEvent::TargetDestroyed(_)),
+            timeout,
+        )
+        .await
+        .expect("expected TargetDestroyed event");
 
     browser.close().await.unwrap();
     process.wait().await.unwrap();

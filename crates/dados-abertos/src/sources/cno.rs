@@ -4,7 +4,7 @@ use crate::source::{DataSource, Download};
 // https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNO/
 
 const DATA_VERSION: &str = "2026-04-06";
-const EXTRACTOR_VERSION: u32 = 1;
+const EXTRACTOR_VERSION: u32 = 2;
 const ZIP_URL: &str = "https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNO/cno.zip";
 const ZIP_FILENAME: &str = "cno.zip";
 
@@ -18,6 +18,30 @@ fn parse_date(val: &str) -> Result<String, &'static str> {
         Ok(format!("{}-{}-{}", &val[0..4], &val[4..6], &val[6..8]))
     } else {
         Err("formato de data inválido")
+    }
+}
+
+fn parse_qualificacao(val: &str) -> Result<String, &'static str> {
+    match val {
+        "0053" => Ok("Pessoa Jurídica Construtora".to_string()),
+        "0057" => Ok("Dono da Obra".to_string()),
+        "0064" => Ok("Incorporador de Construção Civil".to_string()),
+        "0070" => Ok("Proprietário do Imóvel".to_string()),
+        "0109" => Ok("Consórcio".to_string()),
+        "0110" => Ok("Construção em nome coletivo".to_string()),
+        "0111" => Ok("Sociedade Líder de Consórcio".to_string()),
+        _ => Err("qualificação desconhecida"),
+    }
+}
+
+fn parse_situacao(val: &str) -> Result<String, &'static str> {
+    match val {
+        "01" => Ok("Nula".to_string()),
+        "02" => Ok("Ativa".to_string()),
+        "03" => Ok("Suspensa".to_string()),
+        "14" => Ok("Paralisada".to_string()),
+        "15" => Ok("Encerrada".to_string()),
+        _ => Err("situação desconhecida"),
     }
 }
 
@@ -59,7 +83,7 @@ static COLUMNS_CNO: &[Column] = &[
     Column::text("cno_vinculado", "CHAR(12)"),
     Column::text("cep", "CHAR(8)"),
     Column::text("ni_responsavel", "TEXT"),
-    Column::int("qualificacao_responsavel", "SMALLINT"),
+    Column::custom("qualificacao_responsavel", "TEXT", parse_qualificacao),
     Column::text("nome", "TEXT"),
     Column::int("codigo_municipio", "INT"),
     Column::text("nome_municipio", "TEXT"),
@@ -72,7 +96,7 @@ static COLUMNS_CNO: &[Column] = &[
     Column::text("complemento", "TEXT"),
     Column::text("unidade_medida", "TEXT"),
     Column::decimal("area_total", "NUMERIC"),
-    Column::int("situacao", "SMALLINT"),
+    Column::custom("situacao", "TEXT", parse_situacao),
     Column::date("data_situacao", parse_date),
     Column::text("nome_empresarial", "TEXT"),
     Column::text("localizacao", "TEXT"),
@@ -91,7 +115,7 @@ static COLUMNS_VINCULOS: &[Column] = &[
     Column::date("data_inicio", parse_date),
     Column::date("data_fim", parse_date),
     Column::date("data_registro", parse_date),
-    Column::int("qualificacao_contribuinte", "SMALLINT"),
+    Column::custom("qualificacao_contribuinte", "TEXT", parse_qualificacao),
     Column::text("ni_responsavel", "TEXT"),
 ];
 

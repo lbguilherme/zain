@@ -41,6 +41,30 @@ static LAUNCH_SEMAPHORE: std::sync::LazyLock<std::sync::Arc<tokio::sync::Semapho
         std::sync::Arc::new(tokio::sync::Semaphore::new(max))
     });
 
+/// Launch with automatic retries for transient browser crashes.
+pub async fn launch_with_retries(
+    opts_fn: impl Fn() -> LaunchOptions,
+    max_attempts: u32,
+) -> Result<(ChromiumProcess, Browser)> {
+    let mut last_err = None;
+    for attempt in 1..=max_attempts {
+        match launch(opts_fn()).await {
+            Ok(result) => return Ok(result),
+            Err(e @ CdpError::BrowserCrashed) => {
+                tracing::warn!(
+                    attempt,
+                    max_attempts,
+                    "Browser crashed on launch, retrying…"
+                );
+                last_err = Some(e);
+                tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_err.unwrap())
+}
+
 pub async fn launch(opts: LaunchOptions) -> Result<(ChromiumProcess, Browser)> {
     let permit = LAUNCH_SEMAPHORE
         .clone()

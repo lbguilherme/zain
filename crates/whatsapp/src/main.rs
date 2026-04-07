@@ -4,6 +4,7 @@ use deadpool_postgres::{Config, Runtime};
 use tokio_postgres::NoTls;
 
 use whatsapp::client::WhapiClient;
+use whatsapp::event_processor;
 use whatsapp::outbox;
 use whatsapp::webhook;
 
@@ -26,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     let api = WhapiClient::new(&whapi_base_url, &whapi_token);
     let addr = ([0, 0, 0, 0], webhook_port).into();
 
-    tracing::info!("Iniciando webhook server + outbox loop...");
+    tracing::info!("Iniciando webhook server + outbox loop + event processor...");
 
     tokio::select! {
         r = webhook::webhook_server(pool.clone(), addr) => {
@@ -35,6 +36,10 @@ async fn main() -> anyhow::Result<()> {
         }
         r = outbox::outbox_loop(&pool, &api) => {
             tracing::error!("outbox_loop terminou: {r:?}");
+            r
+        }
+        r = event_processor::event_processor_loop(&pool) => {
+            tracing::error!("event_processor terminou: {r:?}");
             r
         }
     }

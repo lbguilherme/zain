@@ -107,6 +107,8 @@ impl ChromiumProcess {
 
         if opts.headless {
             args.push("--headless=new".into());
+            args.push("--disable-gpu".into());
+            args.push("--disable-dev-shm-usage".into());
         }
 
         let temp_user_data_dir = if let Some(ref dir) = opts.user_data_dir {

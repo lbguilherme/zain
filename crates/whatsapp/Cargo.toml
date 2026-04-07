@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main" }
 deadpool-postgres = "0.14"
-tokio-postgres = "0.7"
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "signal", "net"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -24,3 +24,21 @@ dotenvy = "0.15"
 
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
+analysis_mode = "static"
+
+[package.metadata.cubos_sql.domains]
+"whatsapp.image_content" = "crate::domains::ImageContent"
+"whatsapp.video_content" = "crate::domains::VideoContent"
+"whatsapp.audio_content" = "crate::domains::AudioContent"
+"whatsapp.voice_content" = "crate::domains::VoiceContent"
+"whatsapp.document_content" = "crate::domains::DocumentContent"
+"whatsapp.sticker_content" = "crate::domains::StickerContent"
+"whatsapp.location_content" = "crate::domains::LocationContent"
+"whatsapp.live_location_content" = "crate::domains::LiveLocationContent"
+"whatsapp.contact_msg_content" = "crate::domains::ContactMsgContent"
+"whatsapp.contact_list_content" = "crate::domains::ContactListContent"
+"whatsapp.link_preview_content" = "crate::domains::LinkPreviewContent"
+"whatsapp.message_context" = "crate::domains::MessageContext"
+"whatsapp.message_action" = "crate::domains::MessageAction"
+"whatsapp.health_data" = "crate::domains::HealthData"
+"whatsapp.qr_data" = "crate::domains::QrData"
