@@ -71,6 +71,14 @@ impl ChatMessage {
         }
     }
 
+    pub fn assistant(content: String) -> Self {
+        Self {
+            role: "assistant".into(),
+            content,
+            tool_calls: None,
+        }
+    }
+
     pub fn assistant_tool_calls(calls: &[ToolCall]) -> Self {
         Self {
             role: "assistant".into(),

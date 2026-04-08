@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
 use serde_json::{Value, json};
@@ -16,6 +17,7 @@ pub struct ClientRow {
     pub state: String,
     pub state_props: Value,
     pub memory: Value,
+    pub last_whatsapp_message_processed_at: Option<DateTime<Utc>>,
 }
 
 // ── Recovery ───────────────────────────────────────────────────────────
@@ -62,7 +64,8 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
              FOR UPDATE SKIP LOCKED
              LIMIT 1
          )
-         RETURNING id, chat_id, phone, name, state, state_props, memory"
+         RETURNING id, chat_id, phone, name, state, state_props, memory,
+                   last_whatsapp_message_processed_at"
     )
     .fetch_optional()
     .await?;
@@ -75,6 +78,7 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
         state: r.state,
         state_props: r.state_props,
         memory: r.memory,
+        last_whatsapp_message_processed_at: r.last_whatsapp_message_processed_at,
     }))
 }
 
@@ -83,26 +87,70 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
 pub async fn process_client(
     pool: &Pool,
     ollama: &OllamaClient,
-    client: ClientRow,
+    mut client: ClientRow,
 ) -> anyhow::Result<()> {
-    let exec_id = create_execution(pool, &client).await?;
+    loop {
+        let (history, max_ts) = fetch_history(pool, &client.chat_id).await?;
 
-    let result = run_workflow(pool, ollama, &client).await;
+        // Se não há mensagens novas desde o último processamento, nada a fazer
+        let has_new = match (max_ts, client.last_whatsapp_message_processed_at) {
+            (Some(latest), Some(processed)) => latest > processed,
+            (Some(_), None) => true,
+            _ => false,
+        };
 
-    match result {
-        Ok((final_state, llm_log)) => {
-            complete_execution(pool, exec_id, &final_state, &llm_log).await?;
+        if !has_new {
+            tracing::debug!(client_id = %client.id, "Sem mensagens novas, pulando");
+            break;
         }
-        Err(e) => {
-            fail_execution(pool, exec_id, &e.to_string()).await?;
-            let client_id = client.id;
-            sql!(
-                pool,
-                "UPDATE zain.clients SET needs_processing = true WHERE id = $client_id"
-            )
-            .execute()
-            .await?;
-            return Err(e);
+
+        // Extrair apenas as novas mensagens para informar o LLM
+        let new_messages: Vec<&ConversationMessage> = history
+            .iter()
+            .filter(|m| {
+                if let (Some(ts), Some(processed)) =
+                    (m.timestamp, client.last_whatsapp_message_processed_at)
+                {
+                    ts > processed
+                } else {
+                    // Se nunca processou, todas são novas
+                    client.last_whatsapp_message_processed_at.is_none()
+                }
+            })
+            .collect();
+
+        let new_count = new_messages.len();
+        let new_summary: String = new_messages
+            .iter()
+            .filter(|m| !m.from_me)
+            .map(|m| m.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let exec_id = create_execution(pool, &client).await?;
+
+        let result = run_workflow(pool, ollama, &client, &history, new_count, &new_summary).await;
+
+        match result {
+            Ok((final_state, llm_log)) => {
+                complete_execution(pool, exec_id, &final_state, &llm_log).await?;
+                client.state = final_state;
+                if let Some(ts) = max_ts {
+                    update_last_processed(pool, client.id, ts).await?;
+                    client.last_whatsapp_message_processed_at = Some(ts);
+                }
+            }
+            Err(e) => {
+                fail_execution(pool, exec_id, &e.to_string()).await?;
+                let client_id = client.id;
+                sql!(
+                    pool,
+                    "UPDATE zain.clients SET needs_processing = true WHERE id = $client_id"
+                )
+                .execute()
+                .await?;
+                return Err(e);
+            }
         }
     }
 
@@ -113,11 +161,11 @@ async fn run_workflow(
     pool: &Pool,
     ollama: &OllamaClient,
     client: &ClientRow,
+    history: &[ConversationMessage],
+    new_message_count: usize,
+    new_messages_summary: &str,
 ) -> anyhow::Result<(String, Vec<ChatMessage>)> {
     let handler = states::get_handler(&client.state);
-
-    // TODO: buscar webhooks não processados e extrair mensagens
-    let history: Vec<ConversationMessage> = vec![];
 
     // Montar tools: estado-específicas + send_whatsapp_message (global)
     let mut state_tools = handler.tool_definitions();
@@ -125,20 +173,23 @@ async fn run_workflow(
     let tools_json: Vec<Value> = state_tools.iter().map(|t| t.to_ollama_json()).collect();
 
     // System prompt com histórico embutido
-    let system_prompt = handler.system_prompt(client, &history);
+    let system_prompt = handler.system_prompt(client, history);
 
-    // Única mensagem do "user" é um trigger para o LLM agir
+    // User message informa o que motivou a execução
+    let user_msg = format!(
+        "O cliente enviou {new_message_count} nova(s) mensagem(ns):\n\n{new_messages_summary}\n\n\
+         Responda ao cliente usando send_whatsapp_message.",
+    );
+
     let mut messages = vec![
         ChatMessage::system(system_prompt),
-        ChatMessage::user(
-            "Processe as mensagens pendentes do cliente e responda usando send_whatsapp_message."
-                .into(),
-        ),
+        ChatMessage::user(user_msg),
     ];
 
     let mut current_state = client.state.clone();
     let mut state_props = client.state_props.clone();
     let mut memory = client.memory.clone();
+    let mut sent_message = false;
 
     // Loop de interação com o LLM (tool calls iterativas)
     let max_iterations = 10;
@@ -161,6 +212,7 @@ async fn run_workflow(
                         .unwrap_or("");
                     if !msg_text.is_empty() {
                         write_outbox(pool, &client.chat_id, msg_text).await?;
+                        sent_message = true;
                     }
                     messages.push(ChatMessage::tool(
                         json!({ "status": "ok", "mensagem_enviada": true }).to_string(),
@@ -195,10 +247,21 @@ async fn run_workflow(
                 }
             }
         } else {
-            tracing::debug!(
-                client_id = %client.id,
-                "LLM respondeu com texto cru (ignorado)"
-            );
+            // LLM respondeu com texto sem chamar tools
+            if !sent_message {
+                // Nunca chamou send_whatsapp_message — orientar a usar a tool
+                tracing::warn!(
+                    client_id = %client.id,
+                    "LLM respondeu texto sem usar send_whatsapp_message, re-orientando"
+                );
+                messages.push(ChatMessage::assistant(response.message.content.clone()));
+                messages.push(ChatMessage::user(
+                    "Você não pode responder com texto diretamente. \
+                     Use a ferramenta send_whatsapp_message para enviar sua resposta ao cliente."
+                        .into(),
+                ));
+                continue;
+            }
             break;
         }
     }
@@ -279,6 +342,60 @@ async fn save_client_state(
         pool,
         "UPDATE zain.clients
          SET state = $state, state_props = $state_props, memory = $memory, updated_at = now()
+         WHERE id = $client_id"
+    )
+    .execute()
+    .await?;
+
+    Ok(())
+}
+
+async fn fetch_history(
+    pool: &Pool,
+    chat_id: &str,
+) -> anyhow::Result<(Vec<ConversationMessage>, Option<DateTime<Utc>>)> {
+    let rows = sql!(
+        pool,
+        "SELECT from_me, text_body, \"timestamp\"
+         FROM whatsapp.messages
+         WHERE chat_id = $chat_id
+         ORDER BY \"timestamp\" DESC
+         LIMIT 60"
+    )
+    .fetch_all()
+    .await?;
+
+    let mut messages = Vec::new();
+    let mut total_chars = 0usize;
+    let max_ts: Option<DateTime<Utc>> = rows.first().map(|r| r.timestamp);
+
+    for row in &rows {
+        let text: String = row.text_body.clone().unwrap_or_default();
+        total_chars += text.len();
+        if total_chars > 10_000 && !messages.is_empty() {
+            break;
+        }
+        messages.push(ConversationMessage {
+            from_me: row.from_me,
+            text,
+            timestamp: Some(row.timestamp),
+        });
+    }
+
+    messages.reverse();
+    Ok((messages, max_ts))
+}
+
+async fn update_last_processed(
+    pool: &Pool,
+    client_id: Uuid,
+    ts: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let ts = Some(ts);
+    sql!(
+        pool,
+        "UPDATE zain.clients
+         SET last_whatsapp_message_processed_at = $ts, updated_at = now()
          WHERE id = $client_id"
     )
     .execute()

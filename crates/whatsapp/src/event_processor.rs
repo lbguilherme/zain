@@ -570,8 +570,13 @@ async fn process_event(tx: &Transaction<'_>, body: &serde_json::Value) -> anyhow
                 let recipient_id = s.recipient_id.as_deref();
                 let viewer_id = s.viewer_id.as_deref();
                 let timestamp = match &s.timestamp {
-                    serde_json::Value::String(s) => Some(s.clone()),
-                    serde_json::Value::Number(n) => Some(n.to_string()),
+                    serde_json::Value::String(s) => s
+                        .parse::<f64>()
+                        .ok()
+                        .and_then(|t| chrono::DateTime::from_timestamp(t as i64, 0)),
+                    serde_json::Value::Number(n) => n
+                        .as_f64()
+                        .and_then(|t| chrono::DateTime::from_timestamp(t as i64, 0)),
                     _ => None,
                 };
                 sql!(
@@ -632,12 +637,12 @@ async fn process_event(tx: &Transaction<'_>, body: &serde_json::Value) -> anyhow
                     "UPDATE whatsapp.chats SET
                         name = CASE WHEN $after ? 'name' THEN $after->>'name' ELSE name END,
                         chat_type = CASE WHEN $after ? 'type' THEN $after->>'type' ELSE chat_type END,
-                        \"timestamp\" = CASE WHEN $after ? 'timestamp' THEN ($after->>'timestamp')::bigint ELSE \"timestamp\" END,
+                        \"timestamp\" = CASE WHEN $after ? 'timestamp' THEN to_timestamp(($after->>'timestamp')::float8) ELSE \"timestamp\" END,
                         chat_pic = CASE WHEN $after ? 'chat_pic' THEN $after->>'chat_pic' ELSE chat_pic END,
                         chat_pic_full = CASE WHEN $after ? 'chat_pic_full' THEN $after->>'chat_pic_full' ELSE chat_pic_full END,
                         pin = CASE WHEN $after ? 'pin' THEN ($after->>'pin')::boolean ELSE pin END,
                         mute = CASE WHEN $after ? 'mute' THEN ($after->>'mute')::boolean ELSE mute END,
-                        mute_until = CASE WHEN $after ? 'mute_until' THEN ($after->>'mute_until')::bigint ELSE mute_until END,
+                        mute_until = CASE WHEN $after ? 'mute_until' THEN to_timestamp(($after->>'mute_until')::float8) ELSE mute_until END,
                         archive = CASE WHEN $after ? 'archive' THEN ($after->>'archive')::boolean ELSE archive END,
                         unread = CASE WHEN $after ? 'unread' THEN ($after->>'unread')::integer ELSE unread END,
                         unread_mention = CASE WHEN $after ? 'unread_mention' THEN ($after->>'unread_mention')::boolean ELSE unread_mention END,
@@ -902,7 +907,7 @@ async fn upsert_message(
     let from_me = msg.from_me;
     let from_name = msg.from_name.as_deref();
     let source = msg.source.as_deref();
-    let timestamp = msg.timestamp;
+    let timestamp = chrono::DateTime::from_timestamp(msg.timestamp, 0).unwrap_or_default();
     let device_id = msg.device_id;
     let status = msg.status.as_deref();
     let text_body = msg.text.as_ref().map(|t| t.body.as_str());
@@ -988,6 +993,25 @@ async fn upsert_message(
     .await
     .context(format!("Upsert mensagem {id}"))?;
 
+    // Sinalizar agent para processar o cliente se recebeu mensagem do contato
+    if !from_me {
+        sql!(
+            tx,
+            "UPDATE zain.clients
+             SET needs_processing = true, updated_at = now()
+             WHERE chat_id = $chat_id
+               AND needs_processing = false
+               AND id = (
+                   SELECT id FROM zain.clients
+                   WHERE chat_id = $chat_id AND needs_processing = false
+                   FOR UPDATE SKIP LOCKED
+                   LIMIT 1
+               )"
+        )
+        .execute()
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -1001,12 +1025,16 @@ async fn upsert_chat(
     let id = &chat.id;
     let name = chat.name.as_deref();
     let chat_type = &chat.chat_type;
-    let timestamp = chat.timestamp;
+    let timestamp = chat
+        .timestamp
+        .and_then(|t| chrono::DateTime::from_timestamp(t, 0));
     let chat_pic = chat.chat_pic.as_deref();
     let chat_pic_full = chat.chat_pic_full.as_deref();
     let pin = chat.pin;
     let mute = chat.mute;
-    let mute_until = chat.mute_until;
+    let mute_until = chat
+        .mute_until
+        .and_then(|t| chrono::DateTime::from_timestamp(t, 0));
     let archive = chat.archive;
     let unread = chat.unread;
     let unread_mention = chat.unread_mention;

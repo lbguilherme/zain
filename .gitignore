@@ -6,3 +6,4 @@
 /dumps
 /.playwright-mcp
 /whapi-openapi.yaml
+/dist
