@@ -1,9 +1,8 @@
 use serde_json::{Value, json};
 
-use crate::dispatch::ClientRow;
 use crate::tools::{ToolDef, ToolResult};
 
-use super::{ConversationMessage, StateHandler, format_history};
+use super::StateHandler;
 
 /// Handler para leads recusados (ex: CNPJ não é MEI).
 /// Responde educadamente que só atendemos MEI e que a pessoa pode voltar
@@ -11,17 +10,8 @@ use super::{ConversationMessage, StateHandler, format_history};
 pub struct RecusadoHandler;
 
 impl StateHandler for RecusadoHandler {
-    fn system_prompt(&self, client: &ClientRow, history: &[ConversationMessage]) -> String {
-        let props = serde_json::to_string_pretty(&client.state_props).unwrap_or_default();
-        let memory = serde_json::to_string_pretty(&client.memory).unwrap_or_default();
-        let history_text = format_history(history);
-        let contact_name = client.name.as_deref().unwrap_or("(desconhecido)");
-
-        format!(
-            r#"Você é a Zain. Esta pessoa foi anteriormente identificada como não-MEI e a gente não pode atender por enquanto (a Zain só cuida de MEI).
-
-## Com quem você está falando
-- Nome no WhatsApp: {contact_name}
+    fn state_prompt(&self) -> String {
+        r#"Você é a Zain. Esta pessoa foi anteriormente identificada como não-MEI e a gente não pode atender por enquanto (a Zain só cuida de MEI).
 
 ## Seu objetivo neste estado (RECUSADO)
 A pessoa já foi avisada uma vez que a gente só atende MEI. Se ela mandar mensagem de novo, você precisa:
@@ -40,21 +30,10 @@ Nada de insistir, nada de oferecer nada que a gente não pode fazer. É uma conv
 ## Como mandar mensagem
 A ÚNICA forma de falar com o cliente é chamando a ferramenta `send_whatsapp_message`. Depois chama `done()` pra encerrar o turno.
 
-## Dados do cliente
-
-Props (inclui motivo da recusa):
-{props}
-
-Memória:
-{memory}
-
-## Histórico da conversa
-{history_text}
-
 ---
 
 Responda APENAS em português brasileiro. Mande UMA mensagem curta via `send_whatsapp_message` e chame `done()`."#
-        )
+            .into()
     }
 
     fn tool_definitions(&self) -> Vec<ToolDef> {

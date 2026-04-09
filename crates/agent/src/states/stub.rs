@@ -1,9 +1,8 @@
 use serde_json::{Value, json};
 
-use crate::dispatch::ClientRow;
 use crate::tools::{ToolDef, ToolResult};
 
-use super::{ConversationMessage, StateHandler, format_history};
+use super::StateHandler;
 
 /// Handler genérico para estados ainda não implementados.
 pub struct StubHandler {
@@ -11,22 +10,12 @@ pub struct StubHandler {
 }
 
 impl StateHandler for StubHandler {
-    fn system_prompt(&self, _client: &ClientRow, history: &[ConversationMessage]) -> String {
-        let history_text = format_history(history);
-
+    fn state_prompt(&self) -> String {
         format!(
-            r#"Você é a Zain Gestão. O cliente está no estado "{state}" que ainda está em fase de implementação.
-
-IMPORTANTE — Como se comunicar:
-- A ÚNICA forma de falar com o cliente é usando a ferramenta send_whatsapp_message.
-- Quando terminar de agir, chame done() para encerrar.
+            r#"O cliente está no estado "{state}" que ainda está em fase de implementação.
 
 Informe educadamente que esse fluxo ainda não está disponível e que a equipe está trabalhando nisso.
-Peça desculpas pela inconveniência e diga que em breve estará funcionando.
-Responda em português brasileiro, de forma curta e simpática.
-
-Histórico da conversa no WhatsApp:
-{history_text}"#,
+Peça desculpas pela inconveniência e diga que em breve estará funcionando."#,
             state = self.state
         )
     }

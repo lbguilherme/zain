@@ -1,12 +1,7 @@
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub struct OllamaClient {
-    http: Client,
-    base_url: String,
-    model: String,
-}
+use crate::OllamaClient;
 
 // ── Request types ──────────────────────────────────────────────────────
 
@@ -91,21 +86,14 @@ impl ChatMessage {
 // ── Client impl ────────────────────────────────────────────────────────
 
 impl OllamaClient {
-    pub fn new(base_url: &str, model: &str) -> Self {
-        Self {
-            http: Client::new(),
-            base_url: base_url.trim_end_matches('/').to_owned(),
-            model: model.to_owned(),
-        }
-    }
-
     pub async fn chat(
         &self,
+        model: &str,
         messages: &[ChatMessage],
         tools: &[Value],
     ) -> anyhow::Result<ChatResponse> {
         let mut body = serde_json::json!({
-            "model": self.model,
+            "model": model,
             "messages": messages,
             "stream": false,
         });
