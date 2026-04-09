@@ -9,17 +9,17 @@ pub struct WhapiClient {
     token: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct SendMessageResponse {
     #[serde(default)]
-    message_id: Option<String>,
-    // whapi retorna "sent" com o id
+    sent: bool,
     #[serde(default)]
-    sent: Option<SendSent>,
+    message: Option<SendMessageData>,
 }
 
 #[derive(Debug, Deserialize)]
-struct SendSent {
+struct SendMessageData {
     #[serde(default)]
     id: Option<String>,
 }
@@ -112,11 +112,7 @@ impl WhapiClient {
             .json::<SendMessageResponse>()
             .await?;
 
-        let msg_id = resp
-            .sent
-            .and_then(|s| s.id)
-            .or(resp.message_id)
-            .unwrap_or_default();
+        let msg_id = resp.message.and_then(|m| m.id).unwrap_or_default();
 
         Ok(msg_id)
     }

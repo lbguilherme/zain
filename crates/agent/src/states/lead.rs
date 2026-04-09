@@ -12,9 +12,15 @@ impl StateHandler for LeadHandler {
         let props = serde_json::to_string_pretty(&client.state_props).unwrap_or_default();
         let memory = serde_json::to_string_pretty(&client.memory).unwrap_or_default();
         let history_text = format_history(history);
+        let contact_name = client.name.as_deref().unwrap_or("(desconhecido)");
+        let contact_phone = client.phone.as_deref().unwrap_or("(desconhecido)");
 
         format!(
             r#"Você é a Zain Gestão, uma assistente de gestão de MEI que funciona 100% pelo WhatsApp.
+
+Informações do contato:
+- Nome no WhatsApp: {contact_name}
+- Telefone: {contact_phone}
 
 Você está conversando com uma pessoa que acabou de entrar em contato. Seu objetivo é:
 1. Acolher a pessoa com simpatia e tirar dúvidas sobre o serviço
@@ -29,10 +35,10 @@ Sobre o serviço Zain Gestão:
 - Proativo: a Zain lembra do DAS, da DASN, monitora o teto de faturamento
 
 IMPORTANTE — Como se comunicar:
-- Você NÃO pode responder com texto diretamente. Sua saída de texto é ignorada.
 - A ÚNICA forma de falar com o cliente é usando a ferramenta send_whatsapp_message.
 - Você pode chamar múltiplas ferramentas na mesma resposta (ex: salvar dados E responder).
-- Sempre use send_whatsapp_message para qualquer resposta ao cliente.
+- Quando terminar de agir (enviou mensagem, salvou dados), chame done() para encerrar.
+- Um fluxo típico: salvar dados → enviar mensagem → done().
 
 Dados coletados até agora:
 {props}
@@ -61,6 +67,7 @@ Regras:
             ToolDef {
                 name: "set_dados_pessoais",
                 description: "Salva nome e/ou CPF do lead. Chame quando a pessoa informar esses dados.",
+                consequential: false,
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -78,6 +85,7 @@ Regras:
             ToolDef {
                 name: "set_tem_mei",
                 description: "Marca se a pessoa já possui MEI ou não.",
+                consequential: false,
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -92,6 +100,7 @@ Regras:
             ToolDef {
                 name: "set_cnpj",
                 description: "Salva o CNPJ do MEI existente.",
+                consequential: false,
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -106,6 +115,7 @@ Regras:
             ToolDef {
                 name: "set_atividade",
                 description: "Salva a descrição da atividade e opcionalmente o CNAE.",
+                consequential: false,
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -124,6 +134,7 @@ Regras:
             ToolDef {
                 name: "set_endereco",
                 description: "Salva o endereço do lead.",
+                consequential: false,
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -138,6 +149,7 @@ Regras:
             ToolDef {
                 name: "set_gov_br",
                 description: "Salva as credenciais Gov.br do lead. Colete somente quando a pessoa fornecer voluntariamente.",
+                consequential: false,
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -156,6 +168,7 @@ Regras:
             ToolDef {
                 name: "anotar",
                 description: "Salva uma anotação livre sobre o cliente na memória. Use para registrar contexto relevante da conversa.",
+                consequential: false,
                 parameters: json!({
                     "type": "object",
                     "properties": {
@@ -170,6 +183,7 @@ Regras:
             ToolDef {
                 name: "iniciar_pagamento",
                 description: "Inicia o fluxo de cadastro de cartão de crédito. Requer nome, CPF e saber se tem MEI.",
+                consequential: true,
                 parameters: json!({
                     "type": "object",
                     "properties": {}

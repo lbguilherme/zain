@@ -1,5 +1,6 @@
 mod db;
 mod download;
+pub(crate) mod embedding;
 mod import;
 mod schema;
 mod source;
@@ -40,6 +41,10 @@ async fn main() -> Result<()> {
     println!("=== Conectando ao banco de dados ===");
     let mut client = db::connect(&database_url).await?;
     println!("  Conectado em {database_url}");
+
+    client
+        .execute("CREATE EXTENSION IF NOT EXISTS vector", &[])
+        .await?;
 
     let sources: Vec<Box<dyn DataSource>> = vec![
         Box::new(CnpjSource),

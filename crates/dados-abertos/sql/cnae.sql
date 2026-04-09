@@ -2,13 +2,15 @@ CREATE SCHEMA IF NOT EXISTS cnae;
 
 CREATE TABLE cnae.secoes (
     id CHAR(1) PRIMARY KEY,
-    descricao TEXT NOT NULL
+    descricao TEXT NOT NULL,
+    embedding halfvec NOT NULL
 );
 
 CREATE TABLE cnae.divisoes (
     id CHAR(2) PRIMARY KEY,
     descricao TEXT NOT NULL,
-    secao_id CHAR(1) NOT NULL
+    secao_id CHAR(1) NOT NULL,
+    embedding halfvec NOT NULL
 );
 
 CREATE INDEX ON cnae.divisoes (secao_id);
@@ -16,7 +18,8 @@ CREATE INDEX ON cnae.divisoes (secao_id);
 CREATE TABLE cnae.grupos (
     id CHAR(3) PRIMARY KEY,
     descricao TEXT NOT NULL,
-    divisao_id CHAR(2) NOT NULL
+    divisao_id CHAR(2) NOT NULL,
+    embedding halfvec NOT NULL
 );
 
 CREATE INDEX ON cnae.grupos (divisao_id);
@@ -25,7 +28,8 @@ CREATE TABLE cnae.classes (
     id CHAR(5) PRIMARY KEY,
     descricao TEXT NOT NULL,
     grupo_id CHAR(3) NOT NULL,
-    observacoes TEXT
+    observacoes TEXT,
+    embedding halfvec NOT NULL
 );
 
 CREATE INDEX ON cnae.classes (grupo_id);
@@ -34,7 +38,8 @@ CREATE TABLE cnae.subclasses (
     id CHAR(7) PRIMARY KEY,
     descricao TEXT NOT NULL,
     classe_id CHAR(5) NOT NULL,
-    observacoes TEXT
+    observacoes TEXT,
+    embedding halfvec NOT NULL
 );
 
 CREATE INDEX ON cnae.subclasses (classe_id);

@@ -995,6 +995,21 @@ async fn upsert_message(
 
     // Sinalizar agent para processar o cliente se recebeu mensagem do contato
     if !from_me {
+        // Auto-criar client se o chat for do tipo contact e ainda não existir
+        let phone = chat_id.split('@').next().map(|s| s.to_owned());
+        sql!(
+            tx,
+            "INSERT INTO zain.clients (chat_id, phone, name)
+             SELECT $chat_id, $phone, COALESCE(ct.name, c.name)
+             FROM whatsapp.chats c
+             LEFT JOIN whatsapp.contacts ct ON ct.channel_id = c.channel_id AND ct.id = c.id
+             WHERE c.id = $chat_id AND c.chat_type = 'contact'
+             LIMIT 1
+             ON CONFLICT (chat_id) DO NOTHING"
+        )
+        .execute()
+        .await?;
+
         sql!(
             tx,
             "UPDATE zain.clients

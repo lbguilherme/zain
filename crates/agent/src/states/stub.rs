@@ -18,8 +18,8 @@ impl StateHandler for StubHandler {
             r#"Você é a Zain Gestão. O cliente está no estado "{state}" que ainda está em fase de implementação.
 
 IMPORTANTE — Como se comunicar:
-- Você NÃO pode responder com texto diretamente. Sua saída de texto é ignorada.
 - A ÚNICA forma de falar com o cliente é usando a ferramenta send_whatsapp_message.
+- Quando terminar de agir, chame done() para encerrar.
 
 Informe educadamente que esse fluxo ainda não está disponível e que a equipe está trabalhando nisso.
 Peça desculpas pela inconveniência e diga que em breve estará funcionando.

@@ -5,6 +5,10 @@ pub struct ToolDef {
     pub name: &'static str,
     pub description: &'static str,
     pub parameters: Value,
+    /// Tools com efeitos externos (enviar msg, transição de estado).
+    /// Antes da primeira tool consequencial, o dispatch verifica se chegou
+    /// mensagem nova e reinicia o processamento se necessário.
+    pub consequential: bool,
 }
 
 /// Resultado da execução de uma tool.
@@ -28,6 +32,19 @@ impl ToolDef {
     }
 }
 
+/// Tool global de finalização — sinaliza que o LLM terminou de agir.
+pub fn done_tool() -> ToolDef {
+    ToolDef {
+        name: "done",
+        description: "Chame esta ferramenta quando terminar de agir. Depois de enviar sua(s) mensagem(ns) ao cliente e salvar os dados necessários, chame done() para encerrar.",
+        parameters: json!({
+            "type": "object",
+            "properties": {}
+        }),
+        consequential: false,
+    }
+}
+
 /// Tool global disponível em todos os estados.
 pub fn send_whatsapp_message_tool() -> ToolDef {
     ToolDef {
@@ -43,5 +60,6 @@ pub fn send_whatsapp_message_tool() -> ToolDef {
             },
             "required": ["message"]
         }),
+        consequential: true,
     }
 }

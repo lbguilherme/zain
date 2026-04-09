@@ -6,7 +6,15 @@ use uuid::Uuid;
 
 use crate::llm::{ChatMessage, OllamaClient};
 use crate::states::{self, ConversationMessage};
-use crate::tools::{self, ToolResult};
+use crate::tools::{self, ToolDef, ToolResult};
+
+enum WorkflowOutcome {
+    Completed {
+        final_state: String,
+        llm_log: Vec<ChatMessage>,
+    },
+    Restart,
+}
 
 #[derive(Debug, Clone)]
 pub struct ClientRow {
@@ -18,6 +26,8 @@ pub struct ClientRow {
     pub state_props: Value,
     pub memory: Value,
     pub last_whatsapp_message_processed_at: Option<DateTime<Utc>>,
+    pub history_starts_at: Option<DateTime<Utc>>,
+    pub exec_id: Uuid,
 }
 
 // ── Recovery ───────────────────────────────────────────────────────────
@@ -53,24 +63,51 @@ pub async fn recover_crashed(pool: &Pool) -> anyhow::Result<()> {
 // ── Claim ──────────────────────────────────────────────────────────────
 
 pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>> {
+    // Claim + criação de execução em transação para evitar race condition.
+    // A execução 'running' serve como lock — o claim exclui clients que já têm uma.
+    let mut db = pool.get().await?;
+    let tx = db.transaction().await?;
+
     let row = sql!(
-        pool,
+        &tx,
         "UPDATE zain.clients
          SET needs_processing = false, updated_at = now()
          WHERE id = (
-             SELECT id FROM zain.clients
-             WHERE needs_processing = true
-             ORDER BY updated_at ASC
+             SELECT c.id FROM zain.clients c
+             WHERE c.needs_processing = true
+               AND NOT EXISTS (
+                   SELECT 1 FROM zain.executions e
+                   WHERE e.client_id = c.id AND e.status = 'running'
+               )
+             ORDER BY c.updated_at ASC
              FOR UPDATE SKIP LOCKED
              LIMIT 1
          )
          RETURNING id, chat_id, phone, name, state, state_props, memory,
-                   last_whatsapp_message_processed_at"
+                   last_whatsapp_message_processed_at, history_starts_at"
     )
     .fetch_optional()
     .await?;
 
-    Ok(row.map(|r| ClientRow {
+    let Some(r) = row else {
+        // Nenhum client para processar — não precisa commitar
+        return Ok(None);
+    };
+
+    let client_id = r.id;
+    let state_before: String = r.state.clone();
+    let exec_id: Uuid = sql!(
+        &tx,
+        "INSERT INTO zain.executions (client_id, state_before, trigger_type)
+         VALUES ($client_id, $state_before, 'message')
+         RETURNING id"
+    )
+    .fetch_value()
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Some(ClientRow {
         id: r.id,
         chat_id: r.chat_id,
         phone: r.phone,
@@ -79,6 +116,8 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
         state_props: r.state_props,
         memory: r.memory,
         last_whatsapp_message_processed_at: r.last_whatsapp_message_processed_at,
+        history_starts_at: r.history_starts_at,
+        exec_id,
     }))
 }
 
@@ -89,8 +128,12 @@ pub async fn process_client(
     ollama: &OllamaClient,
     mut client: ClientRow,
 ) -> anyhow::Result<()> {
+    // exec_id começa com a execução criada atomicamente no claim
+    let mut exec_id = client.exec_id;
+
     loop {
-        let (history, max_ts) = fetch_history(pool, &client.chat_id).await?;
+        let (history, max_ts) =
+            fetch_history(pool, &client.chat_id, client.history_starts_at).await?;
 
         // Se não há mensagens novas desde o último processamento, nada a fazer
         let has_new = match (max_ts, client.last_whatsapp_message_processed_at) {
@@ -101,44 +144,92 @@ pub async fn process_client(
 
         if !has_new {
             tracing::debug!(client_id = %client.id, "Sem mensagens novas, pulando");
+            complete_execution(pool, exec_id, &client.state, &[]).await?;
             break;
         }
 
-        // Extrair apenas as novas mensagens para informar o LLM
+        // Extrair apenas as novas mensagens recebidas (from_me=false)
         let new_messages: Vec<&ConversationMessage> = history
             .iter()
             .filter(|m| {
+                if m.from_me {
+                    return false;
+                }
                 if let (Some(ts), Some(processed)) =
                     (m.timestamp, client.last_whatsapp_message_processed_at)
                 {
                     ts > processed
                 } else {
-                    // Se nunca processou, todas são novas
                     client.last_whatsapp_message_processed_at.is_none()
                 }
             })
             .collect();
 
+        // Comando /reset: resetar client para estado inicial e limpar histórico
+        if let Some(reset_msg) = new_messages.iter().find(|m| m.text.trim() == "/reset") {
+            tracing::info!(client_id = %client.id, "Comando /reset recebido, resetando client");
+            let reset_ts = reset_msg.timestamp;
+            let client_id = client.id;
+            sql!(
+                pool,
+                "UPDATE zain.clients
+                 SET state = 'LEAD', state_props = '{}', memory = '{}',
+                     updated_at = now(),
+                     last_whatsapp_message_processed_at = $reset_ts,
+                     history_starts_at = $reset_ts
+                 WHERE id = $client_id"
+            )
+            .execute()
+            .await?;
+            // Atualizar estado in-memory para o próximo loop
+            client.state = "LEAD".into();
+            client.state_props = json!({});
+            client.memory = json!({});
+            client.last_whatsapp_message_processed_at = reset_ts;
+            client.history_starts_at = reset_ts;
+            // Fechar execução atual e abrir nova atomicamente
+            exec_id = rotate_execution(pool, exec_id, "cancelled", None, &client).await?;
+            continue;
+        }
+
         let new_count = new_messages.len();
         let new_summary: String = new_messages
             .iter()
-            .filter(|m| !m.from_me)
             .map(|m| m.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
 
-        let exec_id = create_execution(pool, &client).await?;
-
-        let result = run_workflow(pool, ollama, &client, &history, new_count, &new_summary).await;
+        let result = run_workflow(
+            pool,
+            ollama,
+            &client,
+            &history,
+            new_count,
+            &new_summary,
+            max_ts,
+            exec_id,
+        )
+        .await;
 
         match result {
-            Ok((final_state, llm_log)) => {
-                complete_execution(pool, exec_id, &final_state, &llm_log).await?;
+            Ok(WorkflowOutcome::Restart) => {
+                tracing::info!(client_id = %client.id, "Workflow reiniciado por novas mensagens");
+                exec_id = rotate_execution(pool, exec_id, "cancelled", None, &client).await?;
+                continue;
+            }
+            Ok(WorkflowOutcome::Completed {
+                final_state,
+                llm_log,
+            }) => {
                 client.state = final_state;
                 if let Some(ts) = max_ts {
                     update_last_processed(pool, client.id, ts).await?;
                     client.last_whatsapp_message_processed_at = Some(ts);
                 }
+                // Fechar + abrir atomicamente — a nova execução será fechada
+                // no topo do loop se não houver mensagens novas
+                exec_id =
+                    rotate_execution(pool, exec_id, "completed", Some(&llm_log), &client).await?;
             }
             Err(e) => {
                 fail_execution(pool, exec_id, &e.to_string()).await?;
@@ -157,6 +248,7 @@ pub async fn process_client(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_workflow(
     pool: &Pool,
     ollama: &OllamaClient,
@@ -164,12 +256,15 @@ async fn run_workflow(
     history: &[ConversationMessage],
     new_message_count: usize,
     new_messages_summary: &str,
-) -> anyhow::Result<(String, Vec<ChatMessage>)> {
+    known_max_ts: Option<DateTime<Utc>>,
+    exec_id: Uuid,
+) -> anyhow::Result<WorkflowOutcome> {
     let handler = states::get_handler(&client.state);
 
-    // Montar tools: estado-específicas + send_whatsapp_message (global)
+    // Montar tools: estado-específicas + globais (send + done)
     let mut state_tools = handler.tool_definitions();
     state_tools.push(tools::send_whatsapp_message_tool());
+    state_tools.push(tools::done_tool());
     let tools_json: Vec<Value> = state_tools.iter().map(|t| t.to_ollama_json()).collect();
 
     // System prompt com histórico embutido
@@ -189,7 +284,8 @@ async fn run_workflow(
     let mut current_state = client.state.clone();
     let mut state_props = client.state_props.clone();
     let mut memory = client.memory.clone();
-    let mut sent_message = false;
+    let mut executed_consequential = false;
+    let mut done = false;
 
     // Loop de interação com o LLM (tool calls iterativas)
     let max_iterations = 10;
@@ -203,16 +299,42 @@ async fn run_workflow(
                 let tool_name = &call.function.name;
                 let tool_args = &call.function.arguments;
 
+                let is_consequential = is_tool_consequential(tool_name, &state_tools);
+
+                // Antes da primeira tool consequencial, verificar se chegou msg nova
+                if is_consequential
+                    && !executed_consequential
+                    && has_new_messages(pool, &client.chat_id, known_max_ts).await?
+                {
+                    tracing::info!(
+                        client_id = %client.id,
+                        tool_name,
+                        "Novas mensagens detectadas antes de tool consequencial, reiniciando"
+                    );
+                    // Salvar state_props/memory das tools puras já executadas
+                    save_client_state(pool, client.id, &current_state, &state_props, &memory)
+                        .await?;
+                    update_execution_messages(pool, exec_id, &messages).await?;
+                    return Ok(WorkflowOutcome::Restart);
+                }
+
+                if is_consequential {
+                    executed_consequential = true;
+                }
+
                 tracing::info!(client_id = %client.id, tool_name, "Executando tool");
 
-                if tool_name == "send_whatsapp_message" {
+                if tool_name == "done" {
+                    messages.push(ChatMessage::tool(json!({ "status": "ok" }).to_string()));
+                    done = true;
+                    continue;
+                } else if tool_name == "send_whatsapp_message" {
                     let msg_text = tool_args
                         .get("message")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
                     if !msg_text.is_empty() {
                         write_outbox(pool, &client.chat_id, msg_text).await?;
-                        sent_message = true;
                     }
                     messages.push(ChatMessage::tool(
                         json!({ "status": "ok", "mensagem_enviada": true }).to_string(),
@@ -246,49 +368,105 @@ async fn run_workflow(
                     }
                 }
             }
-        } else {
-            // LLM respondeu com texto sem chamar tools
-            if !sent_message {
-                // Nunca chamou send_whatsapp_message — orientar a usar a tool
-                tracing::warn!(
-                    client_id = %client.id,
-                    "LLM respondeu texto sem usar send_whatsapp_message, re-orientando"
-                );
-                messages.push(ChatMessage::assistant(response.message.content.clone()));
-                messages.push(ChatMessage::user(
-                    "Você não pode responder com texto diretamente. \
-                     Use a ferramenta send_whatsapp_message para enviar sua resposta ao cliente."
-                        .into(),
-                ));
-                continue;
+
+            if done {
+                break;
             }
+        } else {
+            // LLM respondeu com texto sem chamar tools — isso conta como done
             break;
         }
+
+        // Salvar progresso do LLM a cada iteração
+        update_execution_messages(pool, exec_id, &messages).await?;
     }
 
     // Salvar estado final
     save_client_state(pool, client.id, &current_state, &state_props, &memory).await?;
 
-    Ok((current_state, messages))
+    Ok(WorkflowOutcome::Completed {
+        final_state: current_state,
+        llm_log: messages,
+    })
+}
+
+fn is_tool_consequential(tool_name: &str, tools: &[ToolDef]) -> bool {
+    tools
+        .iter()
+        .find(|t| t.name == tool_name)
+        .map(|t| t.consequential)
+        .unwrap_or(true) // desconhecida = tratar como consequencial
+}
+
+async fn has_new_messages(
+    pool: &Pool,
+    chat_id: &str,
+    known_max_ts: Option<DateTime<Utc>>,
+) -> anyhow::Result<bool> {
+    let Some(known) = known_max_ts else {
+        return Ok(false);
+    };
+    let current_max: Option<DateTime<Utc>> = sql!(
+        pool,
+        "SELECT MAX(\"timestamp\") AS ts
+         FROM whatsapp.messages
+         WHERE chat_id = $chat_id AND from_me = false"
+    )
+    .fetch_value()
+    .await?;
+
+    Ok(current_max.is_some_and(|ts| ts > known))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
-async fn create_execution(pool: &Pool, client: &ClientRow) -> anyhow::Result<Uuid> {
+/// Fecha a execução atual e abre uma nova atomicamente (CTE),
+/// garantindo que sempre existe uma execução 'running' para o client.
+async fn rotate_execution(
+    pool: &Pool,
+    old_exec_id: Uuid,
+    close_status: &str,
+    llm_messages: Option<&[ChatMessage]>,
+    client: &ClientRow,
+) -> anyhow::Result<Uuid> {
+    let llm_json: Value = llm_messages
+        .map(serde_json::to_value)
+        .transpose()?
+        .unwrap_or(Value::Null);
+    let state_after: Option<&str> = if close_status == "completed" {
+        Some(&client.state)
+    } else {
+        None
+    };
     let client_id = client.id;
     let state_before = &client.state;
-    let trigger_type = "message";
 
-    let id = sql!(
-        pool,
+    let mut db = pool.get().await?;
+    let tx = db.transaction().await?;
+
+    sql!(
+        &tx,
+        "UPDATE zain.executions
+         SET status = $close_status,
+             state_after = $state_after,
+             llm_messages = COALESCE($llm_json, llm_messages),
+             finished_at = now()
+         WHERE id = $old_exec_id"
+    )
+    .execute()
+    .await?;
+
+    let new_id: Uuid = sql!(
+        &tx,
         "INSERT INTO zain.executions (client_id, state_before, trigger_type)
-         VALUES ($client_id, $state_before, $trigger_type)
+         VALUES ($client_id, $state_before, 'message')
          RETURNING id"
     )
     .fetch_value()
     .await?;
 
-    Ok(id)
+    tx.commit().await?;
+    Ok(new_id)
 }
 
 async fn complete_execution(
@@ -306,6 +484,23 @@ async fn complete_execution(
          SET status = 'completed', state_after = $state_after,
              llm_messages = $llm_json, finished_at = now()
          WHERE id = $exec_id"
+    )
+    .execute()
+    .await?;
+
+    Ok(())
+}
+
+async fn update_execution_messages(
+    pool: &Pool,
+    exec_id: Uuid,
+    messages: &[ChatMessage],
+) -> anyhow::Result<()> {
+    let llm_json: Option<Value> = Some(serde_json::to_value(messages)?);
+
+    sql!(
+        pool,
+        "UPDATE zain.executions SET llm_messages = $llm_json WHERE id = $exec_id"
     )
     .execute()
     .await?;
@@ -353,21 +548,58 @@ async fn save_client_state(
 async fn fetch_history(
     pool: &Pool,
     chat_id: &str,
+    history_starts_at: Option<DateTime<Utc>>,
 ) -> anyhow::Result<(Vec<ConversationMessage>, Option<DateTime<Utc>>)> {
-    let rows = sql!(
-        pool,
-        "SELECT from_me, text_body, \"timestamp\"
-         FROM whatsapp.messages
-         WHERE chat_id = $chat_id
-         ORDER BY \"timestamp\" DESC
-         LIMIT 60"
-    )
-    .fetch_all()
-    .await?;
+    // Struct intermediário para unificar os dois branches do sql!
+    struct Row {
+        from_me: bool,
+        text_body: Option<String>,
+        timestamp: DateTime<Utc>,
+    }
+
+    let rows: Vec<Row> = if let Some(starts_at) = history_starts_at {
+        sql!(
+            pool,
+            "SELECT from_me, text_body, \"timestamp\"
+             FROM whatsapp.messages
+             WHERE chat_id = $chat_id AND \"timestamp\" >= $starts_at
+             ORDER BY \"timestamp\" DESC
+             LIMIT 60"
+        )
+        .fetch_all()
+        .await?
+        .iter()
+        .map(|r| Row {
+            from_me: r.from_me,
+            text_body: r.text_body.clone(),
+            timestamp: r.timestamp,
+        })
+        .collect()
+    } else {
+        sql!(
+            pool,
+            "SELECT from_me, text_body, \"timestamp\"
+             FROM whatsapp.messages
+             WHERE chat_id = $chat_id
+             ORDER BY \"timestamp\" DESC
+             LIMIT 60"
+        )
+        .fetch_all()
+        .await?
+        .iter()
+        .map(|r| Row {
+            from_me: r.from_me,
+            text_body: r.text_body.clone(),
+            timestamp: r.timestamp,
+        })
+        .collect()
+    };
 
     let mut messages = Vec::new();
     let mut total_chars = 0usize;
-    let max_ts: Option<DateTime<Utc>> = rows.first().map(|r| r.timestamp);
+    // max_ts só de mensagens recebidas (from_me=false) para evitar
+    // que mensagens enviadas por nós re-disparem o workflow
+    let max_ts: Option<DateTime<Utc>> = rows.iter().find(|r| !r.from_me).map(|r| r.timestamp);
 
     for row in &rows {
         let text: String = row.text_body.clone().unwrap_or_default();
