@@ -6,7 +6,7 @@ use tokio::sync::Semaphore;
 use tokio_postgres::NoTls;
 
 use agent::dispatch;
-use agent::llm::OllamaClient;
+use ollama::OllamaClient;
 
 const MAX_CONCURRENT: usize = 5;
 
@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
     pool_cfg.url = Some(database_url);
     let pool = pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
-    let ollama = Arc::new(OllamaClient::new(&ollama_url, &ollama_model));
+    let ollama = Arc::new(OllamaClient::new(&ollama_url));
 
     // Recovery: marcar execuções órfãs como crashed e re-agendar clientes
     dispatch::recover_crashed(&pool).await?;
@@ -38,12 +38,13 @@ async fn main() -> anyhow::Result<()> {
             Ok(Some(client)) => {
                 let pool = pool.clone();
                 let ollama = ollama.clone();
+                let model = ollama_model.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let client_id = client.id;
                     let chat_id = client.chat_id.clone();
                     tracing::info!(%client_id, %chat_id, "Processando cliente");
-                    if let Err(e) = dispatch::process_client(&pool, &ollama, client).await {
+                    if let Err(e) = dispatch::process_client(&pool, &ollama, &model, client).await {
                         tracing::error!(%client_id, "Erro processando cliente: {e:#}");
                     }
                 });

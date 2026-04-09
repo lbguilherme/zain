@@ -4,9 +4,9 @@ use deadpool_postgres::Pool;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::llm::{ChatMessage, OllamaClient};
 use crate::states::{self, ConversationMessage};
 use crate::tools::{self, ToolDef, ToolResult};
+use ollama::{ChatMessage, OllamaClient};
 
 enum WorkflowOutcome {
     Completed {
@@ -126,6 +126,7 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
 pub async fn process_client(
     pool: &Pool,
     ollama: &OllamaClient,
+    model: &str,
     mut client: ClientRow,
 ) -> anyhow::Result<()> {
     // exec_id começa com a execução criada atomicamente no claim
@@ -202,6 +203,7 @@ pub async fn process_client(
         let result = run_workflow(
             pool,
             ollama,
+            model,
             &client,
             &history,
             new_count,
@@ -252,6 +254,7 @@ pub async fn process_client(
 async fn run_workflow(
     pool: &Pool,
     ollama: &OllamaClient,
+    model: &str,
     client: &ClientRow,
     history: &[ConversationMessage],
     new_message_count: usize,
@@ -290,7 +293,7 @@ async fn run_workflow(
     // Loop de interação com o LLM (tool calls iterativas)
     let max_iterations = 10;
     for _ in 0..max_iterations {
-        let response = ollama.chat(&messages, &tools_json).await?;
+        let response = ollama.chat(model, &messages, &tools_json).await?;
 
         if let Some(ref tool_calls) = response.message.tool_calls {
             messages.push(ChatMessage::assistant_tool_calls(tool_calls));

@@ -154,7 +154,10 @@ async fn import_cnae(tx: &Transaction<'_>, schema: &str, data_dir: &std::path::P
 
     // Gerar embeddings antes dos inserts
     println!("  Gerando embeddings...");
-    let mut embedder = EmbeddingClient::new("cnae").await?;
+    let cache_dir = std::path::PathBuf::from(".dados_abertos")
+        .join("embeddings")
+        .join("cnae");
+    let embedder = EmbeddingClient::new(cache_dir);
 
     let secao_texts: Vec<String> = secoes.iter().map(|(_, d)| d.clone()).collect();
     println!("    secoes:");
@@ -178,8 +181,6 @@ async fn import_cnae(tx: &Transaction<'_>, schema: &str, data_dir: &std::path::P
         .collect();
     println!("    subclasses:");
     let subclasse_embs = embedder.embed_many(&subclasse_texts).await?;
-
-    embedder.save_cache().await?;
 
     // Inserir seções
     let stmt = tx
