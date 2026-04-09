@@ -15,8 +15,8 @@ pub struct ConversationMessage {
 }
 
 pub trait StateHandler: Send + Sync {
-    /// Gera o system prompt incluindo histórico de conversa.
-    fn system_prompt(&self, client: &ClientRow, history: &[ConversationMessage]) -> String;
+    /// Retorna o trecho de system prompt específico deste estado.
+    fn state_prompt(&self) -> String;
 
     /// Tools específicas deste estado (sem send_whatsapp_message, que é global).
     fn tool_definitions(&self) -> Vec<ToolDef>;
@@ -40,7 +40,73 @@ pub fn get_handler(state: &str) -> Box<dyn StateHandler> {
     }
 }
 
-/// Formata o histórico de conversa como texto para incluir no system prompt.
+/// Monta o system prompt completo: base + estado.
+pub fn build_system_prompt(handler: &dyn StateHandler) -> String {
+    let now = chrono::Local::now().format("%d/%m/%Y %H:%M");
+    let state_section = handler.state_prompt();
+
+    format!(
+        r#"Você é a Zain Gestão, uma assistente de gestão de MEI que funciona 100% pelo WhatsApp.
+
+Data e hora atual: {now}
+
+Sobre o serviço Zain Gestão:
+- Primeiro mês GRÁTIS, depois R$ 19,90/mês no cartão de crédito
+- Serviços inclusos: abertura de MEI, emissão de nota fiscal, DAS mensal, DASN anual, baixa de MEI, dúvidas contábeis/fiscais
+- Tudo funciona por mensagem no WhatsApp, sem portal do governo, sem app extra
+- Proativo: a Zain lembra do DAS, da DASN, monitora o teto de faturamento
+
+IMPORTANTE — Como se comunicar:
+- A ÚNICA forma de falar com o cliente é usando a ferramenta send_whatsapp_message.
+- Você pode chamar múltiplas ferramentas na mesma resposta (ex: salvar dados E responder).
+- Quando terminar de agir (enviou mensagem, salvou dados), chame done() para encerrar.
+- Um fluxo típico: salvar dados → enviar mensagem → done().
+
+Regras:
+- Seja natural, simpática e direta. Use linguagem informal mas profissional.
+- Responda APENAS em português brasileiro.
+- Seja concisa. Mensagens de WhatsApp devem ser curtas e diretas.
+
+{state_section}"#
+    )
+}
+
+/// Monta a primeira user message com contexto dinâmico.
+pub fn build_context_message(
+    client: &ClientRow,
+    history: &[ConversationMessage],
+    new_message_count: usize,
+    new_messages_summary: &str,
+) -> String {
+    let contact_name = client.name.as_deref().unwrap_or("(desconhecido)");
+    let contact_phone = client.phone.as_deref().unwrap_or("(desconhecido)");
+    let props = serde_json::to_string_pretty(&client.state_props).unwrap_or_default();
+    let memory = serde_json::to_string_pretty(&client.memory).unwrap_or_default();
+    let history_text = format_history(history);
+
+    format!(
+        r#"Informações do contato:
+- Nome no WhatsApp: {contact_name}
+- Telefone: {contact_phone}
+
+Dados coletados até agora:
+{props}
+
+Memória do cliente:
+{memory}
+
+Histórico da conversa no WhatsApp:
+{history_text}
+
+O cliente enviou {new_message_count} nova(s) mensagem(ns):
+
+{new_messages_summary}
+
+Responda ao cliente usando send_whatsapp_message."#
+    )
+}
+
+/// Formata o histórico de conversa como texto.
 /// Inclui headers de data/hora quando há intervalo > 1h entre mensagens,
 /// e sempre antes da primeira mensagem.
 pub fn format_history(history: &[ConversationMessage]) -> String {

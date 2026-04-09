@@ -127,6 +127,7 @@ pub async fn process_client(
     pool: &Pool,
     ollama: &OllamaClient,
     model: &str,
+    whisper_url: &str,
     mut client: ClientRow,
 ) -> anyhow::Result<()> {
     // exec_id começa com a execução criada atomicamente no claim
@@ -134,7 +135,7 @@ pub async fn process_client(
 
     loop {
         let (history, max_ts) =
-            fetch_history(pool, &client.chat_id, client.history_starts_at).await?;
+            fetch_history(pool, &client.chat_id, client.history_starts_at, whisper_url).await?;
 
         // Se não há mensagens novas desde o último processamento, nada a fazer
         let has_new = match (max_ts, client.last_whatsapp_message_processed_at) {
@@ -270,14 +271,9 @@ async fn run_workflow(
     state_tools.push(tools::done_tool());
     let tools_json: Vec<Value> = state_tools.iter().map(|t| t.to_ollama_json()).collect();
 
-    // System prompt com histórico embutido
-    let system_prompt = handler.system_prompt(client, history);
-
-    // User message informa o que motivou a execução
-    let user_msg = format!(
-        "O cliente enviou {new_message_count} nova(s) mensagem(ns):\n\n{new_messages_summary}\n\n\
-         Responda ao cliente usando send_whatsapp_message.",
-    );
+    let system_prompt = states::build_system_prompt(&*handler);
+    let user_msg =
+        states::build_context_message(client, history, new_message_count, new_messages_summary);
 
     let mut messages = vec![
         ChatMessage::system(system_prompt),
@@ -552,60 +548,75 @@ async fn fetch_history(
     pool: &Pool,
     chat_id: &str,
     history_starts_at: Option<DateTime<Utc>>,
+    whisper_url: &str,
 ) -> anyhow::Result<(Vec<ConversationMessage>, Option<DateTime<Utc>>)> {
-    // Struct intermediário para unificar os dois branches do sql!
     struct Row {
         from_me: bool,
+        msg_type: String,
         text_body: Option<String>,
+        voice: Option<Value>,
         timestamp: DateTime<Utc>,
     }
 
-    let rows: Vec<Row> = if let Some(starts_at) = history_starts_at {
-        sql!(
-            pool,
-            "SELECT from_me, text_body, \"timestamp\"
-             FROM whatsapp.messages
-             WHERE chat_id = $chat_id AND \"timestamp\" >= $starts_at
-             ORDER BY \"timestamp\" DESC
-             LIMIT 60"
-        )
-        .fetch_all()
-        .await?
-        .iter()
-        .map(|r| Row {
-            from_me: r.from_me,
-            text_body: r.text_body.clone(),
-            timestamp: r.timestamp,
-        })
-        .collect()
-    } else {
-        sql!(
-            pool,
-            "SELECT from_me, text_body, \"timestamp\"
-             FROM whatsapp.messages
-             WHERE chat_id = $chat_id
-             ORDER BY \"timestamp\" DESC
-             LIMIT 60"
-        )
-        .fetch_all()
-        .await?
-        .iter()
-        .map(|r| Row {
-            from_me: r.from_me,
-            text_body: r.text_body.clone(),
-            timestamp: r.timestamp,
-        })
-        .collect()
-    };
+    let rows: Vec<Row> = sql!(
+        pool,
+        "SELECT from_me, msg_type, text_body, voice, \"timestamp\"
+         FROM whatsapp.messages
+         WHERE chat_id = $chat_id
+           AND \"timestamp\" >= COALESCE($history_starts_at?, 'epoch'::timestamptz)
+         ORDER BY \"timestamp\" DESC
+         LIMIT 60"
+    )
+    .fetch_all()
+    .await?
+    .iter()
+    .map(|r| Row {
+        from_me: r.from_me,
+        msg_type: r.msg_type.clone(),
+        text_body: r.text_body.clone(),
+        voice: r.voice.clone(),
+        timestamp: r.timestamp,
+    })
+    .collect();
 
     let mut messages = Vec::new();
     let mut total_chars = 0usize;
-    // max_ts só de mensagens recebidas (from_me=false) para evitar
-    // que mensagens enviadas por nós re-disparem o workflow
     let max_ts: Option<DateTime<Utc>> = rows.iter().find(|r| !r.from_me).map(|r| r.timestamp);
 
     for row in &rows {
-        let text: String = row.text_body.clone().unwrap_or_default();
+        let text: String = match row.msg_type.as_str() {
+            "text" => row.text_body.clone().unwrap_or_default(),
+            "voice" => {
+                let voice_id = row
+                    .voice
+                    .as_ref()
+                    .and_then(|v| v.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let link = row
+                    .voice
+                    .as_ref()
+                    .and_then(|v| v.get("link"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if !voice_id.is_empty() {
+                    match transcribe_voice(pool, whisper_url, voice_id, link).await {
+                        Ok(t) => format!("[áudio transcrito]: {t}"),
+                        Err(e) => {
+                            tracing::warn!(voice_id, "Falha ao transcrever áudio: {e:#}");
+                            "[áudio não transcrito]".into()
+                        }
+                    }
+                } else {
+                    "[áudio]".into()
+                }
+            }
+            other => {
+                tracing::debug!(msg_type = other, "Tipo de mensagem ignorado no histórico");
+                continue;
+            }
+        };
+
         total_chars += text.len();
         if total_chars > 10_000 && !messages.is_empty() {
             break;
@@ -619,6 +630,72 @@ async fn fetch_history(
 
     messages.reverse();
     Ok((messages, max_ts))
+}
+
+async fn transcribe_voice(
+    pool: &Pool,
+    whisper_url: &str,
+    voice_id: &str,
+    download_link: &str,
+) -> anyhow::Result<String> {
+    // 1. Verificar cache
+    let cached: Option<String> = sql!(
+        pool,
+        "SELECT transcription FROM zain.audio_transcriptions WHERE id = $voice_id"
+    )
+    .fetch_optional()
+    .await?
+    .map(|r| r.transcription);
+
+    if let Some(transcription) = cached {
+        return Ok(transcription);
+    }
+
+    // 2. Baixar o áudio
+    let client = reqwest::Client::new();
+    let audio_bytes = client
+        .get(download_link)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+
+    // 3. Enviar para Whisper (API compatível com OpenAI)
+    let part = reqwest::multipart::Part::bytes(audio_bytes.to_vec())
+        .file_name("audio.ogg")
+        .mime_str("audio/ogg")?;
+    let form = reqwest::multipart::Form::new()
+        .text("model", "whisper-1")
+        .part("file", part);
+
+    let resp: Value = client
+        .post(whisper_url)
+        .multipart(form)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    let transcription = resp
+        .get("text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
+
+    // 4. Salvar no cache
+    let transcription_ref = &transcription;
+    sql!(
+        pool,
+        "INSERT INTO zain.audio_transcriptions (id, transcription)
+         VALUES ($voice_id, $transcription_ref)
+         ON CONFLICT (id) DO NOTHING"
+    )
+    .execute()
+    .await?;
+
+    Ok(transcription)
 }
 
 async fn update_last_processed(
