@@ -29,6 +29,7 @@ dependencies = [
  "deadpool-postgres",
  "dotenvy",
  "reqwest",
+ "rpa-mei",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -564,6 +565,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "crunchy"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+
+[[package]]
 name = "crypto-common"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -682,7 +689,9 @@ dependencies = [
  "dotenvy",
  "encoding_rs",
  "futures-util",
+ "half",
  "indicatif",
+ "pgvector",
  "reqwest",
  "serde",
  "serde_json",
@@ -1035,6 +1044,17 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "half"
+version = "2.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
+dependencies = [
+ "cfg-if",
+ "crunchy",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1812,6 +1832,17 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pgvector"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc58e2d255979a31caa7cabfa7aac654af0354220719ab7a68520ae7a91e8c0b"
+dependencies = [
+ "bytes",
+ "half",
+ "postgres-types",
 ]
 
 [[package]]

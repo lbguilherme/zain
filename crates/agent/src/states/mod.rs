@@ -1,4 +1,5 @@
 mod lead;
+mod recusado;
 mod stub;
 
 use chrono::{DateTime, Utc};
@@ -34,6 +35,7 @@ pub trait StateHandler: Send + Sync {
 pub fn get_handler(state: &str) -> Box<dyn StateHandler> {
     match state {
         "LEAD" => Box::new(lead::LeadHandler),
+        "RECUSADO" => Box::new(recusado::RecusadoHandler),
         _ => Box::new(stub::StubHandler {
             state: state.to_owned(),
         }),

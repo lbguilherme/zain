@@ -63,3 +63,60 @@ pub fn send_whatsapp_message_tool() -> ToolDef {
         consequential: true,
     }
 }
+
+/// Consulta oficial se um CNPJ é optante pelo SIMEI.
+pub fn consultar_simei_cnpj_tool() -> ToolDef {
+    ToolDef {
+        name: "consultar_simei_cnpj",
+        description: "Consulta se um CNPJ é optante pelo SIMEI (ou seja, se é um MEI ativo). Use SEMPRE que o cliente informar um CNPJ, antes de aceitar que ele já tem MEI. A consulta leva 15-30 segundos. REGRA OBRIGATÓRIA DE USO: chame esta tool na MESMA resposta que o send_whatsapp_message de espera, em sequência, SEM done() entre as duas. Exemplo do fluxo correto numa única resposta: send_whatsapp_message('deixa eu dar uma olhada aqui rapidinho') → consultar_simei_cnpj(cnpj='...'). Se você chamar done() antes de consultar_simei_cnpj, a consulta nunca vai rodar e o cliente fica sem resposta. Não mencione 'Receita' ou 'portal' na mensagem de espera — diga só 'aqui'. Retorna optante_simei (bool), simei_desde, optante_simples, nome_empresarial. **OBRIGATÓRIO**: depois que esta tool retornar, você DEVE chamar send_whatsapp_message com uma resposta NOVA ao cliente baseada no resultado (ex: 'Confirmado! Vi que você é MEI desde X' ou 'Vi que esse CNPJ não é MEI'). A mensagem de espera anterior NÃO conta como resposta — ela só servia pra avisar que você ia consultar. Nunca termine o turno sem mandar uma mensagem nova contando o que descobriu.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "cnpj": {
+                    "type": "string",
+                    "description": "CNPJ a consultar. Pode vir com ou sem pontuação, a ferramenta normaliza."
+                }
+            },
+            "required": ["cnpj"]
+        }),
+        consequential: true,
+    }
+}
+
+/// Consulta se um código CNAE específico se qualifica para MEI.
+pub fn consultar_cnae_por_codigo_tool() -> ToolDef {
+    ToolDef {
+        name: "consultar_cnae_por_codigo",
+        description: "Verifica se um código CNAE específico está na lista de atividades permitidas para MEI. Use quando o cliente informar um código CNAE (ex: '4520-0/01') e quiser saber se pode ser MEI. Consulta rápida, sem mensagem de espera. Retorna pode_ser_mei (bool) e a lista de ocupações MEI que batem com o código. **OBRIGATÓRIO**: depois que esta tool retornar, você DEVE chamar send_whatsapp_message com uma resposta ao cliente baseada no resultado. Nunca termine o turno sem responder ao cliente.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "codigo": {
+                    "type": "string",
+                    "description": "Código CNAE, com ou sem formatação (ex: '4520-0/01' ou '4520001')"
+                }
+            },
+            "required": ["codigo"]
+        }),
+        consequential: false,
+    }
+}
+
+/// Busca CNAEs MEI-compatíveis a partir de uma descrição de atividade.
+pub fn buscar_cnae_por_atividade_tool() -> ToolDef {
+    ToolDef {
+        name: "buscar_cnae_por_atividade",
+        description: "Busca CNAEs MEI-compatíveis a partir de uma descrição livre da atividade (ex: 'doces artesanais', 'cabelereiro', 'mecânico'). Use quando o cliente descrever o que faz mas não souber o código CNAE. Consulta rápida, sem mensagem de espera. Retorna até 10 ocupações MEI que batem com a descrição. **OBRIGATÓRIO**: depois que esta tool retornar, você DEVE chamar send_whatsapp_message com uma resposta ao cliente baseada no resultado. Nunca termine o turno sem responder ao cliente.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "descricao": {
+                    "type": "string",
+                    "description": "Descrição livre da atividade que o cliente exerce (ex: 'vendo bolo no pote', 'conserto celular')"
+                }
+            },
+            "required": ["descricao"]
+        }),
+        consequential: false,
+    }
+}

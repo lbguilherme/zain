@@ -261,10 +261,13 @@ async fn run_workflow(
 ) -> anyhow::Result<WorkflowOutcome> {
     let handler = states::get_handler(&client.state);
 
-    // Montar tools: estado-específicas + globais (send + done)
+    // Montar tools: estado-específicas + globais (send + done + consultas)
     let mut state_tools = handler.tool_definitions();
     state_tools.push(tools::send_whatsapp_message_tool());
     state_tools.push(tools::done_tool());
+    state_tools.push(tools::consultar_simei_cnpj_tool());
+    state_tools.push(tools::consultar_cnae_por_codigo_tool());
+    state_tools.push(tools::buscar_cnae_por_atividade_tool());
     let tools_json: Vec<Value> = state_tools.iter().map(|t| t.to_ollama_json()).collect();
 
     // System prompt com histórico embutido
@@ -289,10 +292,26 @@ async fn run_workflow(
 
     // Loop de interação com o LLM (tool calls iterativas)
     let max_iterations = 10;
-    for _ in 0..max_iterations {
+    for iteration in 0..max_iterations {
+        tracing::debug!(
+            client_id = %client.id,
+            iteration = iteration,
+            "Chamando LLM"
+        );
         let response = ollama.chat(&messages, &tools_json).await?;
 
         if let Some(ref tool_calls) = response.message.tool_calls {
+            let tool_names: Vec<&str> = tool_calls
+                .iter()
+                .map(|c| c.function.name.as_str())
+                .collect();
+            tracing::info!(
+                client_id = %client.id,
+                iteration = iteration,
+                tool_count = tool_calls.len(),
+                tools = ?tool_names,
+                "LLM retornou tool calls"
+            );
             messages.push(ChatMessage::assistant_tool_calls(tool_calls));
 
             for call in tool_calls {
@@ -339,6 +358,18 @@ async fn run_workflow(
                     messages.push(ChatMessage::tool(
                         json!({ "status": "ok", "mensagem_enviada": true }).to_string(),
                     ));
+                } else if tool_name == "consultar_simei_cnpj" {
+                    let result =
+                        execute_consultar_simei(tool_args, &mut state_props, &client.id).await;
+                    messages.push(ChatMessage::tool(result.to_string()));
+                } else if tool_name == "consultar_cnae_por_codigo" {
+                    let result =
+                        execute_consultar_cnae_por_codigo(pool, tool_args, &client.id).await;
+                    messages.push(ChatMessage::tool(result.to_string()));
+                } else if tool_name == "buscar_cnae_por_atividade" {
+                    let result =
+                        execute_buscar_cnae_por_atividade(pool, tool_args, &client.id).await;
+                    messages.push(ChatMessage::tool(result.to_string()));
                 } else {
                     let result =
                         handler.execute_tool(tool_name, tool_args, &mut state_props, &mut memory);
@@ -396,6 +427,207 @@ fn is_tool_consequential(tool_name: &str, tools: &[ToolDef]) -> bool {
         .find(|t| t.name == tool_name)
         .map(|t| t.consequential)
         .unwrap_or(true) // desconhecida = tratar como consequencial
+}
+
+// ── Global tools de consulta externa ──────────────────────────────────
+
+/// Executa a consulta SIMEI via rpa-mei. Salva o resultado em
+/// state_props["ultima_consulta_simei"] para auditoria.
+async fn execute_consultar_simei(args: &Value, state_props: &mut Value, client_id: &Uuid) -> Value {
+    let cnpj_raw = args.get("cnpj").and_then(|v| v.as_str()).unwrap_or("");
+    let cnpj_digits: String = cnpj_raw.chars().filter(|c| c.is_ascii_digit()).collect();
+
+    if cnpj_digits.len() != 14 {
+        tracing::warn!(
+            client_id = %client_id,
+            cnpj_recebido = %cnpj_raw,
+            "consultar_simei_cnpj: CNPJ inválido (deve ter 14 dígitos)"
+        );
+        return json!({
+            "erro": "CNPJ inválido — deve ter 14 dígitos",
+            "cnpj_recebido": cnpj_raw,
+        });
+    }
+
+    tracing::info!(
+        client_id = %client_id,
+        cnpj = %cnpj_digits,
+        "consultar_simei_cnpj: iniciando consulta via rpa-mei (~15-30s)"
+    );
+    let start = std::time::Instant::now();
+
+    match rpa_mei::consulta::consultar_optante(&cnpj_digits).await {
+        Ok(consulta) => {
+            let elapsed_ms = start.elapsed().as_millis();
+            tracing::info!(
+                client_id = %client_id,
+                cnpj = %cnpj_digits,
+                elapsed_ms = elapsed_ms as u64,
+                optante_simei = consulta.situacao_simei.optante,
+                optante_simples = consulta.situacao_simples.optante,
+                nome_empresarial = %consulta.nome_empresarial,
+                "consultar_simei_cnpj: consulta concluída com sucesso"
+            );
+
+            let result = json!({
+                "optante_simei": consulta.situacao_simei.optante,
+                "simei_desde": consulta.situacao_simei.desde,
+                "optante_simples": consulta.situacao_simples.optante,
+                "simples_desde": consulta.situacao_simples.desde,
+                "nome_empresarial": consulta.nome_empresarial,
+                "data_consulta": consulta.data_consulta,
+            });
+
+            // Grava em state_props para auditoria (mesmo sem transição de estado).
+            if let Some(obj) = state_props.as_object_mut() {
+                obj.insert("ultima_consulta_simei".into(), result.clone());
+            }
+
+            result
+        }
+        Err(e) => {
+            let elapsed_ms = start.elapsed().as_millis();
+            tracing::warn!(
+                client_id = %client_id,
+                cnpj = %cnpj_digits,
+                elapsed_ms = elapsed_ms as u64,
+                error = %e,
+                "consultar_simei_cnpj: falha na consulta"
+            );
+            json!({
+                "erro": format!("Falha ao consultar: {}", e),
+            })
+        }
+    }
+}
+
+/// Consulta se um código CNAE específico é MEI-compatível.
+async fn execute_consultar_cnae_por_codigo(pool: &Pool, args: &Value, client_id: &Uuid) -> Value {
+    let codigo_raw = args.get("codigo").and_then(|v| v.as_str()).unwrap_or("");
+    let codigo_norm: String = codigo_raw.chars().filter(|c| c.is_ascii_digit()).collect();
+
+    if codigo_norm.is_empty() {
+        return json!({ "erro": "código CNAE vazio" });
+    }
+
+    let pattern = format!("{}%", codigo_norm);
+    let db = match pool.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(client_id = %client_id, error = %e, "Falha ao obter conexão do pool");
+            return json!({ "erro": format!("Falha ao conectar no banco: {}", e) });
+        }
+    };
+
+    let rows = db
+        .query(
+            "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
+             FROM mei_cnaes.ocupacoes
+             WHERE cnae_subclasse_id LIKE $1
+             ORDER BY ocupacao
+             LIMIT 10",
+            &[&pattern],
+        )
+        .await;
+
+    match rows {
+        Ok(rows) => {
+            let matches: Vec<Value> = rows
+                .iter()
+                .map(|row| {
+                    let codigo: String = row.get("cnae_subclasse_id");
+                    let ocupacao: String = row.get("ocupacao");
+                    let descricao: String = row.get("cnae_descricao");
+                    json!({
+                        "codigo": codigo.trim(),
+                        "ocupacao": ocupacao,
+                        "descricao": descricao,
+                    })
+                })
+                .collect();
+
+            json!({
+                "pode_ser_mei": !matches.is_empty(),
+                "matches": matches,
+            })
+        }
+        Err(e) => {
+            tracing::warn!(
+                client_id = %client_id,
+                error = %e,
+                "Falha na query de CNAE por código"
+            );
+            json!({ "erro": format!("Falha ao consultar CNAE: {}", e) })
+        }
+    }
+}
+
+/// Busca CNAEs MEI-compatíveis pela descrição livre da atividade.
+async fn execute_buscar_cnae_por_atividade(pool: &Pool, args: &Value, client_id: &Uuid) -> Value {
+    let descricao = args
+        .get("descricao")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim();
+
+    if descricao.is_empty() {
+        return json!({ "erro": "descrição vazia" });
+    }
+
+    let pattern = format!("%{}%", descricao);
+    let db = match pool.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(client_id = %client_id, error = %e, "Falha ao obter conexão do pool");
+            return json!({ "erro": format!("Falha ao conectar no banco: {}", e) });
+        }
+    };
+
+    let rows = db
+        .query(
+            "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
+             FROM mei_cnaes.ocupacoes
+             WHERE ocupacao ILIKE $1 OR cnae_descricao ILIKE $1
+             ORDER BY ocupacao
+             LIMIT 10",
+            &[&pattern],
+        )
+        .await;
+
+    match rows {
+        Ok(rows) => {
+            let resultados: Vec<Value> = rows
+                .iter()
+                .map(|row| {
+                    let codigo: String = row.get("cnae_subclasse_id");
+                    let ocupacao: String = row.get("ocupacao");
+                    let descricao: String = row.get("cnae_descricao");
+                    json!({
+                        "codigo": codigo.trim(),
+                        "ocupacao": ocupacao,
+                        "descricao": descricao,
+                    })
+                })
+                .collect();
+
+            if resultados.is_empty() {
+                json!({
+                    "resultados": [],
+                    "mensagem": "Nenhuma ocupação MEI bate com essa descrição. Pode ser uma atividade não permitida para MEI.",
+                })
+            } else {
+                json!({ "resultados": resultados })
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                client_id = %client_id,
+                error = %e,
+                "Falha na busca de CNAE por atividade"
+            );
+            json!({ "erro": format!("Falha ao buscar CNAE: {}", e) })
+        }
+    }
 }
 
 async fn has_new_messages(
