@@ -38,6 +38,8 @@ pub struct ToolCallFunction {
 #[derive(Debug, Deserialize)]
 pub struct ChatResponse {
     pub message: ChatResponseMessage,
+    #[serde(default)]
+    pub usage: ChatUsage,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +48,16 @@ pub struct ChatResponseMessage {
     #[serde(default)]
     pub content: String,
     pub tool_calls: Option<Vec<ToolCall>>,
+}
+
+/// Contabilidade de tokens e custo estimado de uma resposta. O custo
+/// é sempre em USD; providers sem pricing conhecido (ex.: Ollama local)
+/// devolvem `cost = 0.0`.
+#[derive(Debug, Default, Clone, Deserialize)]
+pub struct ChatUsage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cost: f64,
 }
 
 // ── ChatMessage constructors ───────────────────────────────────────────

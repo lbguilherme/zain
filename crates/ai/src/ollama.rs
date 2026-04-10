@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::chat::{ChatMessage, ChatResponse};
+use crate::chat::{ChatMessage, ChatResponse, ChatUsage};
 
 const EMBED_BATCH_SIZE: usize = 64;
 
@@ -46,15 +46,34 @@ impl OllamaClient {
             body["tools"] = Value::Array(tools.to_vec());
         }
 
-        let resp = self
+        // Parseamos para `Value` primeiro porque Ollama expõe a contagem
+        // de tokens em campos no nível raiz (`prompt_eval_count`,
+        // `eval_count`) que não vivem dentro de `message`, e só depois
+        // desserializamos para `ChatResponse`.
+        let raw: Value = self
             .http
             .post(format!("{}/api/chat", self.base_url))
             .json(&body)
             .send()
             .await?
             .error_for_status()?
-            .json::<ChatResponse>()
+            .json()
             .await?;
+
+        let input_tokens = raw
+            .get("prompt_eval_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+        let output_tokens = raw.get("eval_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+        let mut resp: ChatResponse =
+            serde_json::from_value(raw).context("falha ao parsear resposta do Ollama")?;
+        // Ollama roda local — sem custo monetário.
+        resp.usage = ChatUsage {
+            input_tokens,
+            output_tokens,
+            cost: 0.0,
+        };
 
         Ok(resp)
     }

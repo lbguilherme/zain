@@ -25,5 +25,7 @@ pub mod gemini;
 pub mod ollama;
 pub mod whisper;
 
-pub use chat::{ChatMessage, ChatResponse, ChatResponseMessage, ToolCall, ToolCallFunction};
+pub use chat::{
+    ChatMessage, ChatResponse, ChatResponseMessage, ChatUsage, ToolCall, ToolCallFunction,
+};
 pub use client::{Client, ClientBuilder};

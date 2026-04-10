@@ -302,6 +302,15 @@ async fn run_workflow(
         );
         let response = ai.chat(chat_model, &messages, &tools_json).await?;
 
+        tracing::info!(
+            client_id = %client.id,
+            iteration = iteration,
+            input_tokens = response.usage.input_tokens,
+            output_tokens = response.usage.output_tokens,
+            cost_usd = format!("{:.6}", response.usage.cost),
+            "Resposta do LLM"
+        );
+
         if let Some(ref tool_calls) = response.message.tool_calls {
             let tool_names: Vec<&str> = tool_calls
                 .iter()
