@@ -14,7 +14,7 @@ use crate::source::{DataSource, Download};
 
 const API_URL: &str = "https://servicodados.ibge.gov.br/api/v2/cnae/subclasses";
 const DATA_VERSION: &str = "2.3";
-const EXTRACTOR_VERSION: u32 = 3;
+const EXTRACTOR_VERSION: u32 = 4;
 
 // --- Deserialização do JSON da API ---
 
@@ -159,76 +159,65 @@ async fn import_cnae(tx: &Transaction<'_>, schema: &str, data_dir: &std::path::P
         .join("cnae");
     let embedder = EmbeddingClient::new(cache_dir)?;
 
-    let secao_texts: Vec<String> = secoes.iter().map(|(_, d)| d.clone()).collect();
-    println!("    secoes:");
-    let secao_embs = embedder.embed_many(&secao_texts).await?;
-
-    let divisao_texts: Vec<String> = divisoes.iter().map(|(_, (d, _))| d.clone()).collect();
-    println!("    divisoes:");
-    let divisao_embs = embedder.embed_many(&divisao_texts).await?;
-
-    let grupo_texts: Vec<String> = grupos.iter().map(|(_, (d, _))| d.clone()).collect();
-    println!("    grupos:");
-    let grupo_embs = embedder.embed_many(&grupo_texts).await?;
-
-    let classe_texts: Vec<String> = classes.iter().map(|(_, (d, _, _))| d.clone()).collect();
-    println!("    classes:");
-    let classe_embs = embedder.embed_many(&classe_texts).await?;
-
     let subclasse_texts: Vec<String> = subclasse_data
         .iter()
-        .map(|(_, d, _, _)| d.clone())
+        .map(|(_, descricao, _, obs)| {
+            format!("# {}\n\n{}", descricao, obs.as_deref().unwrap_or(""))
+        })
         .collect();
     println!("    subclasses:");
     let subclasse_embs = embedder.embed_many(&subclasse_texts).await?;
 
+    let atividade_texts: Vec<String> = atividades_data.iter().map(|(_, a)| a.clone()).collect();
+    println!("    subclasse_atividades:");
+    let atividade_embs = embedder.embed_many(&atividade_texts).await?;
+
     // Inserir seções
     let stmt = tx
         .prepare(&format!(
-            "INSERT INTO \"{schema}\".\"secoes\" (id, descricao, embedding) VALUES ($1, $2, $3)"
+            "INSERT INTO \"{schema}\".\"secoes\" (id, descricao) VALUES ($1, $2)"
         ))
         .await?;
-    for ((id, descricao), emb) in secoes.iter().zip(&secao_embs) {
-        tx.execute(&stmt, &[id, descricao, emb]).await?;
+    for (id, descricao) in &secoes {
+        tx.execute(&stmt, &[id, descricao]).await?;
     }
     println!("  secoes: {} registros", secoes.len());
 
     // Inserir divisões
     let stmt = tx
         .prepare(&format!(
-            "INSERT INTO \"{schema}\".\"divisoes\" (id, descricao, secao_id, embedding) VALUES ($1, $2, $3, $4)"
+            "INSERT INTO \"{schema}\".\"divisoes\" (id, descricao, secao_id) VALUES ($1, $2, $3)"
         ))
         .await?;
-    for ((id, (descricao, secao_id)), emb) in divisoes.iter().zip(&divisao_embs) {
-        tx.execute(&stmt, &[id, descricao, secao_id, emb]).await?;
+    for (id, (descricao, secao_id)) in &divisoes {
+        tx.execute(&stmt, &[id, descricao, secao_id]).await?;
     }
     println!("  divisoes: {} registros", divisoes.len());
 
     // Inserir grupos
     let stmt = tx
         .prepare(&format!(
-            "INSERT INTO \"{schema}\".\"grupos\" (id, descricao, divisao_id, embedding) VALUES ($1, $2, $3, $4)"
+            "INSERT INTO \"{schema}\".\"grupos\" (id, descricao, divisao_id) VALUES ($1, $2, $3)"
         ))
         .await?;
-    for ((id, (descricao, divisao_id)), emb) in grupos.iter().zip(&grupo_embs) {
-        tx.execute(&stmt, &[id, descricao, divisao_id, emb]).await?;
+    for (id, (descricao, divisao_id)) in &grupos {
+        tx.execute(&stmt, &[id, descricao, divisao_id]).await?;
     }
     println!("  grupos: {} registros", grupos.len());
 
     // Inserir classes
     let stmt = tx
         .prepare(&format!(
-            "INSERT INTO \"{schema}\".\"classes\" (id, descricao, grupo_id, observacoes, embedding) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO \"{schema}\".\"classes\" (id, descricao, grupo_id, observacoes) VALUES ($1, $2, $3, $4)"
         ))
         .await?;
-    for ((id, (descricao, grupo_id, observacoes)), emb) in classes.iter().zip(&classe_embs) {
+    for (id, (descricao, grupo_id, observacoes)) in &classes {
         let obs: Option<&str> = if observacoes.is_empty() {
             None
         } else {
             Some(observacoes.as_str())
         };
-        tx.execute(&stmt, &[id, descricao, grupo_id, &obs, emb])
-            .await?;
+        tx.execute(&stmt, &[id, descricao, grupo_id, &obs]).await?;
     }
     println!("  classes: {} registros", classes.len());
 
@@ -248,11 +237,12 @@ async fn import_cnae(tx: &Transaction<'_>, schema: &str, data_dir: &std::path::P
     // Inserir atividades
     let stmt_ativ = tx
         .prepare(&format!(
-            "INSERT INTO \"{schema}\".\"subclasse_atividades\" (subclasse_id, atividade) VALUES ($1, $2)"
+            "INSERT INTO \"{schema}\".\"subclasse_atividades\" (subclasse_id, atividade, embedding) VALUES ($1, $2, $3)"
         ))
         .await?;
-    for (subclasse_id, atividade) in &atividades_data {
-        tx.execute(&stmt_ativ, &[subclasse_id, atividade]).await?;
+    for ((subclasse_id, atividade), emb) in atividades_data.iter().zip(&atividade_embs) {
+        tx.execute(&stmt_ativ, &[subclasse_id, atividade, emb])
+            .await?;
     }
     println!(
         "  subclasse_atividades: {} registros",
@@ -315,7 +305,6 @@ static TABLES: &[Table] = &[
         columns: &[
             Column::text("id", "CHAR(1) PRIMARY KEY"),
             Column::text("descricao", "TEXT NOT NULL"),
-            Column::text("embedding", "halfvec NOT NULL"),
         ],
         extra_ddl: &[],
         has_headers: false,
@@ -330,7 +319,6 @@ static TABLES: &[Table] = &[
             Column::text("id", "CHAR(2) PRIMARY KEY"),
             Column::text("descricao", "TEXT NOT NULL"),
             Column::text("secao_id", "CHAR(1) NOT NULL"),
-            Column::text("embedding", "halfvec NOT NULL"),
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"divisoes\" (\"secao_id\")"],
         has_headers: false,
@@ -345,7 +333,6 @@ static TABLES: &[Table] = &[
             Column::text("id", "CHAR(3) PRIMARY KEY"),
             Column::text("descricao", "TEXT NOT NULL"),
             Column::text("divisao_id", "CHAR(2) NOT NULL"),
-            Column::text("embedding", "halfvec NOT NULL"),
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"grupos\" (\"divisao_id\")"],
         has_headers: false,
@@ -361,7 +348,6 @@ static TABLES: &[Table] = &[
             Column::text("descricao", "TEXT NOT NULL"),
             Column::text("grupo_id", "CHAR(3) NOT NULL"),
             Column::text("observacoes", "TEXT"),
-            Column::text("embedding", "halfvec NOT NULL"),
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"classes\" (\"grupo_id\")"],
         has_headers: false,
@@ -391,6 +377,7 @@ static TABLES: &[Table] = &[
         columns: &[
             Column::text("subclasse_id", "CHAR(7) NOT NULL"),
             Column::text("atividade", "TEXT NOT NULL"),
+            Column::text("embedding", "halfvec NOT NULL"),
         ],
         extra_ddl: &["CREATE INDEX ON \"{schema}\".\"subclasse_atividades\" (\"subclasse_id\")"],
         has_headers: false,
