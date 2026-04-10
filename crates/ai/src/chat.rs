@@ -19,6 +19,12 @@ pub struct ChatMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
     pub function: ToolCallFunction,
+    /// Assinatura opaca devolvida pelo Gemini 3.x junto com o `functionCall`.
+    /// DEVE ser reemitida no mesmo Part no turno seguinte, senão o Gemini
+    /// rejeita com 400 INVALID_ARGUMENT. Outros providers (Ollama etc.)
+    /// ignoram o campo — `skip_serializing_if` impede vazamento no wire.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub thought_signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

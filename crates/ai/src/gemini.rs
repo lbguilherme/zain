@@ -4,7 +4,7 @@
 //! OpenAI/Ollama) para o wire format do Gemini (`contents` com `parts`,
 //! `functionDeclarations`, `functionCall`, `functionResponse`) e de volta.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 
 use crate::chat::{ChatMessage, ChatResponse, ChatResponseMessage, ToolCall, ToolCallFunction};
@@ -47,19 +47,29 @@ impl GeminiClient {
         }
 
         let url = format!("{BASE_URL}/models/{model}:generateContent");
-        let resp: Value = self
+        let http_resp = self
             .http
             .post(&url)
             .header("x-goog-api-key", &self.api_key)
             .json(&body)
             .send()
             .await
-            .context("falha ao chamar Gemini")?
-            .error_for_status()
-            .context("erro na resposta do Gemini")?
-            .json()
+            .context("falha ao chamar Gemini")?;
+
+        let status = http_resp.status();
+        let body_text = http_resp
+            .text()
             .await
-            .context("falha ao parsear resposta do Gemini")?;
+            .context("falha ao ler resposta do Gemini")?;
+
+        if !status.is_success() {
+            return Err(anyhow!(
+                "erro na resposta do Gemini ({status}): {body_text}"
+            ));
+        }
+
+        let resp: Value =
+            serde_json::from_str(&body_text).context("falha ao parsear resposta do Gemini")?;
 
         translate_response(&resp)
     }
@@ -87,12 +97,21 @@ fn translate_messages(messages: &[ChatMessage]) -> Result<(Option<Value>, Vec<Va
                     let parts: Vec<Value> = tool_calls
                         .iter()
                         .map(|c| {
-                            json!({
+                            let mut part = json!({
                                 "functionCall": {
                                     "name": c.function.name,
                                     "args": c.function.arguments,
                                 }
-                            })
+                            });
+                            // Gemini 3.x exige que `thoughtSignature` seja
+                            // reemitido no mesmo Part do functionCall
+                            // original — sem isso a API devolve 400
+                            // INVALID_ARGUMENT. Vive como irmão de
+                            // `functionCall` no Part, não dentro dele.
+                            if let Some(sig) = &c.thought_signature {
+                                part["thoughtSignature"] = json!(sig);
+                            }
+                            part
                         })
                         .collect();
                     contents.push(json!({
@@ -191,11 +210,19 @@ fn translate_response(resp: &Value) -> Result<ChatResponse> {
                 .context("functionCall sem 'name'")?
                 .to_owned();
             let args = call.get("args").cloned().unwrap_or(json!({}));
+            // `thoughtSignature` vive no Part (irmão de `functionCall`),
+            // não dentro do objeto functionCall. Gemini 3.x exige que ele
+            // seja devolvido no turno seguinte.
+            let thought_signature = part
+                .get("thoughtSignature")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_owned());
             tool_calls.push(ToolCall {
                 function: ToolCallFunction {
                     name,
                     arguments: args,
                 },
+                thought_signature,
             });
         }
     }

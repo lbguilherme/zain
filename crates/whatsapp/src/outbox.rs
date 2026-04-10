@@ -1,16 +1,77 @@
+use std::sync::Arc;
+use std::time::Duration;
+
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
+use tokio::sync::Notify;
+use tokio_postgres::{AsyncMessage, NoTls};
 
 use crate::client::WhapiClient;
 
-pub async fn outbox_loop(pool: &Pool, api: &WhapiClient) -> anyhow::Result<()> {
+pub async fn outbox_loop(pool: &Pool, api: &WhapiClient, database_url: &str) -> anyhow::Result<()> {
+    let notify = Arc::new(Notify::new());
+
+    // Task dedicada de LISTEN em uma conexão fora do pool (LISTEN prende a
+    // conexão). Reconecta em loop com backoff se a conexão cair.
+    let listen_notify = notify.clone();
+    let listen_url = database_url.to_owned();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = listen_task(&listen_url, &listen_notify).await {
+                tracing::error!("Listen task caiu: {e:#}. Reconectando em 5s...");
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
+
     loop {
         if let Err(e) = process_outbox_batch(pool, api).await {
             tracing::error!("Erro no outbox: {e:#}");
         }
 
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_secs(20)) => {}
+            _ = notify.notified() => {}
+        }
     }
+}
+
+async fn listen_task(database_url: &str, notify: &Arc<Notify>) -> anyhow::Result<()> {
+    let (client, connection) = tokio_postgres::connect(database_url, NoTls).await?;
+
+    // Canal para repassar notifications do driver da conexão para o loop.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+    // Sub-task que dirige a Connection dedicada e extrai AsyncMessages.
+    let driver = tokio::spawn(async move {
+        tokio::pin!(connection);
+        loop {
+            let msg = std::future::poll_fn(|cx| connection.as_mut().poll_message(cx)).await;
+            match msg {
+                Some(Ok(AsyncMessage::Notification(_))) => {
+                    if tx.send(()).is_err() {
+                        break;
+                    }
+                }
+                Some(Ok(_)) => {}
+                Some(Err(e)) => {
+                    tracing::error!("Erro na conexão LISTEN: {e}");
+                    break;
+                }
+                None => break,
+            }
+        }
+    });
+
+    client.batch_execute("LISTEN whatsapp_outbox").await?;
+    tracing::info!("Outbox LISTEN conectado no canal whatsapp_outbox");
+
+    while rx.recv().await.is_some() {
+        notify.notify_one();
+    }
+
+    driver.abort();
+    anyhow::bail!("conexão LISTEN encerrou");
 }
 
 async fn process_outbox_batch(pool: &Pool, api: &WhapiClient) -> anyhow::Result<()> {

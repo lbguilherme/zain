@@ -21,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
 
     let mut pool_cfg = Config::new();
-    pool_cfg.url = Some(database_url);
+    pool_cfg.url = Some(database_url.clone());
     let pool = Arc::new(pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)?);
 
     let api = WhapiClient::new(&whapi_base_url, &whapi_token);
@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("webhook_server terminou: {r:?}");
             r
         }
-        r = outbox::outbox_loop(&pool, &api) => {
+        r = outbox::outbox_loop(&pool, &api, &database_url) => {
             tracing::error!("outbox_loop terminou: {r:?}");
             r
         }

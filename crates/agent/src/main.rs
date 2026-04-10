@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use deadpool_postgres::{Config, Runtime};
-use tokio::sync::Semaphore;
-use tokio_postgres::NoTls;
+use tokio::sync::{Notify, Semaphore};
+use tokio_postgres::{AsyncMessage, NoTls};
 
 use agent::dispatch;
 
@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let chat_model = std::env::var("CHAT_MODEL").unwrap();
 
     let mut pool_cfg = Config::new();
-    pool_cfg.url = Some(database_url);
+    pool_cfg.url = Some(database_url.clone());
     let pool = pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
     let ai_client = Arc::new(ai::Client::from_env());
@@ -29,6 +29,22 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Recovery completo. Iniciando dispatch loop...");
 
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
+
+    // Notify compartilhado entre o listener e o loop principal.
+    let notify = Arc::new(Notify::new());
+
+    // Task dedicada de LISTEN em uma conexão fora do pool. Reconecta em loop
+    // com backoff se a conexão cair.
+    let listen_notify = notify.clone();
+    let listen_url = database_url.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = listen_task(&listen_url, &listen_notify).await {
+                tracing::error!("Listen task caiu: {e:#}. Reconectando em 5s...");
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+    });
 
     loop {
         let permit = semaphore.clone().acquire_owned().await?;
@@ -52,7 +68,10 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(None) => {
                 drop(permit);
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(20)) => {}
+                    _ = notify.notified() => {}
+                }
             }
             Err(e) => {
                 drop(permit);
@@ -61,4 +80,44 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+}
+
+async fn listen_task(database_url: &str, notify: &Arc<Notify>) -> anyhow::Result<()> {
+    let (client, connection) = tokio_postgres::connect(database_url, NoTls).await?;
+
+    // Canal para repassar notifications do driver da conexão para o loop.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
+
+    // Sub-task que dirige a Connection dedicada e extrai AsyncMessages.
+    let driver = tokio::spawn(async move {
+        tokio::pin!(connection);
+        loop {
+            let msg = std::future::poll_fn(|cx| connection.as_mut().poll_message(cx)).await;
+            match msg {
+                Some(Ok(AsyncMessage::Notification(_))) => {
+                    if tx.send(()).is_err() {
+                        break;
+                    }
+                }
+                Some(Ok(_)) => {}
+                Some(Err(e)) => {
+                    tracing::error!("Erro na conexão LISTEN: {e}");
+                    break;
+                }
+                None => break,
+            }
+        }
+    });
+
+    client
+        .batch_execute("LISTEN zain_clients_needs_processing")
+        .await?;
+    tracing::info!("Agent LISTEN conectado no canal zain_clients_needs_processing");
+
+    while rx.recv().await.is_some() {
+        notify.notify_one();
+    }
+
+    driver.abort();
+    anyhow::bail!("conexão LISTEN encerrou");
 }
