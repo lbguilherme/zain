@@ -4,13 +4,11 @@ use chromium_driver::page::PageEvent;
 use chromium_driver::{LaunchOptions, launch};
 
 fn opts() -> LaunchOptions {
-    LaunchOptions {
-        headless: true,
-        ..Default::default()
-    }
+    LaunchOptions::default()
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn launch_and_get_version() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -25,6 +23,7 @@ async fn launch_and_get_version() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn create_page_and_navigate() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -45,6 +44,7 @@ async fn create_page_and_navigate() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn navigation_history() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -76,6 +76,7 @@ async fn navigation_history() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn reload_page() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -99,6 +100,7 @@ async fn reload_page() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn multiple_targets() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -161,6 +163,7 @@ async fn multiple_targets() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn activate_target() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -175,6 +178,7 @@ async fn activate_target() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn discover_targets_raw() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -206,6 +210,7 @@ async fn discover_targets_raw() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn lifecycle_events_typed() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -303,6 +308,7 @@ async fn lifecycle_events_typed() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn browser_events_typed() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -346,6 +352,7 @@ async fn browser_events_typed() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn discovery_http_version() {
     let (mut process, _browser) = launch(opts()).await.unwrap();
 
@@ -359,6 +366,7 @@ async fn discovery_http_version() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn detach_from_target() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -392,6 +400,7 @@ async fn detach_from_target() {
 // ── Browser fluent API tests ───────────────────────────────────────────────
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn set_and_reset_permissions() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -421,6 +430,7 @@ async fn set_and_reset_permissions() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn set_download_behavior_fluent() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -444,6 +454,7 @@ async fn set_download_behavior_fluent() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn get_target_info_from_browser() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -461,6 +472,7 @@ async fn get_target_info_from_browser() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn page_target_info() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -478,6 +490,7 @@ async fn page_target_info() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn window_bounds() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -508,6 +521,7 @@ async fn window_bounds() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn browser_context_create_and_use() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -528,6 +542,7 @@ async fn browser_context_create_and_use() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn browser_context_drop_disposes() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -553,6 +568,7 @@ async fn browser_context_drop_disposes() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn browser_context_isolation() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -582,6 +598,7 @@ async fn browser_context_isolation() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn browser_context_kept_alive_by_page() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 

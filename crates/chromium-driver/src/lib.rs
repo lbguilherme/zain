@@ -41,31 +41,14 @@ static LAUNCH_SEMAPHORE: std::sync::LazyLock<std::sync::Arc<tokio::sync::Semapho
         std::sync::Arc::new(tokio::sync::Semaphore::new(max))
     });
 
-/// Launch with automatic retries for transient browser crashes.
-pub async fn launch_with_retries(
-    opts_fn: impl Fn() -> LaunchOptions,
-    max_attempts: u32,
-) -> Result<(ChromiumProcess, Browser)> {
-    let mut last_err = None;
-    for attempt in 1..=max_attempts {
-        match launch(opts_fn()).await {
-            Ok(result) => return Ok(result),
-            Err(e @ CdpError::BrowserCrashed) => {
-                tracing::warn!(
-                    attempt,
-                    max_attempts,
-                    "Browser crashed on launch, retrying…"
-                );
-                last_err = Some(e);
-                tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    Err(last_err.unwrap())
-}
-
+/// Launches a Chromium process and connects to its CDP endpoint.
+///
+/// Automatically retries on transient `BrowserCrashed` errors (the Chromium
+/// process dying before printing `DevTools listening on ...` to stderr),
+/// which happens occasionally under resource pressure.
 pub async fn launch(opts: LaunchOptions) -> Result<(ChromiumProcess, Browser)> {
+    const MAX_ATTEMPTS: u32 = 3;
+
     let permit = LAUNCH_SEMAPHORE
         .clone()
         .acquire_owned()
@@ -75,8 +58,31 @@ pub async fn launch(opts: LaunchOptions) -> Result<(ChromiumProcess, Browser)> {
             message: "launch semaphore closed".into(),
         })?;
 
-    let mut process = ChromiumProcess::launch(opts).await?;
-    process._launch_permit = Some(permit);
+    let mut last_err = None;
+    for attempt in 1..=MAX_ATTEMPTS {
+        match launch_once(opts.clone()).await {
+            Ok((mut process, browser)) => {
+                process._launch_permit = Some(permit);
+                return Ok((process, browser));
+            }
+            Err(e @ CdpError::BrowserCrashed) => {
+                tracing::warn!(
+                    attempt,
+                    max_attempts = MAX_ATTEMPTS,
+                    "Browser crashed on launch, retrying…"
+                );
+                last_err = Some(e);
+                tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Err(last_err.unwrap())
+}
+
+async fn launch_once(opts: LaunchOptions) -> Result<(ChromiumProcess, Browser)> {
+    let process = ChromiumProcess::launch(opts).await?;
 
     // Fetch HTTP discovery info before connecting WebSocket.
     match discovery::get_version("127.0.0.1", process.debug_port).await {

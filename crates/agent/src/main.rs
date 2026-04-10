@@ -15,20 +15,13 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let database_url = std::env::var("DATABASE_URL").unwrap();
-    let ollama_url = std::env::var("OLLAMA_URL").unwrap();
     let chat_model = std::env::var("CHAT_MODEL").unwrap();
-    let whisper_url = std::env::var("WHISPER_URL").unwrap();
 
     let mut pool_cfg = Config::new();
     pool_cfg.url = Some(database_url);
     let pool = pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
-    let ai_client = Arc::new(
-        ai::Client::builder()
-            .ollama(&ollama_url)
-            .whisper(&whisper_url)
-            .build(),
-    );
+    let ai_client = Arc::new(ai::Client::from_env());
     let chat_model = Arc::new(chat_model);
 
     // Recovery: marcar execuções órfãs como crashed e re-agendar clientes

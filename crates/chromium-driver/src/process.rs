@@ -11,14 +11,18 @@ pub struct ChromiumProcess {
     pub ws_url: String,
     pub debug_port: u16,
     temp_user_data_dir: Option<PathBuf>,
+    /// On Linux, holds the Xvfb child process. Killed alongside the
+    /// Chromium child.
+    #[cfg(target_os = "linux")]
+    xvfb_child: Option<Child>,
     /// Held to limit concurrent browser instances. Dropped with the process.
     pub(crate) _launch_permit: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 
+#[derive(Clone)]
 pub struct LaunchOptions {
     pub executable: String,
     pub port: u16,
-    pub headless: bool,
     pub user_data_dir: Option<String>,
     pub window_size: (u32, u32),
     pub extra_args: Vec<String>,
@@ -29,7 +33,6 @@ impl Default for LaunchOptions {
         Self {
             executable: detect_executable(),
             port: 0,
-            headless: true,
             user_data_dir: None,
             window_size: (1920, 1080),
             extra_args: Vec::new(),
@@ -105,11 +108,12 @@ impl ChromiumProcess {
             "--no-sandbox".into(),
         ];
 
-        if opts.headless {
-            args.push("--headless=new".into());
-            args.push("--disable-gpu".into());
-            args.push("--disable-dev-shm-usage".into());
-        }
+        // On Linux, always run Chromium inside Xvfb so it works without a
+        // real display. On other platforms the browser window is visible.
+        #[cfg(target_os = "linux")]
+        let xvfb_child = Some(start_xvfb(opts.window_size).await?);
+
+        args.push("--disable-dev-shm-usage".into());
 
         let temp_user_data_dir = if let Some(ref dir) = opts.user_data_dir {
             args.push(format!("--user-data-dir={}", dir));
@@ -122,13 +126,19 @@ impl ChromiumProcess {
 
         args.extend(opts.extra_args);
 
-        let mut child = Command::new(&opts.executable)
+        let mut command = Command::new(&opts.executable);
+        command
             .args(&args)
             .stderr(Stdio::piped())
             .stdout(Stdio::null())
-            .stdin(Stdio::null())
-            .spawn()
-            .map_err(CdpError::ProcessStart)?;
+            .stdin(Stdio::null());
+
+        #[cfg(target_os = "linux")]
+        if let Some((_, display)) = xvfb_child.as_ref() {
+            command.env("DISPLAY", display);
+        }
+
+        let mut child = command.spawn().map_err(CdpError::ProcessStart)?;
 
         let stderr = child.stderr.take().expect("stderr was piped");
         let mut reader = BufReader::new(stderr).lines();
@@ -149,6 +159,8 @@ impl ChromiumProcess {
             ws_url,
             debug_port: port,
             temp_user_data_dir,
+            #[cfg(target_os = "linux")]
+            xvfb_child: xvfb_child.map(|(c, _)| c),
             _launch_permit: None,
         })
     }
@@ -159,14 +171,23 @@ impl ChromiumProcess {
 
     pub async fn kill(&mut self) -> Result<()> {
         self.child.kill().await.map_err(CdpError::ProcessStart)?;
+        self.kill_xvfb();
         self.cleanup_temp_dir();
         Ok(())
     }
 
     pub async fn wait(&mut self) -> Result<std::process::ExitStatus> {
         let status = self.child.wait().await.map_err(CdpError::ProcessStart)?;
+        self.kill_xvfb();
         self.cleanup_temp_dir();
         Ok(status)
+    }
+
+    fn kill_xvfb(&mut self) {
+        #[cfg(target_os = "linux")]
+        if let Some(xvfb) = self.xvfb_child.as_mut() {
+            let _ = xvfb.start_kill();
+        }
     }
 
     fn cleanup_temp_dir(&mut self) {
@@ -179,6 +200,48 @@ impl ChromiumProcess {
 impl Drop for ChromiumProcess {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+        self.kill_xvfb();
         self.cleanup_temp_dir();
     }
+}
+
+/// Starts an Xvfb server and returns the child process plus the `DISPLAY`
+/// string (e.g. `":42"`). Uses `-displayfd 1` to let Xvfb pick a free
+/// display number and print it on stdout.
+#[cfg(target_os = "linux")]
+async fn start_xvfb(window_size: (u32, u32)) -> Result<(Child, String)> {
+    let screen = format!("{}x{}x24", window_size.0, window_size.1);
+    let mut child = Command::new("Xvfb")
+        .arg("-displayfd")
+        .arg("1")
+        .arg("-screen")
+        .arg("0")
+        .arg(&screen)
+        .arg("-nolisten")
+        .arg("tcp")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .spawn()
+        .map_err(CdpError::ProcessStart)?;
+
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let mut reader = BufReader::new(stdout).lines();
+
+    let timeout = std::time::Duration::from_secs(10);
+    let display_num = match tokio::time::timeout(timeout, reader.next_line()).await {
+        Ok(Ok(Some(line))) => line.trim().to_owned(),
+        _ => {
+            let _ = child.start_kill();
+            return Err(CdpError::BrowserCrashed);
+        }
+    };
+
+    if display_num.is_empty() {
+        let _ = child.start_kill();
+        return Err(CdpError::BrowserCrashed);
+    }
+
+    tracing::debug!(display = %display_num, "Xvfb started");
+    Ok((child, format!(":{display_num}")))
 }

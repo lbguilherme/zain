@@ -9,6 +9,11 @@ pub struct ChatMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
+    /// Nome da tool a que este message responde (role="tool"). Usado pelo
+    /// provider Gemini para montar o `functionResponse.name`. É ignorado
+    /// na serialização para providers que não precisam do campo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +50,7 @@ impl ChatMessage {
             role: "system".into(),
             content,
             tool_calls: None,
+            tool_name: None,
         }
     }
 
@@ -53,14 +59,16 @@ impl ChatMessage {
             role: "user".into(),
             content,
             tool_calls: None,
+            tool_name: None,
         }
     }
 
-    pub fn tool(content: String) -> Self {
+    pub fn tool(name: String, content: String) -> Self {
         Self {
             role: "tool".into(),
             content,
             tool_calls: None,
+            tool_name: Some(name),
         }
     }
 
@@ -69,6 +77,7 @@ impl ChatMessage {
             role: "assistant".into(),
             content,
             tool_calls: None,
+            tool_name: None,
         }
     }
 
@@ -77,6 +86,7 @@ impl ChatMessage {
             role: "assistant".into(),
             content: String::new(),
             tool_calls: Some(calls.to_vec()),
+            tool_name: None,
         }
     }
 }

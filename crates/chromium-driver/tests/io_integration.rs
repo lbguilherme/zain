@@ -3,13 +3,11 @@ use chromium_driver::cdp::runtime::{EvaluateParams, RuntimeCommands};
 use chromium_driver::{LaunchOptions, launch};
 
 fn opts() -> LaunchOptions {
-    LaunchOptions {
-        headless: true,
-        ..Default::default()
-    }
+    LaunchOptions::default()
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn create_blob_and_read_via_io() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 

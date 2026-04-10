@@ -346,7 +346,10 @@ async fn run_workflow(
                 tracing::info!(client_id = %client.id, tool_name, "Executando tool");
 
                 if tool_name == "done" {
-                    messages.push(ChatMessage::tool(json!({ "status": "ok" }).to_string()));
+                    messages.push(ChatMessage::tool(
+                        tool_name.clone(),
+                        json!({ "status": "ok" }).to_string(),
+                    ));
                     done = true;
                     continue;
                 } else if tool_name == "send_whatsapp_message" {
@@ -358,27 +361,28 @@ async fn run_workflow(
                         write_outbox(pool, &client.chat_id, msg_text).await?;
                     }
                     messages.push(ChatMessage::tool(
+                        tool_name.clone(),
                         json!({ "status": "ok", "mensagem_enviada": true }).to_string(),
                     ));
                 } else if tool_name == "consultar_simei_cnpj" {
                     let result =
                         execute_consultar_simei(tool_args, &mut state_props, &client.id).await;
-                    messages.push(ChatMessage::tool(result.to_string()));
+                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
                 } else if tool_name == "consultar_cnae_por_codigo" {
                     let result =
                         execute_consultar_cnae_por_codigo(pool, tool_args, &client.id).await;
-                    messages.push(ChatMessage::tool(result.to_string()));
+                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
                 } else if tool_name == "buscar_cnae_por_atividade" {
                     let result =
                         execute_buscar_cnae_por_atividade(pool, tool_args, &client.id).await;
-                    messages.push(ChatMessage::tool(result.to_string()));
+                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
                 } else {
                     let result =
                         handler.execute_tool(tool_name, tool_args, &mut state_props, &mut memory);
 
                     match result {
                         ToolResult::Ok(value) => {
-                            messages.push(ChatMessage::tool(value.to_string()));
+                            messages.push(ChatMessage::tool(tool_name.clone(), value.to_string()));
                         }
                         ToolResult::StateTransition {
                             new_state,
@@ -394,9 +398,10 @@ async fn run_workflow(
                                 &memory,
                             )
                             .await?;
-                            messages.push(ChatMessage::tool(format!(
-                                "Transição para estado {new_state} realizada com sucesso."
-                            )));
+                            messages.push(ChatMessage::tool(
+                                tool_name.clone(),
+                                format!("Transição para estado {new_state} realizada com sucesso."),
+                            ));
                         }
                     }
                 }

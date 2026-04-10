@@ -11,11 +11,13 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use crate::chat::{ChatMessage, ChatResponse};
+use crate::gemini::GeminiClient;
 use crate::ollama::OllamaClient;
 use crate::whisper::WhisperClient;
 
 enum Provider {
     Ollama(OllamaClient),
+    Gemini(GeminiClient),
     Whisper(WhisperClient),
 }
 
@@ -31,6 +33,15 @@ impl ClientBuilder {
         self.providers.insert(
             "ollama".into(),
             Provider::Ollama(OllamaClient::new(base_url)),
+        );
+        self
+    }
+
+    /// Registra o provider `gemini` com a API key informada.
+    pub fn gemini(mut self, api_key: &str) -> Self {
+        self.providers.insert(
+            "gemini".into(),
+            Provider::Gemini(GeminiClient::new(api_key)),
         );
         self
     }
@@ -63,6 +74,35 @@ impl Client {
         ClientBuilder::default()
     }
 
+    /// Constrói um [`Client`] lendo a configuração de cada provider
+    /// diretamente do ambiente. Um provider só é registrado se a sua
+    /// variável de ambiente correspondente existir:
+    ///
+    /// - `OLLAMA_URL`   → provider `ollama`
+    /// - `GEMINI_API_KEY` → provider `gemini`
+    /// - `WHISPER_URL`  → provider `whisper`
+    ///
+    /// Se nenhuma estiver setada, retorna um client vazio — qualquer
+    /// chamada falha com "provider '…' não configurado".
+    pub fn from_env() -> Self {
+        let mut builder = ClientBuilder::default();
+
+        if let Ok(url) = std::env::var("OLLAMA_URL") {
+            tracing::info!(provider = "ollama", %url, "registering ai provider");
+            builder = builder.ollama(&url);
+        }
+        if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+            tracing::info!(provider = "gemini", "registering ai provider");
+            builder = builder.gemini(&key);
+        }
+        if let Ok(url) = std::env::var("WHISPER_URL") {
+            tracing::info!(provider = "whisper", %url, "registering ai provider");
+            builder = builder.whisper(&url);
+        }
+
+        builder.build()
+    }
+
     fn resolve<'a>(&'a self, qualified_model: &'a str) -> Result<(&'a Provider, &'a str)> {
         let (name, model) = qualified_model.split_once('/').with_context(|| {
             format!("modelo '{qualified_model}' deve estar no formato 'provider/modelo'")
@@ -85,6 +125,7 @@ impl Client {
         let (provider, model) = self.resolve(model)?;
         match provider {
             Provider::Ollama(c) => c.chat(model, messages, tools).await,
+            Provider::Gemini(c) => c.chat(model, messages, tools).await,
             Provider::Whisper(_) => bail!("provider 'whisper' não suporta chat"),
         }
     }
@@ -100,6 +141,7 @@ impl Client {
         let (provider, model) = self.resolve(model)?;
         match provider {
             Provider::Ollama(c) => c.embed_many(model, texts, cache_dir).await,
+            Provider::Gemini(_) => bail!("provider 'gemini' não suporta embedding"),
             Provider::Whisper(_) => bail!("provider 'whisper' não suporta embedding"),
         }
     }
@@ -117,6 +159,7 @@ impl Client {
         match provider {
             Provider::Whisper(c) => c.transcribe(model, audio_bytes, file_name, mime_type).await,
             Provider::Ollama(_) => bail!("provider 'ollama' não suporta transcrição"),
+            Provider::Gemini(_) => bail!("provider 'gemini' não suporta transcrição"),
         }
     }
 }

@@ -1,18 +1,16 @@
 use std::time::Duration;
 
 use chromium_driver::dom::Dom;
-use chromium_driver::{LaunchOptions, launch_with_retries};
+use chromium_driver::{LaunchOptions, launch};
 
 fn opts() -> LaunchOptions {
-    LaunchOptions {
-        headless: true,
-        ..Default::default()
-    }
+    LaunchOptions::default()
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn query_selector_and_text() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -38,8 +36,9 @@ async fn query_selector_and_text() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn query_selector_all() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -66,8 +65,9 @@ async fn query_selector_all() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn try_query_selector_not_found() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -86,8 +86,9 @@ async fn try_query_selector_not_found() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn element_attributes() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -118,8 +119,9 @@ async fn element_attributes() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn element_box_model_and_screenshot() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -150,8 +152,9 @@ async fn element_box_model_and_screenshot() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn wait_for_element() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -177,8 +180,9 @@ async fn wait_for_element() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn click_and_type() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -206,8 +210,9 @@ async fn click_and_type() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn press_key_enter() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -235,8 +240,9 @@ async fn press_key_enter() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn type_accented_chars() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();
@@ -264,8 +270,9 @@ async fn type_accented_chars() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn type_emoji_via_paste() {
-    let (mut process, browser) = launch_with_retries(opts, 3).await.unwrap();
+    let (mut process, browser) = launch(opts()).await.unwrap();
 
     let target = browser.create_page("about:blank").await.unwrap();
     let page = target.attach().await.unwrap();

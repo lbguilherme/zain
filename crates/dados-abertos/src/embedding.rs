@@ -12,10 +12,8 @@ pub struct EmbeddingClient {
 
 impl EmbeddingClient {
     pub fn new(cache_dir: PathBuf) -> Self {
-        let base_url =
-            std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
         Self {
-            ai: ai::Client::builder().ollama(&base_url).build(),
+            ai: ai::Client::from_env(),
             cache_dir,
         }
     }

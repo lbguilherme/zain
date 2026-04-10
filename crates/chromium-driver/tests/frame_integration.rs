@@ -3,10 +3,7 @@ use std::time::Duration;
 use chromium_driver::{LaunchOptions, launch};
 
 fn opts() -> LaunchOptions {
-    LaunchOptions {
-        headless: true,
-        ..Default::default()
-    }
+    LaunchOptions::default()
 }
 
 /// HTML page that embeds an iframe with known content.
@@ -33,6 +30,7 @@ const PAGE_WITH_TWO_IFRAMES: &str = r#"data:text/html,
 </html>"#;
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn get_frames_lists_main_and_iframe() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -62,6 +60,7 @@ async fn get_frames_lists_main_and_iframe() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn frame_dom_query_inside_iframe() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -89,6 +88,7 @@ async fn frame_dom_query_inside_iframe() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn frame_eval_runs_in_iframe_context() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -125,6 +125,7 @@ async fn frame_eval_runs_in_iframe_context() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn two_iframes_isolated_dom() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
@@ -172,6 +173,7 @@ async fn two_iframes_isolated_dom() {
 }
 
 #[tokio::test]
+#[ignore] // launches a browser; run with `cargo test -- --ignored`
 async fn wait_for_frame_by_url() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 

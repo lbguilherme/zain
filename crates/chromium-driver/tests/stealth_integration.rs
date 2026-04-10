@@ -1,10 +1,7 @@
 use chromium_driver::{LaunchOptions, launch};
 
 fn opts() -> LaunchOptions {
-    LaunchOptions {
-        headless: false,
-        ..Default::default()
-    }
+    LaunchOptions::default()
 }
 
 /// navigator.webdriver should be false/undefined (not true).

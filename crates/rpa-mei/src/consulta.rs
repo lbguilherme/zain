@@ -62,11 +62,8 @@ pub async fn consultar_optante(cnpj: &str) -> anyhow::Result<ConsultaOptante> {
     let cnpj_digits = normalize_cnpj(cnpj);
     let timeout = Duration::from_secs(15);
 
-    let (mut process, browser) = chromium_driver::launch(chromium_driver::LaunchOptions {
-        headless: false,
-        ..Default::default()
-    })
-    .await?;
+    let (mut process, browser) =
+        chromium_driver::launch(chromium_driver::LaunchOptions::default()).await?;
 
     let page = browser.create_page("about:blank").await?.attach().await?;
     page.enable().await?;
