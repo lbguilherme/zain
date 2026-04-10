@@ -146,6 +146,20 @@ impl Client {
         }
     }
 
+    /// Versão conveniente de [`Self::embed_many`] para um único texto.
+    pub async fn embed(
+        &self,
+        model: &str,
+        text: &str,
+        cache_dir: Option<&PathBuf>,
+    ) -> Result<Vec<f32>> {
+        let mut vecs = self
+            .embed_many(model, &[text.to_string()], cache_dir)
+            .await?;
+        vecs.pop()
+            .ok_or_else(|| anyhow::anyhow!("embed_many retornou vazio"))
+    }
+
     /// Transcreve áudio. `model` deve ser qualificado pelo provider,
     /// ex.: `"whisper/whisper-1"`.
     pub async fn transcribe(

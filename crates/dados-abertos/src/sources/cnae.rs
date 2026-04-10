@@ -157,7 +157,7 @@ async fn import_cnae(tx: &Transaction<'_>, schema: &str, data_dir: &std::path::P
     let cache_dir = std::path::PathBuf::from(".dados_abertos")
         .join("embeddings")
         .join("cnae");
-    let embedder = EmbeddingClient::new(cache_dir);
+    let embedder = EmbeddingClient::new(cache_dir)?;
 
     let secao_texts: Vec<String> = secoes.iter().map(|(_, d)| d.clone()).collect();
     println!("    secoes:");

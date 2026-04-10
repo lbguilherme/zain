@@ -64,7 +64,6 @@ async fn listen_task(database_url: &str, notify: &Arc<Notify>) -> anyhow::Result
     });
 
     client.batch_execute("LISTEN whatsapp_outbox").await?;
-    tracing::info!("Outbox LISTEN conectado no canal whatsapp_outbox");
 
     while rx.recv().await.is_some() {
         notify.notify_one();

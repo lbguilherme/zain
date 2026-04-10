@@ -8,9 +8,27 @@ use crate::states::{self, ConversationMessage};
 use crate::tools::{self, ToolDef, ToolResult};
 use ai::ChatMessage;
 
-/// Modelo usado para transcrever áudios recebidos. O prefixo indica o
-/// provider dentro do [`ai::Client`].
-const TRANSCRIPTION_MODEL: &str = "whisper/whisper-1";
+/// Conjunto de modelos usados pelo agent. Todos são qualificados pelo
+/// provider (`ollama/`, `whisper/`, `gemini/`, ...) e vêm do ambiente.
+#[derive(Debug, Clone)]
+pub struct Models {
+    pub chat: String,
+    pub transcription: String,
+    /// Deve bater com o modelo usado para popular `cnae.*.embedding`.
+    pub embedding: String,
+}
+
+impl Models {
+    pub fn from_env() -> anyhow::Result<Self> {
+        use anyhow::Context;
+        Ok(Self {
+            chat: std::env::var("CHAT_MODEL").context("CHAT_MODEL não definido")?,
+            transcription: std::env::var("TRANSCRIPTION_MODEL")
+                .context("TRANSCRIPTION_MODEL não definido")?,
+            embedding: std::env::var("EMBEDDING_MODEL").context("EMBEDDING_MODEL não definido")?,
+        })
+    }
+}
 
 enum WorkflowOutcome {
     Completed {
@@ -130,7 +148,7 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
 pub async fn process_client(
     pool: &Pool,
     ai: &ai::Client,
-    chat_model: &str,
+    models: &Models,
     mut client: ClientRow,
 ) -> anyhow::Result<()> {
     // exec_id começa com a execução criada atomicamente no claim
@@ -138,7 +156,7 @@ pub async fn process_client(
 
     loop {
         let (history, max_ts) =
-            fetch_history(pool, &client.chat_id, client.history_starts_at, ai).await?;
+            fetch_history(pool, &client.chat_id, client.history_starts_at, ai, models).await?;
 
         // Se não há mensagens novas desde o último processamento, nada a fazer
         let has_new = match (max_ts, client.last_whatsapp_message_processed_at) {
@@ -207,7 +225,7 @@ pub async fn process_client(
         let result = run_workflow(
             pool,
             ai,
-            chat_model,
+            models,
             &client,
             &history,
             new_count,
@@ -258,7 +276,7 @@ pub async fn process_client(
 async fn run_workflow(
     pool: &Pool,
     ai: &ai::Client,
-    chat_model: &str,
+    models: &Models,
     client: &ClientRow,
     history: &[ConversationMessage],
     new_message_count: usize,
@@ -300,7 +318,7 @@ async fn run_workflow(
             iteration = iteration,
             "Chamando LLM"
         );
-        let response = ai.chat(chat_model, &messages, &tools_json).await?;
+        let response = ai.chat(&models.chat, &messages, &tools_json).await?;
 
         tracing::info!(
             client_id = %client.id,
@@ -382,8 +400,14 @@ async fn run_workflow(
                         execute_consultar_cnae_por_codigo(pool, tool_args, &client.id).await;
                     messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
                 } else if tool_name == "buscar_cnae_por_atividade" {
-                    let result =
-                        execute_buscar_cnae_por_atividade(pool, tool_args, &client.id).await;
+                    let result = execute_buscar_cnae_por_atividade(
+                        pool,
+                        ai,
+                        &models.embedding,
+                        tool_args,
+                        &client.id,
+                    )
+                    .await;
                     messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
                 } else {
                     let result =
@@ -527,37 +551,26 @@ async fn execute_consultar_cnae_por_codigo(pool: &Pool, args: &Value, client_id:
     }
 
     let pattern = format!("{}%", codigo_norm);
-    let db = match pool.get().await {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(client_id = %client_id, error = %e, "Falha ao obter conexão do pool");
-            return json!({ "erro": format!("Falha ao conectar no banco: {}", e) });
-        }
-    };
-
-    let rows = db
-        .query(
-            "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
-             FROM mei_cnaes.ocupacoes
-             WHERE cnae_subclasse_id LIKE $1
-             ORDER BY ocupacao
-             LIMIT 10",
-            &[&pattern],
-        )
-        .await;
+    let rows = sql!(
+        pool,
+        "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
+         FROM mei_cnaes.ocupacoes
+         WHERE cnae_subclasse_id LIKE $pattern
+         ORDER BY ocupacao
+         LIMIT 6"
+    )
+    .fetch_all()
+    .await;
 
     match rows {
         Ok(rows) => {
             let matches: Vec<Value> = rows
                 .iter()
                 .map(|row| {
-                    let codigo: String = row.get("cnae_subclasse_id");
-                    let ocupacao: String = row.get("ocupacao");
-                    let descricao: String = row.get("cnae_descricao");
                     json!({
-                        "codigo": codigo.trim(),
-                        "ocupacao": ocupacao,
-                        "descricao": descricao,
+                        "codigo": row.cnae_subclasse_id.trim(),
+                        "ocupacao": row.ocupacao,
+                        "descricao": row.cnae_descricao,
                     })
                 })
                 .collect();
@@ -579,7 +592,15 @@ async fn execute_consultar_cnae_por_codigo(pool: &Pool, args: &Value, client_id:
 }
 
 /// Busca CNAEs MEI-compatíveis pela descrição livre da atividade.
-async fn execute_buscar_cnae_por_atividade(pool: &Pool, args: &Value, client_id: &Uuid) -> Value {
+/// Calcula um embedding do termo e faz busca por distância em cnae.subclasses,
+/// restringindo a subclasses que possuem ocupação MEI.
+async fn execute_buscar_cnae_por_atividade(
+    pool: &Pool,
+    ai: &ai::Client,
+    embedding_model: &str,
+    args: &Value,
+    client_id: &Uuid,
+) -> Value {
     let descricao = args
         .get("descricao")
         .and_then(|v| v.as_str())
@@ -590,38 +611,39 @@ async fn execute_buscar_cnae_por_atividade(pool: &Pool, args: &Value, client_id:
         return json!({ "erro": "descrição vazia" });
     }
 
-    let pattern = format!("%{}%", descricao);
-    let db = match pool.get().await {
-        Ok(c) => c,
+    let embedding = match ai.embed(embedding_model, descricao, None).await {
+        Ok(v) => {
+            let half: Vec<half::f16> = v.into_iter().map(half::f16::from_f32).collect();
+            pgvector::HalfVector::from(half)
+        }
         Err(e) => {
-            tracing::warn!(client_id = %client_id, error = %e, "Falha ao obter conexão do pool");
-            return json!({ "erro": format!("Falha ao conectar no banco: {}", e) });
+            tracing::warn!(client_id = %client_id, error = %e, "Falha ao gerar embedding");
+            return json!({ "erro": format!("Falha ao gerar embedding: {}", e) });
         }
     };
 
-    let rows = db
-        .query(
-            "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
-             FROM mei_cnaes.ocupacoes
-             WHERE ocupacao ILIKE $1 OR cnae_descricao ILIKE $1
-             ORDER BY ocupacao
-             LIMIT 10",
-            &[&pattern],
-        )
-        .await;
+    let rows = sql!(
+        pool,
+        "SELECT s.id AS codigo,
+            s.descricao AS descricao,
+            o.ocupacao AS ocupacao
+         FROM cnae.subclasses s
+         JOIN mei_cnaes.ocupacoes o ON o.cnae_subclasse_id = s.id
+         ORDER BY s.embedding <=> $embedding
+         LIMIT 6"
+    )
+    .fetch_all()
+    .await;
 
     match rows {
         Ok(rows) => {
             let resultados: Vec<Value> = rows
                 .iter()
                 .map(|row| {
-                    let codigo: String = row.get("cnae_subclasse_id");
-                    let ocupacao: String = row.get("ocupacao");
-                    let descricao: String = row.get("cnae_descricao");
                     json!({
-                        "codigo": codigo.trim(),
-                        "ocupacao": ocupacao,
-                        "descricao": descricao,
+                        "codigo": row.codigo.trim(),
+                        "ocupacao": row.ocupacao,
+                        "descricao": row.descricao,
                     })
                 })
                 .collect();
@@ -798,6 +820,7 @@ async fn fetch_history(
     chat_id: &str,
     history_starts_at: Option<DateTime<Utc>>,
     ai: &ai::Client,
+    models: &Models,
 ) -> anyhow::Result<(Vec<ConversationMessage>, Option<DateTime<Utc>>)> {
     struct Row {
         from_me: bool,
@@ -849,7 +872,7 @@ async fn fetch_history(
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 if !voice_id.is_empty() {
-                    match transcribe_voice(pool, ai, voice_id, link).await {
+                    match transcribe_voice(pool, ai, &models.transcription, voice_id, link).await {
                         Ok(t) => format!("[áudio transcrito]: {t}"),
                         Err(e) => {
                             tracing::warn!(voice_id, "Falha ao transcrever áudio: {e:#}");
@@ -884,6 +907,7 @@ async fn fetch_history(
 async fn transcribe_voice(
     pool: &Pool,
     ai: &ai::Client,
+    transcription_model: &str,
     voice_id: &str,
     download_link: &str,
 ) -> anyhow::Result<String> {
@@ -912,7 +936,7 @@ async fn transcribe_voice(
     // 3. Transcrever via ai::Client
     let transcription = ai
         .transcribe(
-            TRANSCRIPTION_MODEL,
+            transcription_model,
             audio_bytes.to_vec(),
             "audio.ogg",
             "audio/ogg",
