@@ -23,12 +23,12 @@ dependencies = [
 name = "agent"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "anyhow",
  "chrono",
  "cubos_sql",
  "deadpool-postgres",
  "dotenvy",
- "ollama",
  "reqwest",
  "rpa-mei",
  "serde",
@@ -59,6 +59,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "ai"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -681,6 +692,7 @@ dependencies = [
 name = "dados-abertos"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "anyhow",
  "bytes",
  "chrono",
@@ -692,7 +704,6 @@ dependencies = [
  "futures-util",
  "half",
  "indicatif",
- "ollama",
  "pgvector",
  "reqwest",
  "serde",
@@ -1753,17 +1764,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7216bd11cbda54ccabcab84d523dc93b858ec75ecfb3a7d89513fa22464da396"
 dependencies = [
  "objc2-core-foundation",
-]
-
-[[package]]
-name = "ollama"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]

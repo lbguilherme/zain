@@ -19,7 +19,7 @@ encoding_rs = "0.8"
 futures-util = "0.3"
 half = "2"
 indicatif = "0.18"
-ollama = { path = "../ollama" }
+ai = { path = "../ai" }
 pgvector = { version = "0.4", features = ["postgres", "halfvec"] }
 reqwest = { version = "0.13", features = ["stream"] }
 serde = { version = "1", features = ["derive"] }

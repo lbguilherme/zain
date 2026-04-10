@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::OllamaClient;
-
 // ── Request types ──────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,38 +78,5 @@ impl ChatMessage {
             content: String::new(),
             tool_calls: Some(calls.to_vec()),
         }
-    }
-}
-
-// ── Client impl ────────────────────────────────────────────────────────
-
-impl OllamaClient {
-    pub async fn chat(
-        &self,
-        model: &str,
-        messages: &[ChatMessage],
-        tools: &[Value],
-    ) -> anyhow::Result<ChatResponse> {
-        let mut body = serde_json::json!({
-            "model": model,
-            "messages": messages,
-            "stream": false,
-        });
-
-        if !tools.is_empty() {
-            body["tools"] = Value::Array(tools.to_vec());
-        }
-
-        let resp = self
-            .http
-            .post(format!("{}/api/chat", self.base_url))
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<ChatResponse>()
-            .await?;
-
-        Ok(resp)
     }
 }

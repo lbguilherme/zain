@@ -2,12 +2,11 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use half::f16;
-use ollama::OllamaClient;
 
-const EMBEDDING_MODEL: &str = "qwen3-embedding:4b-q4_K_M";
+const EMBEDDING_MODEL: &str = "ollama/qwen3-embedding:4b-q4_K_M";
 
 pub struct EmbeddingClient {
-    ollama: OllamaClient,
+    ai: ai::Client,
     cache_dir: PathBuf,
 }
 
@@ -16,14 +15,14 @@ impl EmbeddingClient {
         let base_url =
             std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".to_string());
         Self {
-            ollama: OllamaClient::new(&base_url),
+            ai: ai::Client::builder().ollama(&base_url).build(),
             cache_dir,
         }
     }
 
     pub async fn embed_many(&self, texts: &[String]) -> Result<Vec<pgvector::HalfVector>> {
         let vecs = self
-            .ollama
+            .ai
             .embed_many(EMBEDDING_MODEL, texts, Some(&self.cache_dir))
             .await?;
 

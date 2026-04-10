@@ -6,7 +6,11 @@ use uuid::Uuid;
 
 use crate::states::{self, ConversationMessage};
 use crate::tools::{self, ToolDef, ToolResult};
-use ollama::{ChatMessage, OllamaClient};
+use ai::ChatMessage;
+
+/// Modelo usado para transcrever áudios recebidos. O prefixo indica o
+/// provider dentro do [`ai::Client`].
+const TRANSCRIPTION_MODEL: &str = "whisper/whisper-1";
 
 enum WorkflowOutcome {
     Completed {
@@ -125,9 +129,8 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
 
 pub async fn process_client(
     pool: &Pool,
-    ollama: &OllamaClient,
-    model: &str,
-    whisper_url: &str,
+    ai: &ai::Client,
+    chat_model: &str,
     mut client: ClientRow,
 ) -> anyhow::Result<()> {
     // exec_id começa com a execução criada atomicamente no claim
@@ -135,7 +138,7 @@ pub async fn process_client(
 
     loop {
         let (history, max_ts) =
-            fetch_history(pool, &client.chat_id, client.history_starts_at, whisper_url).await?;
+            fetch_history(pool, &client.chat_id, client.history_starts_at, ai).await?;
 
         // Se não há mensagens novas desde o último processamento, nada a fazer
         let has_new = match (max_ts, client.last_whatsapp_message_processed_at) {
@@ -203,8 +206,8 @@ pub async fn process_client(
 
         let result = run_workflow(
             pool,
-            ollama,
-            model,
+            ai,
+            chat_model,
             &client,
             &history,
             new_count,
@@ -254,8 +257,8 @@ pub async fn process_client(
 #[allow(clippy::too_many_arguments)]
 async fn run_workflow(
     pool: &Pool,
-    ollama: &OllamaClient,
-    model: &str,
+    ai: &ai::Client,
+    chat_model: &str,
     client: &ClientRow,
     history: &[ConversationMessage],
     new_message_count: usize,
@@ -297,7 +300,7 @@ async fn run_workflow(
             iteration = iteration,
             "Chamando LLM"
         );
-        let response = ollama.chat(model, &messages, &tools_json).await?;
+        let response = ai.chat(chat_model, &messages, &tools_json).await?;
 
         if let Some(ref tool_calls) = response.message.tool_calls {
             let tool_names: Vec<&str> = tool_calls
@@ -780,7 +783,7 @@ async fn fetch_history(
     pool: &Pool,
     chat_id: &str,
     history_starts_at: Option<DateTime<Utc>>,
-    whisper_url: &str,
+    ai: &ai::Client,
 ) -> anyhow::Result<(Vec<ConversationMessage>, Option<DateTime<Utc>>)> {
     struct Row {
         from_me: bool,
@@ -832,7 +835,7 @@ async fn fetch_history(
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
                 if !voice_id.is_empty() {
-                    match transcribe_voice(pool, whisper_url, voice_id, link).await {
+                    match transcribe_voice(pool, ai, voice_id, link).await {
                         Ok(t) => format!("[áudio transcrito]: {t}"),
                         Err(e) => {
                             tracing::warn!(voice_id, "Falha ao transcrever áudio: {e:#}");
@@ -866,7 +869,7 @@ async fn fetch_history(
 
 async fn transcribe_voice(
     pool: &Pool,
-    whisper_url: &str,
+    ai: &ai::Client,
     voice_id: &str,
     download_link: &str,
 ) -> anyhow::Result<String> {
@@ -884,8 +887,7 @@ async fn transcribe_voice(
     }
 
     // 2. Baixar o áudio
-    let client = reqwest::Client::new();
-    let audio_bytes = client
+    let audio_bytes = reqwest::Client::new()
         .get(download_link)
         .send()
         .await?
@@ -893,28 +895,15 @@ async fn transcribe_voice(
         .bytes()
         .await?;
 
-    // 3. Enviar para Whisper (API compatível com OpenAI)
-    let part = reqwest::multipart::Part::bytes(audio_bytes.to_vec())
-        .file_name("audio.ogg")
-        .mime_str("audio/ogg")?;
-    let form = reqwest::multipart::Form::new()
-        .text("model", "whisper-1")
-        .part("file", part);
-
-    let resp: Value = client
-        .post(whisper_url)
-        .multipart(form)
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
+    // 3. Transcrever via ai::Client
+    let transcription = ai
+        .transcribe(
+            TRANSCRIPTION_MODEL,
+            audio_bytes.to_vec(),
+            "audio.ogg",
+            "audio/ogg",
+        )
         .await?;
-
-    let transcription = resp
-        .get("text")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_owned();
 
     // 4. Salvar no cache
     let transcription_ref = &transcription;

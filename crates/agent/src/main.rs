@@ -6,7 +6,6 @@ use tokio::sync::Semaphore;
 use tokio_postgres::NoTls;
 
 use agent::dispatch;
-use ollama::OllamaClient;
 
 const MAX_CONCURRENT: usize = 5;
 
@@ -17,15 +16,20 @@ async fn main() -> anyhow::Result<()> {
 
     let database_url = std::env::var("DATABASE_URL").unwrap();
     let ollama_url = std::env::var("OLLAMA_URL").unwrap();
-    let ollama_model = std::env::var("OLLAMA_MODEL").unwrap();
+    let chat_model = std::env::var("CHAT_MODEL").unwrap();
     let whisper_url = std::env::var("WHISPER_URL").unwrap();
 
     let mut pool_cfg = Config::new();
     pool_cfg.url = Some(database_url);
     let pool = pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
-    let ollama = Arc::new(OllamaClient::new(&ollama_url));
-    let whisper_url = Arc::new(whisper_url);
+    let ai_client = Arc::new(
+        ai::Client::builder()
+            .ollama(&ollama_url)
+            .whisper(&whisper_url)
+            .build(),
+    );
+    let chat_model = Arc::new(chat_model);
 
     // Recovery: marcar execuções órfãs como crashed e re-agendar clientes
     dispatch::recover_crashed(&pool).await?;
@@ -39,16 +43,15 @@ async fn main() -> anyhow::Result<()> {
         match dispatch::claim_next_client(&pool).await {
             Ok(Some(client)) => {
                 let pool = pool.clone();
-                let ollama = ollama.clone();
-                let model = ollama_model.clone();
-                let whisper = whisper_url.clone();
+                let ai_client = ai_client.clone();
+                let chat_model = chat_model.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let client_id = client.id;
                     let chat_id = client.chat_id.clone();
                     tracing::info!(%client_id, %chat_id, "Processando cliente");
                     if let Err(e) =
-                        dispatch::process_client(&pool, &ollama, &model, &whisper, client).await
+                        dispatch::process_client(&pool, &ai_client, &chat_model, client).await
                     {
                         tracing::error!(%client_id, "Erro processando cliente: {e:#}");
                     }
