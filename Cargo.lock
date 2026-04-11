@@ -638,8 +638,9 @@ dependencies = [
 [[package]]
 name = "cubos_sql"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a70acdb00ea6156755c0441d79040b40a5a931bc"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
 dependencies = [
+ "bytes",
  "chrono",
  "cubos_sql_core",
  "cubos_sql_macros",
@@ -657,7 +658,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_analyzer"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a70acdb00ea6156755c0441d79040b40a5a931bc"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
 dependencies = [
  "cubos_sql_core",
  "pg_query",
@@ -669,7 +670,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_core"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a70acdb00ea6156755c0441d79040b40a5a931bc"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
 dependencies = [
  "serde",
  "serde_json",
@@ -680,7 +681,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_macros"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a70acdb00ea6156755c0441d79040b40a5a931bc"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
 dependencies = [
  "cubos_sql_analyzer",
  "cubos_sql_core",

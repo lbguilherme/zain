@@ -207,26 +207,39 @@ async fn do_fresh_login(
 
         let enter_btn = dom.query_selector("button#submit-button").await?;
         enter_btn.click().await?;
-        page.wait_for_load(DEFAULT_TIMEOUT).await.ok();
         dom.invalidate();
 
         // E pode aparecer de novo depois da senha, antes do 2FA.
         wait_for_hcaptcha(&page, "pós-senha").await?;
 
-        // Detectar erro de credencial: se continuamos na mesma página
-        // de senha com uma mensagem de erro visível.
-        if dom
-            .try_query_selector(".alert-error, .error-message, .feedback-error")
-            .await?
-            .is_some()
-            && dom.try_query_selector("input#password").await?.is_some()
-        {
-            let _ = page.debug_dump("govbr-login-invalid-credentials").await;
-            return Err(GovbrError::InvalidCredentials);
-        }
-
-        // ── Passo 3: 2FA (opcional) ──────────────────────────────────────
-        let needs_2fa = dom.try_query_selector("input#otpInput").await?.is_some();
+        // SSO é SPA — `wait_for_load` não é confiável. Pollamos o DOM
+        // esperando a próxima tela aparecer (2FA, erro de credencial, ou
+        // redirect direto pro perfil quando o 2FA está dispensado).
+        let post_password_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let needs_2fa = loop {
+            if dom.try_query_selector("input#otpInput").await?.is_some() {
+                break true;
+            }
+            if dom
+                .try_query_selector(".alert-error, .error-message, .feedback-error")
+                .await?
+                .is_some()
+                && dom.try_query_selector("input#password").await?.is_some()
+            {
+                let _ = page.debug_dump("govbr-login-invalid-credentials").await;
+                return Err(GovbrError::InvalidCredentials);
+            }
+            if current_url(&page).await?.contains("contas.acesso.gov.br") {
+                break false;
+            }
+            if tokio::time::Instant::now() >= post_password_deadline {
+                let _ = page.debug_dump("govbr-login-post-password-timeout").await;
+                return Err(GovbrError::Other(anyhow::anyhow!(
+                    "timeout aguardando próxima etapa após senha"
+                )));
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        };
 
         if needs_2fa {
             tracing::info!(cpf, "2FA solicitado");
@@ -272,18 +285,28 @@ async fn do_fresh_login(
 
             let ok_btn = dom.query_selector("button#enter-offline-2fa-code").await?;
             ok_btn.click().await?;
-            page.wait_for_load(DEFAULT_TIMEOUT).await.ok();
             dom.invalidate();
 
             // O gov.br mantém a mesma URL e apenas injeta um
-            // `.alert-danger` com a mensagem de código incorreto. Se
-            // ainda existe o input de OTP ou o alerta de erro, o código
-            // foi recusado.
-            let otp_rejected = dom.try_query_selector(".alert-danger").await?.is_some()
-                || dom.try_query_selector("input#otpInput").await?.is_some();
-            if otp_rejected {
-                let _ = page.debug_dump("govbr-login-otp-rejected").await;
-                return Err(GovbrError::MissingOtp);
+            // `.alert-danger` com a mensagem de código incorreto. Pollamos
+            // até um dos estados finais aparecer: erro de OTP, ou URL do
+            // perfil.
+            let post_otp_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                if dom.try_query_selector(".alert-danger").await?.is_some() {
+                    let _ = page.debug_dump("govbr-login-otp-rejected").await;
+                    return Err(GovbrError::MissingOtp);
+                }
+                if current_url(&page).await?.contains("contas.acesso.gov.br") {
+                    break;
+                }
+                if tokio::time::Instant::now() >= post_otp_deadline {
+                    let _ = page.debug_dump("govbr-login-post-otp-timeout").await;
+                    return Err(GovbrError::Other(anyhow::anyhow!(
+                        "timeout aguardando próxima etapa após OTP"
+                    )));
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
 
@@ -292,7 +315,6 @@ async fn do_fresh_login(
         if !url_now.contains("contas.acesso.gov.br") {
             page.navigate(&profile_url(cpf)).await?;
             page.wait_for_load(DEFAULT_TIMEOUT).await.ok();
-            tokio::time::sleep(POST_ACTION_SETTLE).await;
         }
 
         let profile = match extract_profile(&page, cpf).await {
@@ -359,57 +381,97 @@ async fn wait_for_hcaptcha(page: &PageSession, stage: &str) -> Result<(), GovbrE
 
 /// Extrai nome, email, telefone e nível do perfil via JS.
 ///
-/// Usa heurística de regex sobre `body.innerText` como fallback porque os
-/// seletores específicos da página ainda não foram confirmados. TODO:
-/// substituir por seletores diretos após inspecionar a página real.
+/// A página renderiza cada dado num `StaticField` (label + `<p>`), então
+/// procuramos pelo texto do `<label>` e pegamos o `<p>` irmão. O nível é
+/// um caso especial: o texto "bronze/prata/ouro" é injetado via
+/// `::before`/`::after` em cima de um `data-level` numérico, então o
+/// `innerText` fica vazio — lemos o atributo direto.
+///
+/// A página é renderizada dinamicamente — após o submit do OTP o
+/// `wait_for_load` volta antes do conteúdo ser populado. Por isso aqui
+/// pollamos a extração até o `nome` aparecer (ou dar timeout).
 async fn extract_profile(page: &PageSession, cpf: &str) -> anyhow::Result<Profile> {
+    const EXTRACT_TIMEOUT: Duration = Duration::from_secs(30);
+    const POLL_INTERVAL: Duration = Duration::from_millis(500);
+
     let js = r#"
         (() => {
-            const body = document.body ? (document.body.innerText || "") : "";
-            const pick = (re) => {
-                const m = body.match(re);
-                return m ? m[1].trim() : null;
+            const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
+
+            // Pega o <p> de um StaticField cujo <label> bate (case-insensitive,
+            // sem acentos) com um dos candidatos.
+            const fieldByLabel = (...labels) => {
+                const wanted = labels.map((l) =>
+                    l.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+                );
+                const fields = document.querySelectorAll(
+                    ".govbr-preact-tools-components-StaticField"
+                );
+                for (const f of fields) {
+                    const label = f.querySelector("label");
+                    if (!label) continue;
+                    const text = norm(label.textContent)
+                        .normalize("NFD")
+                        .replace(/[\u0300-\u036f]/g, "")
+                        .toLowerCase();
+                    if (wanted.includes(text)) {
+                        const p = f.querySelector("p");
+                        return p ? norm(p.textContent) : null;
+                    }
+                }
+                return null;
             };
+
+            const reliability = document.querySelector(
+                ".govbr-preact-tools-components-reliability"
+            );
+            const levelMap = { "1": "bronze", "2": "prata", "3": "ouro" };
+            const nivel = reliability
+                ? (levelMap[reliability.getAttribute("data-level")] || null)
+                : null;
+
             return {
-                nome: pick(/Nome(?:\s*completo)?[:\s]+([^\n]+)/i),
-                email: pick(/E-?mail[:\s]+([^\n]+)/i),
-                telefone: pick(/Telefone(?:\s*celular)?[:\s]+([^\n]+)/i),
-                nivel: pick(/Selo[:\s]+([^\n]+)/i)
-                    || pick(/Nível(?:\s*da conta)?[:\s]+([^\n]+)/i),
+                nome: fieldByLabel("nome", "nome completo"),
+                email: fieldByLabel("e-mail", "email"),
+                telefone: fieldByLabel("telefone", "telefone celular", "celular"),
+                nivel,
             };
         })()
     "#;
 
-    let value = page.eval_value(js).await?;
+    let pick_string = |value: &serde_json::Value, key: &str| -> Option<String> {
+        value
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    };
 
-    let nome = value
-        .get("nome")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("nome não encontrado"))?
-        .to_string();
+    let deadline = tokio::time::Instant::now() + EXTRACT_TIMEOUT;
+    loop {
+        let value = page.eval_value(js).await?;
 
-    let email = value
-        .get("email")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim().to_string());
-    let telefone = value
-        .get("telefone")
-        .and_then(|v| v.as_str())
-        .map(|s| s.trim().to_string());
-    let nivel = value
-        .get("nivel")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.trim().parse::<Nivel>().ok());
+        if let Some(nome) = pick_string(&value, "nome") {
+            let email = pick_string(&value, "email");
+            let telefone = pick_string(&value, "telefone");
+            let nivel = pick_string(&value, "nivel").and_then(|s| s.parse::<Nivel>().ok());
 
-    Ok(Profile {
-        cpf: cpf.to_string(),
-        nome,
-        email,
-        telefone,
-        nivel,
-    })
+            return Ok(Profile {
+                cpf: cpf.to_string(),
+                nome,
+                email,
+                telefone,
+                nivel,
+            });
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            anyhow::bail!("nome não encontrado");
+        }
+
+        tokio::time::sleep(POLL_INTERVAL).await;
+    }
 }
 
 async fn persist_profile(pool: &Pool, profile: &Profile) -> anyhow::Result<()> {
