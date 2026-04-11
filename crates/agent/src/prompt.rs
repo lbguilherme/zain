@@ -1,15 +1,113 @@
-use serde_json::{Value, json};
+use chrono::{DateTime, Utc};
 
-use crate::tools::{ToolDef, ToolResult};
-use crate::validators;
+use crate::dispatch::ClientRow;
+use crate::history::ConversationMessage;
 
-use super::StateHandler;
+/// Monta o system prompt completo: base + core do lead.
+pub fn build_system_prompt() -> String {
+    let now = chrono::Local::now().format("%d/%m/%Y %H:%M");
+    let core = lead_core_prompt();
 
-pub struct LeadHandler;
+    format!(
+        r#"Você é a Zain Gestão, uma assistente de gestão de MEI que funciona 100% pelo WhatsApp.
 
-impl StateHandler for LeadHandler {
-    fn state_prompt(&self) -> String {
-        r#"Você é um **vendedor consultivo da Zain** — uma empresa de gestão de MEI que atende 100% pelo WhatsApp. Seu trabalho é **converter leads em clientes ativos**: tirar dúvidas com qualidade, gerar confiança, e conduzir a pessoa até o cadastro. Você é proativo — se alguém procurou a Zain, existe interesse, e seu papel é ajudar essa pessoa a dar o próximo passo.
+Data e hora atual: {now}
+
+Sobre o serviço Zain Gestão:
+- Primeiro mês GRÁTIS, depois R$ 19,90/mês no cartão de crédito
+- Serviços inclusos: abertura de MEI, emissão de nota fiscal, DAS mensal, DASN anual, baixa de MEI, dúvidas contábeis/fiscais
+- Tudo funciona por mensagem no WhatsApp, sem portal do governo, sem app extra
+- Proativo: a Zain lembra do DAS, da DASN, monitora o teto de faturamento
+
+IMPORTANTE — Como se comunicar:
+- A ÚNICA forma de falar com o cliente é usando a ferramenta send_whatsapp_message.
+- Você pode chamar múltiplas ferramentas na mesma resposta (ex: salvar dados E responder).
+- Quando terminar de agir (enviou mensagem, salvou dados), chame done() para encerrar.
+- Um fluxo típico: salvar dados → enviar mensagem → done().
+
+Regras:
+- Seja natural, simpática e direta. Use linguagem informal mas profissional.
+- Responda APENAS em português brasileiro.
+- Seja concisa. Mensagens de WhatsApp devem ser curtas e diretas.
+
+{core}"#
+    )
+}
+
+/// Monta a primeira user message com contexto dinâmico.
+pub fn build_context_message(
+    client: &ClientRow,
+    history: &[ConversationMessage],
+    new_message_count: usize,
+    new_messages_summary: &str,
+) -> String {
+    let contact_name = client.name.as_deref().unwrap_or("(desconhecido)");
+    let contact_phone = client.phone.as_deref().unwrap_or("(desconhecido)");
+    let props = serde_json::to_string_pretty(&client.props).unwrap_or_default();
+    let memory = serde_json::to_string_pretty(&client.memory).unwrap_or_default();
+    let history_text = format_history(history);
+
+    format!(
+        r#"Informações do contato:
+- Nome no WhatsApp: {contact_name}
+- Telefone: {contact_phone}
+
+Dados coletados até agora:
+{props}
+
+Memória do cliente:
+{memory}
+
+Histórico da conversa no WhatsApp:
+{history_text}
+
+O cliente enviou {new_message_count} nova(s) mensagem(ns):
+
+{new_messages_summary}
+
+Responda ao cliente usando send_whatsapp_message."#
+    )
+}
+
+/// Formata o histórico de conversa como texto.
+/// Inclui headers de data/hora quando há intervalo > 1h entre mensagens,
+/// e sempre antes da primeira mensagem.
+pub fn format_history(history: &[ConversationMessage]) -> String {
+    if history.is_empty() {
+        return "(sem histórico de conversa)".into();
+    }
+
+    let mut lines = Vec::new();
+    let mut last_ts: Option<DateTime<Utc>> = None;
+
+    for msg in history {
+        if let Some(ts) = msg.timestamp {
+            let should_add_header = match last_ts {
+                None => true,
+                Some(prev) => (ts - prev).num_hours() >= 1,
+            };
+
+            if should_add_header {
+                let formatted = ts.format("── %d/%m/%Y %H:%M ──");
+                lines.push(format!("\n{formatted}"));
+            }
+
+            last_ts = Some(ts);
+        }
+
+        let sender = if msg.from_me { "Zain" } else { "Cliente" };
+        let mut body = format!("<message_text>{}</message_text>", msg.text);
+        for img in &msg.images {
+            body.push_str(&format!(" <attachment type=\"image\" id=\"{}\"/>", img.id));
+        }
+        lines.push(format!("[{sender}]: {body}"));
+    }
+
+    lines.join("\n")
+}
+
+fn lead_core_prompt() -> &'static str {
+    r#"Você é um **vendedor consultivo da Zain** — uma empresa de gestão de MEI que atende 100% pelo WhatsApp. Seu trabalho é **converter leads em clientes ativos**: tirar dúvidas com qualidade, gerar confiança, e conduzir a pessoa até o cadastro. Você é proativo — se alguém procurou a Zain, existe interesse, e seu papel é ajudar essa pessoa a dar o próximo passo.
 
 ## Quem você é (LEIA COM ATENÇÃO)
 Você **não é uma pessoa**. Você **não tem nome próprio** — não é Maria, não é Ana, não é Júlia, não é nada. Você é o canal de atendimento da Zain, a voz da empresa no WhatsApp. A Zain também não é o seu nome: **Zain é o nome da empresa que você representa**, não o seu.
@@ -51,13 +149,15 @@ Gestão completa de MEI por **R$ 19,90/mês**, primeiro mês grátis. Tudo pelo 
 
 Você é especialista em MEI. Quando alguém pergunta algo técnico, responde com confiança — mas curto, em tom de conversa. Não dá aula.
 
-## Seu objetivo neste estado (LEAD)
+## Seu objetivo
 Essa pessoa acabou de entrar em contato. **Seu objetivo principal é converter esse lead em cliente ativo.** Pra isso:
 1. **Gerar confiança**: responda dúvidas com qualidade — mostre que a Zain entende de MEI. Toda dúvida respondida bem é um passo pro fechamento.
 2. **Qualificar**: descobrir se ela pode ser MEI (confirmar CNPJ via `consultar_simei_cnpj`, verificar atividade via `buscar_cnae_por_atividade`). Não confie só na palavra — consulte.
 3. **Coletar dados progressivamente**: nome completo, CPF, CNPJ (se já tem MEI), e se já tem ou quer abrir. Salve cada dado imediatamente com a tool certa.
 4. **Fechar**: assim que tiver nome, CPF e `tem_mei`, conduza pro cadastro via `iniciar_pagamento()`.
 5. Se descobrir que ela **não pode ser MEI**, recuse gentilmente com `recusar_lead(motivo)` — mas só depois de confirmação via consulta.
+
+Se `props.recusado` já estiver setado (o lead foi recusado anteriormente), **não tente vender de novo**. Responda com educação e brevidade, reforçando que a gente só cuida de MEI e que se a situação mudar é só mandar mensagem. Não chame `iniciar_pagamento` nem `recusar_lead` de novo.
 
 ## Estratégia de venda (SEGUIR SEMPRE — JOGUE DURO)
 
@@ -180,7 +280,7 @@ Você: set_cnpj(cnpj="12345678000190") → send_whatsapp_message("Beleza, deixa 
 [resultado pgfn: tem_divida=true, total_divida=50000.00]
 Você: send_whatsapp_message("Infelizmente identifiquei uma pendência cadastral que impede a gente de seguir com o serviço no momento. Se a situação mudar, é só mandar mensagem que a gente conversa.") → recusar_lead(motivo="pendência cadastral acima do limite") → done()
 
-— Cenário: CNPJ não é MEI (é Simples Nacional, Lucro Presumido, LTDA, etc.). Recusa gentil e transição pra RECUSADO. Atenção: nesse caso a pessoa **já tem uma empresa fora do regime MEI** — não faz sentido dizer "se você abrir um MEI, me chama", porque ninguém abre um MEI enquanto tem uma LTDA ou outra empresa ativa. Apenas agradeça o contato e encerre.
+— Cenário: CNPJ não é MEI (é Simples Nacional, Lucro Presumido, LTDA, etc.). Recusa gentil. Atenção: nesse caso a pessoa **já tem uma empresa fora do regime MEI** — não faz sentido dizer "se você abrir um MEI, me chama", porque ninguém abre um MEI enquanto tem uma LTDA ou outra empresa ativa. Apenas agradeça o contato e encerre.
 
 Cliente: "12.345.678/0001-90"
 Você: set_cnpj(cnpj="12345678000190") → send_whatsapp_message("Beleza, deixa eu consultar aqui rapidinho.") → consultar_simei_cnpj(cnpj="12345678000190") → consultar_divida_pgfn(documento="12345678000190")
@@ -292,290 +392,4 @@ Você: send_whatsapp_message("Esse CNPJ não bateu aqui não — pode verificar 
 ---
 
 Olha o histórico, entende onde a conversa está, e age: salva o que for novo, manda UMA mensagem no tom certo, chama `done()`. Responda APENAS em português brasileiro."#
-            .into()
-    }
-
-    fn tool_definitions(&self) -> Vec<ToolDef> {
-        vec![
-            ToolDef {
-                name: "set_dados_pessoais",
-                description: "Salva nome e/ou CPF do lead. Chame quando a pessoa informar esses dados.",
-                consequential: false,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "nome": {
-                            "type": "string",
-                            "description": "Nome completo da pessoa"
-                        },
-                        "cpf": {
-                            "type": "string",
-                            "description": "CPF (apenas números, 11 dígitos)"
-                        }
-                    }
-                }),
-            },
-            ToolDef {
-                name: "set_tem_mei",
-                description: "Marca se a pessoa já possui MEI ou não.",
-                consequential: false,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "tem_mei": {
-                            "type": "boolean",
-                            "description": "true se já tem MEI, false se não tem"
-                        }
-                    },
-                    "required": ["tem_mei"]
-                }),
-            },
-            ToolDef {
-                name: "set_cnpj",
-                description: "Salva o CNPJ do MEI existente.",
-                consequential: false,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "cnpj": {
-                            "type": "string",
-                            "description": "CNPJ (apenas números, 14 dígitos)"
-                        }
-                    },
-                    "required": ["cnpj"]
-                }),
-            },
-            ToolDef {
-                name: "set_atividade",
-                description: "Salva a descrição da atividade e opcionalmente o CNAE.",
-                consequential: false,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "descricao": {
-                            "type": "string",
-                            "description": "Descrição da atividade (ex: 'vendo doces artesanais')"
-                        },
-                        "cnae": {
-                            "type": "string",
-                            "description": "Código CNAE, se conhecido"
-                        }
-                    },
-                    "required": ["descricao"]
-                }),
-            },
-            ToolDef {
-                name: "set_endereco",
-                description: "Salva o endereço do lead.",
-                consequential: false,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "endereco": {
-                            "type": "string",
-                            "description": "Endereço completo"
-                        }
-                    },
-                    "required": ["endereco"]
-                }),
-            },
-            ToolDef {
-                name: "set_gov_br",
-                description: "Salva as credenciais Gov.br do lead. Colete somente quando a pessoa fornecer voluntariamente.",
-                consequential: false,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "usuario": {
-                            "type": "string",
-                            "description": "Usuário Gov.br (geralmente CPF)"
-                        },
-                        "senha": {
-                            "type": "string",
-                            "description": "Senha Gov.br"
-                        }
-                    },
-                    "required": ["usuario", "senha"]
-                }),
-            },
-            ToolDef {
-                name: "anotar",
-                description: "Salva uma anotação livre sobre o cliente na memória. Use para registrar contexto relevante da conversa.",
-                consequential: false,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "texto": {
-                            "type": "string",
-                            "description": "Texto da anotação"
-                        }
-                    },
-                    "required": ["texto"]
-                }),
-            },
-            ToolDef {
-                name: "iniciar_pagamento",
-                description: "Inicia o fluxo de cadastro de cartão de crédito. Requer nome, CPF e saber se tem MEI.",
-                consequential: true,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            ToolDef {
-                name: "recusar_lead",
-                description: "Transita o lead pro estado RECUSADO. Use APENAS quando: (a) consultar_simei_cnpj retornou optante_simei=false, ou (b) buscar_cnae_por_atividade confirmou que a atividade da pessoa não é permitida pra MEI, ou (c) consultar_divida_pgfn retornou tem_divida=true com total_divida acima de R$ 15.000. Antes de chamar, envie uma mensagem gentil explicando o motivo pelo send_whatsapp_message.",
-                consequential: true,
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "motivo": {
-                            "type": "string",
-                            "description": "Motivo da recusa em linguagem direta (ex: 'CNPJ optante Simples Nacional, não SIMEI' ou 'atividade regulamentada não permitida pra MEI')"
-                        }
-                    },
-                    "required": ["motivo"]
-                }),
-            },
-        ]
-    }
-
-    fn execute_tool(
-        &self,
-        name: &str,
-        args: &Value,
-        state_props: &mut Value,
-        memory: &mut Value,
-    ) -> ToolResult {
-        match name {
-            "set_dados_pessoais" => {
-                if let Some(nome) = args.get("nome").and_then(|v| v.as_str()) {
-                    state_props["nome"] = json!(nome);
-                }
-                if let Some(cpf) = args.get("cpf").and_then(|v| v.as_str()) {
-                    if !validators::validar_cpf(cpf) {
-                        return ToolResult::Ok(json!({
-                            "status": "erro",
-                            "mensagem": "CPF inválido — os dígitos verificadores não batem. Peça o CPF correto ao cliente de forma amigável."
-                        }));
-                    }
-                    let cpf_digits: String = cpf.chars().filter(|c| c.is_ascii_digit()).collect();
-                    state_props["cpf"] = json!(cpf_digits);
-                }
-                ToolResult::Ok(json!({ "status": "ok", "dados_salvos": true }))
-            }
-
-            "set_tem_mei" => {
-                if let Some(tem) = args.get("tem_mei").and_then(|v| v.as_bool()) {
-                    state_props["tem_mei"] = json!(tem);
-                }
-                ToolResult::Ok(json!({ "status": "ok" }))
-            }
-
-            "set_cnpj" => {
-                if let Some(cnpj) = args.get("cnpj").and_then(|v| v.as_str()) {
-                    if !validators::validar_cnpj(cnpj) {
-                        return ToolResult::Ok(json!({
-                            "status": "erro",
-                            "mensagem": "CNPJ inválido — os dígitos verificadores não batem. Peça o CNPJ correto ao cliente de forma amigável."
-                        }));
-                    }
-                    let cnpj_digits: String = cnpj.chars().filter(|c| c.is_ascii_digit()).collect();
-                    state_props["cnpj"] = json!(cnpj_digits);
-                }
-                ToolResult::Ok(json!({ "status": "ok" }))
-            }
-
-            "set_atividade" => {
-                if let Some(desc) = args.get("descricao").and_then(|v| v.as_str()) {
-                    state_props["atividade_descricao"] = json!(desc);
-                }
-                if let Some(cnae) = args.get("cnae").and_then(|v| v.as_str()) {
-                    state_props["cnae"] = json!(cnae);
-                }
-                ToolResult::Ok(json!({ "status": "ok" }))
-            }
-
-            "set_endereco" => {
-                if let Some(end) = args.get("endereco").and_then(|v| v.as_str()) {
-                    state_props["endereco"] = json!(end);
-                }
-                ToolResult::Ok(json!({ "status": "ok" }))
-            }
-
-            "set_gov_br" => {
-                if let Some(usr) = args.get("usuario").and_then(|v| v.as_str()) {
-                    state_props["gov_br_usuario"] = json!(usr);
-                }
-                if let Some(pwd) = args.get("senha").and_then(|v| v.as_str()) {
-                    state_props["gov_br_senha"] = json!(pwd);
-                }
-                ToolResult::Ok(json!({ "status": "ok", "credenciais_salvas": true }))
-            }
-
-            "anotar" => {
-                if let Some(texto) = args.get("texto").and_then(|v| v.as_str()) {
-                    let existing = memory
-                        .get("anotacoes")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let updated = if existing.is_empty() {
-                        texto.to_owned()
-                    } else {
-                        format!("{existing}\n{texto}")
-                    };
-                    memory["anotacoes"] = json!(updated);
-                }
-                ToolResult::Ok(json!({ "status": "ok", "anotacao_salva": true }))
-            }
-
-            "iniciar_pagamento" => {
-                let has_nome = state_props.get("nome").and_then(|v| v.as_str()).is_some();
-                let has_cpf = state_props.get("cpf").and_then(|v| v.as_str()).is_some();
-                let has_tem_mei = state_props
-                    .get("tem_mei")
-                    .and_then(|v| v.as_bool())
-                    .is_some();
-
-                if !has_nome || !has_cpf || !has_tem_mei {
-                    return ToolResult::Ok(json!({
-                        "status": "erro",
-                        "mensagem": "Dados insuficientes. Necessário: nome, CPF e saber se tem MEI."
-                    }));
-                }
-
-                let tem_mei = state_props["tem_mei"].as_bool().unwrap_or(false);
-
-                ToolResult::StateTransition {
-                    new_state: "COBRANCA".into(),
-                    new_props: json!({
-                        "motivo": "primeiro_pagamento",
-                        "tem_mei": tem_mei,
-                        "tentativas": 0,
-                    }),
-                }
-            }
-
-            "recusar_lead" => {
-                let motivo = args
-                    .get("motivo")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                ToolResult::StateTransition {
-                    new_state: "RECUSADO".into(),
-                    new_props: json!({
-                        "motivo": motivo,
-                        "recusado_em": chrono::Utc::now().to_rfc3339(),
-                    }),
-                }
-            }
-
-            _ => ToolResult::Ok(json!({
-                "status": "erro",
-                "mensagem": format!("Ferramenta '{name}' não reconhecida")
-            })),
-        }
-    }
 }

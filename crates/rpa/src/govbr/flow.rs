@@ -23,6 +23,7 @@ use chromium_driver::PageSession;
 use deadpool_postgres::Pool;
 use serde::Serialize;
 use thiserror::Error;
+use uuid::Uuid;
 
 use super::Nivel;
 use super::db;
@@ -61,7 +62,7 @@ impl CheckOutcome {
 
 #[derive(Debug, Error)]
 pub enum GovbrError {
-    #[error("CPF não cadastrado em zain.govbr")]
+    #[error("client_id não cadastrado em zain.govbr")]
     NotRegistered,
     #[error("credenciais inválidas")]
     InvalidCredentials,
@@ -83,30 +84,32 @@ pub enum GovbrError {
 /// Se o SSO do gov.br exibir um hCaptcha durante o fluxo, o login depende
 /// da extensão NopeCHA estar carregada no browser (via
 /// `NOPECHA_EXTENSION_PATH`) — o Rust apenas espera o iframe sumir.
-pub async fn check_govbr_profile(pool: &Pool, cpf: &str) -> Result<CheckOutcome, GovbrError> {
-    let row = db::load(pool, cpf).await?;
+pub async fn check_govbr_profile(pool: &Pool, client_id: Uuid) -> Result<CheckOutcome, GovbrError> {
+    let row = db::load(pool, client_id).await?;
     let Some(row) = row else {
         return Err(GovbrError::NotRegistered);
     };
 
+    let cpf = row.cpf.as_str();
+
     // 1. Tentar reusar sessão salva.
     if let Some(saved) = &row.session {
-        tracing::info!(cpf, "Tentando reusar sessão salva");
-        match try_reuse_session(pool, cpf, saved).await {
+        tracing::info!(%client_id, cpf, "Tentando reusar sessão salva");
+        match try_reuse_session(pool, client_id, cpf, saved).await {
             Ok(Some(profile)) => return Ok(CheckOutcome::Reused(profile)),
             Ok(None) => {
-                tracing::info!(cpf, "Sessão salva inválida, vai logar do zero");
-                db::clear_session(pool, cpf).await?;
+                tracing::info!(%client_id, cpf, "Sessão salva inválida, vai logar do zero");
+                db::clear_session(pool, client_id).await?;
             }
             Err(e) => {
-                tracing::warn!(cpf, "Erro reusando sessão: {e:#}");
-                db::clear_session(pool, cpf).await?;
+                tracing::warn!(%client_id, cpf, "Erro reusando sessão: {e:#}");
+                db::clear_session(pool, client_id).await?;
             }
         }
     }
 
     // 2. Login do zero.
-    let profile = do_fresh_login(pool, cpf, &row.password, row.otp.as_deref()).await?;
+    let profile = do_fresh_login(pool, client_id, cpf, &row.password, row.otp.as_deref()).await?;
     Ok(CheckOutcome::LoggedIn(profile))
 }
 
@@ -117,6 +120,7 @@ pub async fn check_govbr_profile(pool: &Pool, cpf: &str) -> Result<CheckOutcome,
 /// `Err`     = falha de browser/transporte.
 async fn try_reuse_session(
     pool: &Pool,
+    client_id: Uuid,
     cpf: &str,
     saved: &SavedSession,
 ) -> anyhow::Result<Option<Profile>> {
@@ -150,8 +154,8 @@ async fn try_reuse_session(
 
         // Refresca a sessão (cookies podem ter girado) e persiste perfil.
         let fresh = session::capture(&browser).await?;
-        db::save_session(pool, cpf, &fresh).await?;
-        persist_profile(pool, &profile).await?;
+        db::save_session(pool, client_id, &fresh).await?;
+        persist_profile(pool, client_id, &profile).await?;
 
         Ok(Some(profile))
     }
@@ -166,6 +170,7 @@ async fn try_reuse_session(
 
 async fn do_fresh_login(
     pool: &Pool,
+    client_id: Uuid,
     cpf: &str,
     password: &str,
     otp: Option<&str>,
@@ -327,8 +332,8 @@ async fn do_fresh_login(
 
         // Persistência final: cookies atualizados + perfil.
         let fresh = session::capture(&browser).await?;
-        db::save_session(pool, cpf, &fresh).await?;
-        persist_profile(pool, &profile).await?;
+        db::save_session(pool, client_id, &fresh).await?;
+        persist_profile(pool, client_id, &profile).await?;
 
         Ok::<Profile, GovbrError>(profile)
     }
@@ -474,10 +479,10 @@ async fn extract_profile(page: &PageSession, cpf: &str) -> anyhow::Result<Profil
     }
 }
 
-async fn persist_profile(pool: &Pool, profile: &Profile) -> anyhow::Result<()> {
+async fn persist_profile(pool: &Pool, client_id: Uuid, profile: &Profile) -> anyhow::Result<()> {
     db::save_profile(
         pool,
-        &profile.cpf,
+        client_id,
         &profile.nome,
         profile.email.as_deref(),
         profile.telefone.as_deref(),

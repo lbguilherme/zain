@@ -1,13 +1,14 @@
+use std::sync::Arc;
+
+use ai::ChatMessage;
 use chrono::{DateTime, Utc};
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::states::{self, ConversationMessage, HistoryImage};
-use crate::tools::{self, ToolDef, ToolResult};
-use crate::validators;
-use ai::ChatMessage;
+use crate::history::{self, ConversationMessage};
+use crate::workflow;
 
 /// Conjunto de modelos usados pelo agent. Todos são qualificados pelo
 /// provider (`ollama/`, `whisper/`, `gemini/`, ...) e vêm do ambiente.
@@ -31,11 +32,8 @@ impl Models {
     }
 }
 
-enum WorkflowOutcome {
-    Completed {
-        final_state: String,
-        llm_log: Vec<ChatMessage>,
-    },
+pub enum WorkflowOutcome {
+    Completed { llm_log: Vec<ChatMessage> },
     Restart,
 }
 
@@ -45,8 +43,7 @@ pub struct ClientRow {
     pub chat_id: String,
     pub phone: Option<String>,
     pub name: Option<String>,
-    pub state: String,
-    pub state_props: Value,
+    pub props: Value,
     pub memory: Value,
     pub last_whatsapp_message_processed_at: Option<DateTime<Utc>>,
     pub history_starts_at: Option<DateTime<Utc>>,
@@ -106,7 +103,7 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
              FOR UPDATE SKIP LOCKED
              LIMIT 1
          )
-         RETURNING id, chat_id, phone, name, state, state_props, memory,
+         RETURNING id, chat_id, phone, name, props, memory,
                    last_whatsapp_message_processed_at, history_starts_at"
     )
     .fetch_optional()
@@ -118,11 +115,10 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
     };
 
     let client_id = r.id;
-    let state_before: String = r.state.clone();
     let exec_id: Uuid = sql!(
         &tx,
-        "INSERT INTO zain.executions (client_id, state_before, trigger_type)
-         VALUES ($client_id, $state_before, 'message')
+        "INSERT INTO zain.executions (client_id, trigger_type)
+         VALUES ($client_id, 'message')
          RETURNING id"
     )
     .fetch_value()
@@ -135,8 +131,7 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
         chat_id: r.chat_id,
         phone: r.phone,
         name: r.name,
-        state: r.state,
-        state_props: r.state_props,
+        props: r.props,
         memory: r.memory,
         last_whatsapp_message_processed_at: r.last_whatsapp_message_processed_at,
         history_starts_at: r.history_starts_at,
@@ -148,16 +143,16 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
 
 pub async fn process_client(
     pool: &Pool,
-    ai: &ai::Client,
-    models: &Models,
+    ai: &Arc<ai::Client>,
+    models: &Arc<Models>,
     mut client: ClientRow,
 ) -> anyhow::Result<()> {
-    // exec_id começa com a execução criada atomicamente no claim
     let mut exec_id = client.exec_id;
 
     loop {
-        let (history, max_ts) =
-            fetch_history(pool, &client.chat_id, client.history_starts_at, ai, models).await?;
+        let (history_msgs, max_ts) =
+            history::fetch_history(pool, &client.chat_id, client.history_starts_at, ai, models)
+                .await?;
 
         // Se não há mensagens novas desde o último processamento, nada a fazer
         let has_new = match (max_ts, client.last_whatsapp_message_processed_at) {
@@ -168,12 +163,12 @@ pub async fn process_client(
 
         if !has_new {
             tracing::debug!(client_id = %client.id, "Sem mensagens novas, pulando");
-            complete_execution(pool, exec_id, &client.state, &[]).await?;
+            complete_execution(pool, exec_id, &[]).await?;
             break;
         }
 
         // Extrair apenas as novas mensagens recebidas (from_me=false)
-        let new_messages: Vec<&ConversationMessage> = history
+        let new_messages: Vec<&ConversationMessage> = history_msgs
             .iter()
             .filter(|m| {
                 if m.from_me {
@@ -189,7 +184,7 @@ pub async fn process_client(
             })
             .collect();
 
-        // Comando /reset: resetar client para estado inicial e limpar histórico
+        // Comando /reset: resetar client e limpar histórico
         if let Some(reset_msg) = new_messages.iter().find(|m| m.text.trim() == "/reset") {
             tracing::info!(client_id = %client.id, "Comando /reset recebido, resetando client");
             let reset_ts = reset_msg.timestamp;
@@ -197,7 +192,7 @@ pub async fn process_client(
             sql!(
                 pool,
                 "UPDATE zain.clients
-                 SET state = 'LEAD', state_props = '{}', memory = '{}',
+                 SET props = '{}', memory = '{}',
                      updated_at = now(),
                      last_whatsapp_message_processed_at = $reset_ts,
                      history_starts_at = $reset_ts
@@ -205,14 +200,11 @@ pub async fn process_client(
             )
             .execute()
             .await?;
-            // Atualizar estado in-memory para o próximo loop
-            client.state = "LEAD".into();
-            client.state_props = json!({});
+            client.props = json!({});
             client.memory = json!({});
             client.last_whatsapp_message_processed_at = reset_ts;
             client.history_starts_at = reset_ts;
-            // Fechar execução atual e abrir nova atomicamente
-            exec_id = rotate_execution(pool, exec_id, "cancelled", None, &client).await?;
+            exec_id = rotate_execution(pool, exec_id, "cancelled", None).await?;
             continue;
         }
 
@@ -229,12 +221,12 @@ pub async fn process_client(
             .collect::<Vec<_>>()
             .join("\n");
 
-        let result = run_workflow(
+        let result = workflow::run_workflow(
             pool,
             ai,
             models,
             &client,
-            &history,
+            &history_msgs,
             new_count,
             &new_summary,
             max_ts,
@@ -245,22 +237,15 @@ pub async fn process_client(
         match result {
             Ok(WorkflowOutcome::Restart) => {
                 tracing::info!(client_id = %client.id, "Workflow reiniciado por novas mensagens");
-                exec_id = rotate_execution(pool, exec_id, "cancelled", None, &client).await?;
+                exec_id = rotate_execution(pool, exec_id, "cancelled", None).await?;
                 continue;
             }
-            Ok(WorkflowOutcome::Completed {
-                final_state,
-                llm_log,
-            }) => {
-                client.state = final_state;
+            Ok(WorkflowOutcome::Completed { llm_log }) => {
                 if let Some(ts) = max_ts {
                     update_last_processed(pool, client.id, ts).await?;
                     client.last_whatsapp_message_processed_at = Some(ts);
                 }
-                // Fechar + abrir atomicamente — a nova execução será fechada
-                // no topo do loop se não houver mensagens novas
-                exec_id =
-                    rotate_execution(pool, exec_id, "completed", Some(&llm_log), &client).await?;
+                exec_id = rotate_execution(pool, exec_id, "completed", Some(&llm_log)).await?;
             }
             Err(e) => {
                 fail_execution(pool, exec_id, &e.to_string()).await?;
@@ -279,600 +264,40 @@ pub async fn process_client(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn run_workflow(
-    pool: &Pool,
-    ai: &ai::Client,
-    models: &Models,
-    client: &ClientRow,
-    history: &[ConversationMessage],
-    new_message_count: usize,
-    new_messages_summary: &str,
-    known_max_ts: Option<DateTime<Utc>>,
-    exec_id: Uuid,
-) -> anyhow::Result<WorkflowOutcome> {
-    let handler = states::get_handler(&client.state);
+// ── Execution tracking ─────────────────────────────────────────────────
 
-    // Montar tools: estado-específicas + globais (send + done + consultas)
-    let mut state_tools = handler.tool_definitions();
-    state_tools.push(tools::send_whatsapp_message_tool());
-    state_tools.push(tools::done_tool());
-    state_tools.push(tools::consultar_simei_cnpj_tool());
-    state_tools.push(tools::consultar_cnae_por_codigo_tool());
-    state_tools.push(tools::buscar_cnae_por_atividade_tool());
-    state_tools.push(tools::consultar_divida_pgfn_tool());
-    let tools_json: Vec<Value> = state_tools.iter().map(|t| t.to_ollama_json()).collect();
-
-    let system_prompt = states::build_system_prompt(&*handler);
-    let user_msg =
-        states::build_context_message(client, history, new_message_count, new_messages_summary);
-
-    // Reúne todas as imagens do histórico na ordem cronológica em que
-    // aparecem. Cada uma vai como uma `ChatImage` anexada à user message,
-    // com `label` trazendo o ID — isso bate com as referências
-    // `<attachment type="image" id="..."/>` espalhadas no texto.
-    let chat_images: Vec<ai::ChatImage> = history
-        .iter()
-        .flat_map(|m| m.images.iter())
-        .map(|img| {
-            ai::ChatImage::with_label(
-                img.bytes.clone(),
-                img.mime_type.clone(),
-                format!("Imagem ID: {}", img.id),
-            )
-        })
-        .collect();
-
-    let user_chat_msg = if chat_images.is_empty() {
-        ChatMessage::user(user_msg)
-    } else {
-        ChatMessage::user_with_images(user_msg, chat_images)
-    };
-
-    let mut messages = vec![ChatMessage::system(system_prompt), user_chat_msg];
-
-    let mut current_state = client.state.clone();
-    let mut state_props = client.state_props.clone();
-    let mut memory = client.memory.clone();
-    let mut executed_consequential = false;
-    let mut done = false;
-
-    // Loop de interação com o LLM (tool calls iterativas)
-    let max_iterations = 10;
-    for iteration in 0..max_iterations {
-        tracing::debug!(
-            client_id = %client.id,
-            iteration = iteration,
-            "Chamando LLM"
-        );
-        let response = ai.chat(&models.chat, &messages, &tools_json).await?;
-
-        tracing::info!(
-            client_id = %client.id,
-            iteration = iteration,
-            input_tokens = response.usage.input_tokens,
-            output_tokens = response.usage.output_tokens,
-            cost_usd = format!("{:.6}", response.usage.cost),
-            "Resposta do LLM"
-        );
-
-        if let Some(ref tool_calls) = response.message.tool_calls {
-            let tool_names: Vec<&str> = tool_calls
-                .iter()
-                .map(|c| c.function.name.as_str())
-                .collect();
-            tracing::info!(
-                client_id = %client.id,
-                iteration = iteration,
-                tool_count = tool_calls.len(),
-                tools = ?tool_names,
-                "LLM retornou tool calls"
-            );
-            messages.push(ChatMessage::assistant_tool_calls(tool_calls));
-
-            for call in tool_calls {
-                let tool_name = &call.function.name;
-                let tool_args = &call.function.arguments;
-                let call_id = &call.id;
-
-                let is_consequential = is_tool_consequential(tool_name, &state_tools);
-
-                // Antes da primeira tool consequencial, verificar se chegou msg nova
-                if is_consequential
-                    && !executed_consequential
-                    && has_new_messages(pool, &client.chat_id, known_max_ts).await?
-                {
-                    tracing::info!(
-                        client_id = %client.id,
-                        tool_name,
-                        "Novas mensagens detectadas antes de tool consequencial, reiniciando"
-                    );
-                    // Salvar state_props/memory das tools puras já executadas
-                    save_client_state(pool, client.id, &current_state, &state_props, &memory)
-                        .await?;
-                    update_execution_messages(pool, exec_id, &messages).await?;
-                    return Ok(WorkflowOutcome::Restart);
-                }
-
-                if is_consequential {
-                    executed_consequential = true;
-                }
-
-                tracing::info!(client_id = %client.id, tool_name, "Executando tool");
-
-                if tool_name == "done" {
-                    messages.push(ChatMessage::tool(
-                        tool_name.clone(),
-                        call_id.clone(),
-                        json!({ "status": "ok" }).to_string(),
-                    ));
-                    done = true;
-                    continue;
-                } else if tool_name == "send_whatsapp_message" {
-                    let msg_text = tool_args
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if !msg_text.is_empty() {
-                        write_outbox(pool, &client.chat_id, msg_text).await?;
-                    }
-                    messages.push(ChatMessage::tool(
-                        tool_name.clone(),
-                        call_id.clone(),
-                        json!({ "status": "ok", "mensagem_enviada": true }).to_string(),
-                    ));
-                } else if tool_name == "consultar_simei_cnpj" {
-                    let result =
-                        execute_consultar_simei(tool_args, &mut state_props, &client.id).await;
-                    messages.push(ChatMessage::tool(
-                        tool_name.clone(),
-                        call_id.clone(),
-                        result.to_string(),
-                    ));
-                } else if tool_name == "consultar_cnae_por_codigo" {
-                    let result =
-                        execute_consultar_cnae_por_codigo(pool, tool_args, &client.id).await;
-                    messages.push(ChatMessage::tool(
-                        tool_name.clone(),
-                        call_id.clone(),
-                        result.to_string(),
-                    ));
-                } else if tool_name == "buscar_cnae_por_atividade" {
-                    let result = execute_buscar_cnae_por_atividade(
-                        pool,
-                        ai,
-                        &models.embedding,
-                        tool_args,
-                        &client.id,
-                    )
-                    .await;
-                    messages.push(ChatMessage::tool(
-                        tool_name.clone(),
-                        call_id.clone(),
-                        result.to_string(),
-                    ));
-                } else if tool_name == "consultar_divida_pgfn" {
-                    let result =
-                        execute_consultar_divida_pgfn(tool_args, &mut state_props, &client.id)
-                            .await;
-                    messages.push(ChatMessage::tool(
-                        tool_name.clone(),
-                        call_id.clone(),
-                        result.to_string(),
-                    ));
-                } else {
-                    let result =
-                        handler.execute_tool(tool_name, tool_args, &mut state_props, &mut memory);
-
-                    match result {
-                        ToolResult::Ok(value) => {
-                            messages.push(ChatMessage::tool(
-                                tool_name.clone(),
-                                call_id.clone(),
-                                value.to_string(),
-                            ));
-                        }
-                        ToolResult::StateTransition {
-                            new_state,
-                            new_props,
-                        } => {
-                            current_state = new_state.clone();
-                            state_props = new_props;
-                            save_client_state(
-                                pool,
-                                client.id,
-                                &current_state,
-                                &state_props,
-                                &memory,
-                            )
-                            .await?;
-                            messages.push(ChatMessage::tool(
-                                tool_name.clone(),
-                                call_id.clone(),
-                                format!("Transição para estado {new_state} realizada com sucesso."),
-                            ));
-                        }
-                    }
-                }
-            }
-
-            if done {
-                break;
-            }
-        } else {
-            // LLM respondeu com texto sem chamar tools — isso conta como done
-            break;
-        }
-
-        // Salvar progresso do LLM a cada iteração
-        update_execution_messages(pool, exec_id, &messages).await?;
-    }
-
-    // Salvar estado final
-    save_client_state(pool, client.id, &current_state, &state_props, &memory).await?;
-
-    Ok(WorkflowOutcome::Completed {
-        final_state: current_state,
-        llm_log: messages,
-    })
-}
-
-fn is_tool_consequential(tool_name: &str, tools: &[ToolDef]) -> bool {
-    tools
-        .iter()
-        .find(|t| t.name == tool_name)
-        .map(|t| t.consequential)
-        .unwrap_or(true) // desconhecida = tratar como consequencial
-}
-
-// ── Global tools de consulta externa ──────────────────────────────────
-
-/// Executa a consulta SIMEI via rpa::mei. Salva o resultado em
-/// state_props["ultima_consulta_simei"] para auditoria.
-async fn execute_consultar_simei(args: &Value, state_props: &mut Value, client_id: &Uuid) -> Value {
-    let cnpj_raw = args.get("cnpj").and_then(|v| v.as_str()).unwrap_or("");
-    let cnpj_digits: String = cnpj_raw.chars().filter(|c| c.is_ascii_digit()).collect();
-
-    if cnpj_digits.len() != 14 || !validators::validar_cnpj(&cnpj_digits) {
-        tracing::warn!(
-            client_id = %client_id,
-            cnpj_recebido = %cnpj_raw,
-            "consultar_simei_cnpj: CNPJ inválido"
-        );
-        return json!({
-            "erro": "CNPJ inválido — número não passou na validação",
-            "cnpj_recebido": cnpj_raw,
-        });
-    }
-
-    tracing::info!(
-        client_id = %client_id,
-        cnpj = %cnpj_digits,
-        "consultar_simei_cnpj: iniciando consulta via rpa::mei (~15-30s)"
-    );
-    let start = std::time::Instant::now();
-
-    match rpa::mei::consultar_optante(&cnpj_digits).await {
-        Ok(consulta) => {
-            let elapsed_ms = start.elapsed().as_millis();
-            tracing::info!(
-                client_id = %client_id,
-                cnpj = %cnpj_digits,
-                elapsed_ms = elapsed_ms as u64,
-                optante_simei = consulta.situacao_simei.optante,
-                optante_simples = consulta.situacao_simples.optante,
-                nome_empresarial = %consulta.nome_empresarial,
-                "consultar_simei_cnpj: consulta concluída com sucesso"
-            );
-
-            let result = json!({
-                "optante_simei": consulta.situacao_simei.optante,
-                "simei_desde": consulta.situacao_simei.desde,
-                "optante_simples": consulta.situacao_simples.optante,
-                "simples_desde": consulta.situacao_simples.desde,
-                "nome_empresarial": consulta.nome_empresarial,
-                "data_consulta": consulta.data_consulta,
-            });
-
-            // Grava em state_props para auditoria (mesmo sem transição de estado).
-            if let Some(obj) = state_props.as_object_mut() {
-                obj.insert("ultima_consulta_simei".into(), result.clone());
-            }
-
-            result
-        }
-        Err(e) => {
-            let elapsed_ms = start.elapsed().as_millis();
-            tracing::warn!(
-                client_id = %client_id,
-                cnpj = %cnpj_digits,
-                elapsed_ms = elapsed_ms as u64,
-                error = %e,
-                "consultar_simei_cnpj: falha na consulta"
-            );
-            json!({
-                "erro": format!("Falha ao consultar: {}", e),
-            })
-        }
-    }
-}
-
-/// Consulta se um código CNAE específico é MEI-compatível.
-async fn execute_consultar_cnae_por_codigo(pool: &Pool, args: &Value, client_id: &Uuid) -> Value {
-    let codigo_raw = args.get("codigo").and_then(|v| v.as_str()).unwrap_or("");
-    let codigo_norm: String = codigo_raw.chars().filter(|c| c.is_ascii_digit()).collect();
-
-    if codigo_norm.is_empty() {
-        return json!({ "erro": "código CNAE vazio" });
-    }
-
-    let pattern = format!("{}%", codigo_norm);
-    let rows = sql!(
-        pool,
-        "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
-         FROM mei_cnaes.ocupacoes
-         WHERE cnae_subclasse_id LIKE $pattern
-         ORDER BY ocupacao
-         LIMIT 6"
-    )
-    .fetch_all()
-    .await;
-
-    match rows {
-        Ok(rows) => {
-            let matches: Vec<Value> = rows
-                .iter()
-                .map(|row| {
-                    json!({
-                        "codigo": row.cnae_subclasse_id.trim(),
-                        "ocupacao": row.ocupacao,
-                        "descricao": row.cnae_descricao,
-                    })
-                })
-                .collect();
-
-            json!({
-                "pode_ser_mei": !matches.is_empty(),
-                "matches": matches,
-            })
-        }
-        Err(e) => {
-            tracing::warn!(
-                client_id = %client_id,
-                error = %e,
-                "Falha na query de CNAE por código"
-            );
-            json!({ "erro": format!("Falha ao consultar CNAE: {}", e) })
-        }
-    }
-}
-
-/// Busca CNAEs MEI-compatíveis pela descrição livre da atividade.
-/// Calcula um embedding do termo e faz busca por distância em cnae.subclasses,
-/// restringindo a subclasses que possuem ocupação MEI.
-async fn execute_buscar_cnae_por_atividade(
-    pool: &Pool,
-    ai: &ai::Client,
-    embedding_model: &str,
-    args: &Value,
-    client_id: &Uuid,
-) -> Value {
-    let descricao = args
-        .get("descricao")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .trim();
-
-    if descricao.is_empty() {
-        return json!({ "erro": "descrição vazia" });
-    }
-
-    let embedding = match ai.embed(embedding_model, descricao, None).await {
-        Ok(v) => {
-            let half: Vec<half::f16> = v.into_iter().map(half::f16::from_f32).collect();
-            pgvector::HalfVector::from(half)
-        }
-        Err(e) => {
-            tracing::warn!(client_id = %client_id, error = %e, "Falha ao gerar embedding");
-            return json!({ "erro": format!("Falha ao gerar embedding: {}", e) });
-        }
-    };
-
-    let rows = sql!(
-        pool,
-        "SELECT s.id AS codigo,
-            s.descricao AS descricao,
-            o.ocupacao AS ocupacao
-         FROM cnae.subclasses s
-         JOIN mei_cnaes.ocupacoes o ON o.cnae_subclasse_id = s.id
-         ORDER BY s.embedding <=> $embedding
-         LIMIT 6"
-    )
-    .fetch_all()
-    .await;
-
-    match rows {
-        Ok(rows) => {
-            let resultados: Vec<Value> = rows
-                .iter()
-                .map(|row| {
-                    json!({
-                        "codigo": row.codigo.trim(),
-                        "ocupacao": row.ocupacao,
-                        "descricao": row.descricao,
-                    })
-                })
-                .collect();
-
-            if resultados.is_empty() {
-                json!({
-                    "resultados": [],
-                    "mensagem": "Nenhuma ocupação MEI bate com essa descrição. Pode ser uma atividade não permitida para MEI.",
-                })
-            } else {
-                json!({ "resultados": resultados })
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                client_id = %client_id,
-                error = %e,
-                "Falha na busca de CNAE por atividade"
-            );
-            json!({ "erro": format!("Falha ao buscar CNAE: {}", e) })
-        }
-    }
-}
-
-/// Executa a consulta de dívida ativa na PGFN via rpa::pgfn. Salva o resultado em
-/// state_props["ultima_consulta_pgfn"] para auditoria.
-async fn execute_consultar_divida_pgfn(
-    args: &Value,
-    state_props: &mut Value,
-    client_id: &Uuid,
-) -> Value {
-    let doc_raw = args.get("documento").and_then(|v| v.as_str()).unwrap_or("");
-    let doc_digits: String = doc_raw.chars().filter(|c| c.is_ascii_digit()).collect();
-
-    let is_cpf = doc_digits.len() == 11;
-    let is_cnpj = doc_digits.len() == 14;
-
-    if !is_cpf && !is_cnpj {
-        tracing::warn!(
-            client_id = %client_id,
-            documento_recebido = %doc_raw,
-            "consultar_divida_pgfn: documento inválido (nem CPF nem CNPJ)"
-        );
-        return json!({
-            "erro": "Documento inválido — deve ser CPF (11 dígitos) ou CNPJ (14 dígitos)",
-            "documento_recebido": doc_raw,
-        });
-    }
-
-    if is_cpf && !validators::validar_cpf(&doc_digits) {
-        return json!({
-            "erro": "CPF inválido — número não passou na validação",
-            "documento_recebido": doc_raw,
-        });
-    }
-
-    if is_cnpj && !validators::validar_cnpj(&doc_digits) {
-        return json!({
-            "erro": "CNPJ inválido — número não passou na validação",
-            "documento_recebido": doc_raw,
-        });
-    }
-
-    tracing::info!(
-        client_id = %client_id,
-        documento = %doc_digits,
-        "consultar_divida_pgfn: iniciando consulta (~15-30s)"
-    );
-    let start = std::time::Instant::now();
-
-    match rpa::pgfn::consultar_divida(&doc_digits).await {
-        Ok(consulta) => {
-            let elapsed_ms = start.elapsed().as_millis();
-            tracing::info!(
-                client_id = %client_id,
-                documento = %doc_digits,
-                elapsed_ms = elapsed_ms as u64,
-                tem_divida = consulta.tem_divida,
-                total_divida = consulta.total_divida,
-                nome = ?consulta.nome,
-                "consultar_divida_pgfn: consulta concluída"
-            );
-
-            let result = json!({
-                "tem_divida": consulta.tem_divida,
-                "total_divida": consulta.total_divida,
-                "nome_devedor": consulta.nome,
-            });
-
-            if let Some(obj) = state_props.as_object_mut() {
-                obj.insert("ultima_consulta_pgfn".into(), result.clone());
-            }
-
-            result
-        }
-        Err(e) => {
-            let elapsed_ms = start.elapsed().as_millis();
-            tracing::warn!(
-                client_id = %client_id,
-                documento = %doc_digits,
-                elapsed_ms = elapsed_ms as u64,
-                error = %e,
-                "consultar_divida_pgfn: falha na consulta"
-            );
-            json!({
-                "erro": format!("Falha ao consultar PGFN: {}", e),
-            })
-        }
-    }
-}
-
-async fn has_new_messages(
-    pool: &Pool,
-    chat_id: &str,
-    known_max_ts: Option<DateTime<Utc>>,
-) -> anyhow::Result<bool> {
-    let Some(known) = known_max_ts else {
-        return Ok(false);
-    };
-    let current_max: Option<DateTime<Utc>> = sql!(
-        pool,
-        "SELECT MAX(\"timestamp\") AS ts
-         FROM whatsapp.messages
-         WHERE chat_id = $chat_id AND from_me = false"
-    )
-    .fetch_value()
-    .await?;
-
-    Ok(current_max.is_some_and(|ts| ts > known))
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────
-
-/// Fecha a execução atual e abre uma nova atomicamente (CTE),
+/// Fecha a execução atual e abre uma nova atomicamente,
 /// garantindo que sempre existe uma execução 'running' para o client.
 async fn rotate_execution(
     pool: &Pool,
     old_exec_id: Uuid,
     close_status: &str,
     llm_messages: Option<&[ChatMessage]>,
-    client: &ClientRow,
 ) -> anyhow::Result<Uuid> {
     let llm_json: Value = llm_messages
         .map(serde_json::to_value)
         .transpose()?
         .unwrap_or(Value::Null);
-    let state_after: Option<&str> = if close_status == "completed" {
-        Some(&client.state)
-    } else {
-        None
-    };
-    let client_id = client.id;
-    let state_before = &client.state;
 
     let mut db = pool.get().await?;
     let tx = db.transaction().await?;
 
-    sql!(
+    let client_id: Uuid = sql!(
         &tx,
         "UPDATE zain.executions
          SET status = $close_status,
-             state_after = $state_after,
              llm_messages = COALESCE($llm_json, llm_messages),
              finished_at = now()
-         WHERE id = $old_exec_id"
+         WHERE id = $old_exec_id
+         RETURNING client_id"
     )
-    .execute()
+    .fetch_value()
     .await?;
 
     let new_id: Uuid = sql!(
         &tx,
-        "INSERT INTO zain.executions (client_id, state_before, trigger_type)
-         VALUES ($client_id, $state_before, 'message')
+        "INSERT INTO zain.executions (client_id, trigger_type)
+         VALUES ($client_id, 'message')
          RETURNING id"
     )
     .fetch_value()
@@ -885,17 +310,14 @@ async fn rotate_execution(
 async fn complete_execution(
     pool: &Pool,
     exec_id: Uuid,
-    state_after: &str,
     llm_messages: &[ChatMessage],
 ) -> anyhow::Result<()> {
-    let state_after = Some(state_after);
     let llm_json: Option<Value> = Some(serde_json::to_value(llm_messages)?);
 
     sql!(
         pool,
         "UPDATE zain.executions
-         SET status = 'completed', state_after = $state_after,
-             llm_messages = $llm_json, finished_at = now()
+         SET status = 'completed', llm_messages = $llm_json, finished_at = now()
          WHERE id = $exec_id"
     )
     .execute()
@@ -904,7 +326,7 @@ async fn complete_execution(
     Ok(())
 }
 
-async fn update_execution_messages(
+pub async fn update_execution_messages(
     pool: &Pool,
     exec_id: Uuid,
     messages: &[ChatMessage],
@@ -936,267 +358,25 @@ async fn fail_execution(pool: &Pool, exec_id: Uuid, error: &str) -> anyhow::Resu
     Ok(())
 }
 
-async fn save_client_state(
+pub async fn save_client_props(
     pool: &Pool,
     client_id: Uuid,
-    state: &str,
-    state_props: &Value,
+    props: &Value,
     memory: &Value,
 ) -> anyhow::Result<()> {
-    let state_props = state_props.clone();
+    let props = props.clone();
     let memory = memory.clone();
 
     sql!(
         pool,
         "UPDATE zain.clients
-         SET state = $state, state_props = $state_props, memory = $memory, updated_at = now()
+         SET props = $props, memory = $memory, updated_at = now()
          WHERE id = $client_id"
     )
     .execute()
     .await?;
 
     Ok(())
-}
-
-async fn fetch_history(
-    pool: &Pool,
-    chat_id: &str,
-    history_starts_at: Option<DateTime<Utc>>,
-    ai: &ai::Client,
-    models: &Models,
-) -> anyhow::Result<(Vec<ConversationMessage>, Option<DateTime<Utc>>)> {
-    struct Row {
-        from_me: bool,
-        msg_type: String,
-        text_body: Option<String>,
-        voice: Option<Value>,
-        image: Option<Value>,
-        timestamp: DateTime<Utc>,
-    }
-
-    let rows: Vec<Row> = sql!(
-        pool,
-        "SELECT from_me, msg_type, text_body, voice, image, \"timestamp\"
-         FROM whatsapp.messages
-         WHERE chat_id = $chat_id
-           AND \"timestamp\" >= COALESCE($history_starts_at?, 'epoch'::timestamptz)
-         ORDER BY \"timestamp\" DESC
-         LIMIT 60"
-    )
-    .fetch_all()
-    .await?
-    .iter()
-    .map(|r| Row {
-        from_me: r.from_me,
-        msg_type: r.msg_type.clone(),
-        text_body: r.text_body.clone(),
-        voice: r.voice.clone(),
-        image: r.image.clone(),
-        timestamp: r.timestamp,
-    })
-    .collect();
-
-    let mut messages = Vec::new();
-    let mut total_chars = 0usize;
-    let max_ts: Option<DateTime<Utc>> = rows.iter().find(|r| !r.from_me).map(|r| r.timestamp);
-
-    for row in &rows {
-        let mut images: Vec<HistoryImage> = Vec::new();
-        let text: String = match row.msg_type.as_str() {
-            "text" => row.text_body.clone().unwrap_or_default(),
-            "voice" => {
-                let voice_id = row
-                    .voice
-                    .as_ref()
-                    .and_then(|v| v.get("id"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let link = row
-                    .voice
-                    .as_ref()
-                    .and_then(|v| v.get("link"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if !voice_id.is_empty() {
-                    match transcribe_voice(pool, ai, &models.transcription, voice_id, link).await {
-                        Ok(t) => format!("[áudio transcrito]: {t}"),
-                        Err(e) => {
-                            tracing::warn!(voice_id, "Falha ao transcrever áudio: {e:#}");
-                            "[áudio não transcrito]".into()
-                        }
-                    }
-                } else {
-                    "[áudio]".into()
-                }
-            }
-            "image" => {
-                let img_meta = row.image.as_ref();
-                let id = img_meta
-                    .and_then(|v| v.get("id"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let link = img_meta
-                    .and_then(|v| v.get("link"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let mime = img_meta
-                    .and_then(|v| v.get("mime_type"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("image/jpeg");
-                let caption = img_meta
-                    .and_then(|v| v.get("caption"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_owned();
-
-                if !id.is_empty() && !link.is_empty() {
-                    match fetch_image_cached(id, mime, link).await {
-                        Ok(bytes) => {
-                            images.push(HistoryImage {
-                                id: id.to_owned(),
-                                mime_type: mime.to_owned(),
-                                bytes,
-                            });
-                            if caption.is_empty() {
-                                "[imagem]".into()
-                            } else {
-                                format!("[imagem] {caption}")
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(image_id = id, "Falha ao baixar imagem: {e:#}");
-                            if caption.is_empty() {
-                                "[imagem não carregada]".into()
-                            } else {
-                                format!("[imagem não carregada] {caption}")
-                            }
-                        }
-                    }
-                } else {
-                    "[imagem sem metadados]".into()
-                }
-            }
-            other => {
-                tracing::debug!(msg_type = other, "Tipo de mensagem ignorado no histórico");
-                continue;
-            }
-        };
-
-        // Orçamento de caracteres: limita o histórico para não estourar
-        // contexto. Imagens não contam aqui (bytes ≠ tokens) — o limite
-        // efetivo de imagens vem do próprio LIMIT 60 da query.
-        total_chars += text.len();
-        if total_chars > 10_000 && !messages.is_empty() {
-            break;
-        }
-        messages.push(ConversationMessage {
-            from_me: row.from_me,
-            text,
-            timestamp: Some(row.timestamp),
-            images,
-        });
-    }
-
-    messages.reverse();
-    Ok((messages, max_ts))
-}
-
-/// Baixa uma imagem do WhatsApp e cacheia em disco por ID. Retorna os
-/// bytes crus. O cache é best-effort: falhas de escrita/leitura são
-/// silenciosas e caem no download direto.
-async fn fetch_image_cached(id: &str, mime_type: &str, link: &str) -> anyhow::Result<Vec<u8>> {
-    let cache_dir = std::env::temp_dir().join("zain-images");
-    let _ = std::fs::create_dir_all(&cache_dir);
-
-    // Extensão só para o nome do arquivo em disco — ajuda no debug.
-    let ext = mime_type
-        .rsplit('/')
-        .next()
-        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric()))
-        .unwrap_or("bin");
-    // Sanitiza o id para nome de arquivo (evita `/`, `\`, etc).
-    let safe_id: String = id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let cache_path = cache_dir.join(format!("{safe_id}.{ext}"));
-
-    if let Ok(bytes) = std::fs::read(&cache_path) {
-        tracing::debug!(image_id = id, "imagem lida do cache");
-        return Ok(bytes);
-    }
-
-    let bytes = reqwest::Client::new()
-        .get(link)
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?
-        .to_vec();
-
-    let _ = std::fs::write(&cache_path, &bytes);
-    tracing::debug!(image_id = id, size = bytes.len(), "imagem baixada");
-    Ok(bytes)
-}
-
-async fn transcribe_voice(
-    pool: &Pool,
-    ai: &ai::Client,
-    transcription_model: &str,
-    voice_id: &str,
-    download_link: &str,
-) -> anyhow::Result<String> {
-    // 1. Verificar cache
-    let cached: Option<String> = sql!(
-        pool,
-        "SELECT transcription FROM zain.audio_transcriptions WHERE id = $voice_id"
-    )
-    .fetch_optional()
-    .await?
-    .map(|r| r.transcription);
-
-    if let Some(transcription) = cached {
-        return Ok(transcription);
-    }
-
-    // 2. Baixar o áudio
-    let audio_bytes = reqwest::Client::new()
-        .get(download_link)
-        .send()
-        .await?
-        .error_for_status()?
-        .bytes()
-        .await?;
-
-    // 3. Transcrever via ai::Client
-    let transcription = ai
-        .transcribe(
-            transcription_model,
-            audio_bytes.to_vec(),
-            "audio.ogg",
-            "audio/ogg",
-        )
-        .await?;
-
-    // 4. Salvar no cache
-    let transcription_ref = &transcription;
-    sql!(
-        pool,
-        "INSERT INTO zain.audio_transcriptions (id, transcription)
-         VALUES ($voice_id, $transcription_ref)
-         ON CONFLICT (id) DO NOTHING"
-    )
-    .execute()
-    .await?;
-
-    Ok(transcription)
 }
 
 async fn update_last_processed(
@@ -1210,21 +390,6 @@ async fn update_last_processed(
         "UPDATE zain.clients
          SET last_whatsapp_message_processed_at = $ts, updated_at = now()
          WHERE id = $client_id"
-    )
-    .execute()
-    .await?;
-
-    Ok(())
-}
-
-async fn write_outbox(pool: &Pool, chat_id: &str, text: &str) -> anyhow::Result<()> {
-    let content = json!({ "body": text });
-    let content_type = "text";
-
-    sql!(
-        pool,
-        "INSERT INTO whatsapp.outbox (chat_id, content_type, content)
-         VALUES ($chat_id, $content_type, $content)"
     )
     .execute()
     .await?;

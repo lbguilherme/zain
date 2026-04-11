@@ -22,6 +22,7 @@ dotenvy = "0.15"
 rpa = { path = "../rpa" }
 pgvector = { version = "0.4", features = ["postgres", "halfvec"] }
 half = "2"
+schemars = "1"
 
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
