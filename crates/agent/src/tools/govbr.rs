@@ -36,7 +36,7 @@ pub fn auth_tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "auth_govbr",
-            description: "Autentica no gov.br usando a senha fornecida e o CPF previamente salvo via save_cpf. Se o SSO pedir 2FA, orienta a chamar auth_govbr_otp na sequência.",
+            description: "Tenta autenticar no gov.br usando a senha fornecida e o CPF previamente salvo via save_cpf. IMPORTANTE: chamar esta tool apenas dispara a tentativa de login — ela pode falhar (senha errada, conta bloqueada, 2FA exigido, erro interno). SEMPRE aguarde o retorno da tool e verifique o campo `status` antes de comunicar qualquer coisa ao cliente. NUNCA diga ao cliente que o login deu certo sem ter visto `status: ok` no resultado. Se o SSO pedir 2FA, oriente a chamar auth_govbr_otp na sequência.",
             consequential: true,
             parameters: params_for::<AuthArgs>(),
         },
@@ -55,7 +55,7 @@ pub fn otp_tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "auth_govbr_otp",
-            description: "Completa o login gov.br quando o SSO pediu 2FA, usando o código OTP de 6 dígitos que o usuário recebeu. Reutiliza o CPF e a senha salvos pela chamada anterior de auth_govbr — não precisa repassá-los.",
+            description: "Tenta completar o login gov.br quando o SSO pediu 2FA, usando o código OTP de 6 dígitos que o usuário recebeu. Reutiliza o CPF e a senha salvos pela chamada anterior de auth_govbr — não precisa repassá-los. IMPORTANTE: chamar esta tool apenas dispara a tentativa de validação do OTP — ela pode falhar (código errado, expirado, sessão perdida, etc.). SEMPRE aguarde o retorno da tool e verifique o campo `status` antes de comunicar qualquer coisa ao cliente. NUNCA diga ao cliente que o login deu certo sem ter visto `status: ok` no resultado.",
             consequential: true,
             parameters: params_for::<OtpArgs>(),
         },
@@ -176,7 +176,7 @@ async fn dispatch_outcome(ctx: &ToolContext, outcome: Result<CheckOutcome, Govbr
             tracing::info!(client_id = %ctx.client_id, "govbr auth: 2FA exigido");
             json!({
                 "status": "otp_necessario",
-                "mensagem": "O gov.br pediu verificação em duas etapas. Peça ao cliente o código de 6 dígitos que ele recebeu no app/SMS e chame auth_govbr_otp com esse código.",
+                "mensagem": "O gov.br pediu verificação em duas etapas. Oriente o cliente a abrir o aplicativo \"gov.br\" no celular e clicar em \"Gerar código de acesso\" na parte inferior da tela — isso vai mostrar um código de 6 dígitos. Peça esse código ao cliente e, quando receber, chame a tool auth_govbr_otp passando o código como argumento para concluir o login.",
             })
         }
         Err(e) => {
