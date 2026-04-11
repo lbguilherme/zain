@@ -24,6 +24,11 @@ enum Command {
         /// CPF (somente dígitos).
         cpf: String,
     },
+    /// Consulta dívida ativa na lista de devedores da PGFN.
+    Pgfn {
+        /// CPF (11 dígitos) ou CNPJ (14 dígitos), com ou sem formatação.
+        documento: String,
+    },
 }
 
 #[tokio::main]
@@ -51,6 +56,10 @@ async fn main() -> anyhow::Result<()> {
             };
             eprintln!("→ {tag}");
             println!("{}", serde_json::to_string_pretty(outcome.profile())?);
+        }
+        Command::Pgfn { documento } => {
+            let result = rpa::pgfn::consultar_divida(&documento).await?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
         }
     }
 

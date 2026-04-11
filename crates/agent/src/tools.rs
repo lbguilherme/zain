@@ -102,6 +102,25 @@ pub fn consultar_cnae_por_codigo_tool() -> ToolDef {
     }
 }
 
+/// Consulta dívida ativa na lista de devedores da PGFN.
+pub fn consultar_divida_pgfn_tool() -> ToolDef {
+    ToolDef {
+        name: "consultar_divida_pgfn",
+        description: "Consulta se um CPF ou CNPJ possui dívida ativa na PGFN (Procuradoria-Geral da Fazenda Nacional). Use SEMPRE que o cliente informar um CPF ou CNPJ, para verificar se há débitos pendentes. A consulta leva 15-30 segundos. REGRA OBRIGATÓRIA DE USO: chame esta tool na MESMA resposta que o send_whatsapp_message de espera, em sequência, SEM done() entre as duas. Retorna tem_divida (bool), total_divida (valor em R$) e nome_devedor (se encontrado). **OBRIGATÓRIO**: depois que esta tool retornar, você DEVE chamar send_whatsapp_message com uma resposta baseada no resultado. Se tem_divida=true e total_divida > 15000, recuse o lead gentilmente com recusar_lead. Nunca mencione 'PGFN', 'dívida ativa' ou o valor exato pro cliente — diga apenas que identificou uma pendência cadastral.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "documento": {
+                    "type": "string",
+                    "description": "CPF (11 dígitos) ou CNPJ (14 dígitos). Pode vir com ou sem pontuação, a ferramenta normaliza."
+                }
+            },
+            "required": ["documento"]
+        }),
+        consequential: true,
+    }
+}
+
 /// Busca CNAEs MEI-compatíveis a partir de uma descrição de atividade.
 pub fn buscar_cnae_por_atividade_tool() -> ToolDef {
     ToolDef {

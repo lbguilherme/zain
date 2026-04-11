@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::states::{self, ConversationMessage};
 use crate::tools::{self, ToolDef, ToolResult};
+use crate::validators;
 use ai::ChatMessage;
 
 /// Conjunto de modelos usados pelo agent. Todos são qualificados pelo
@@ -293,6 +294,7 @@ async fn run_workflow(
     state_tools.push(tools::consultar_simei_cnpj_tool());
     state_tools.push(tools::consultar_cnae_por_codigo_tool());
     state_tools.push(tools::buscar_cnae_por_atividade_tool());
+    state_tools.push(tools::consultar_divida_pgfn_tool());
     let tools_json: Vec<Value> = state_tools.iter().map(|t| t.to_ollama_json()).collect();
 
     let system_prompt = states::build_system_prompt(&*handler);
@@ -409,6 +411,11 @@ async fn run_workflow(
                     )
                     .await;
                     messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
+                } else if tool_name == "consultar_divida_pgfn" {
+                    let result =
+                        execute_consultar_divida_pgfn(tool_args, &mut state_props, &client.id)
+                            .await;
+                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
                 } else {
                     let result =
                         handler.execute_tool(tool_name, tool_args, &mut state_props, &mut memory);
@@ -477,14 +484,14 @@ async fn execute_consultar_simei(args: &Value, state_props: &mut Value, client_i
     let cnpj_raw = args.get("cnpj").and_then(|v| v.as_str()).unwrap_or("");
     let cnpj_digits: String = cnpj_raw.chars().filter(|c| c.is_ascii_digit()).collect();
 
-    if cnpj_digits.len() != 14 {
+    if cnpj_digits.len() != 14 || !validators::validar_cnpj(&cnpj_digits) {
         tracing::warn!(
             client_id = %client_id,
             cnpj_recebido = %cnpj_raw,
-            "consultar_simei_cnpj: CNPJ inválido (deve ter 14 dígitos)"
+            "consultar_simei_cnpj: CNPJ inválido"
         );
         return json!({
-            "erro": "CNPJ inválido — deve ter 14 dígitos",
+            "erro": "CNPJ inválido — número não passou na validação",
             "cnpj_recebido": cnpj_raw,
         });
     }
@@ -664,6 +671,93 @@ async fn execute_buscar_cnae_por_atividade(
                 "Falha na busca de CNAE por atividade"
             );
             json!({ "erro": format!("Falha ao buscar CNAE: {}", e) })
+        }
+    }
+}
+
+/// Executa a consulta de dívida ativa na PGFN via rpa::pgfn. Salva o resultado em
+/// state_props["ultima_consulta_pgfn"] para auditoria.
+async fn execute_consultar_divida_pgfn(
+    args: &Value,
+    state_props: &mut Value,
+    client_id: &Uuid,
+) -> Value {
+    let doc_raw = args.get("documento").and_then(|v| v.as_str()).unwrap_or("");
+    let doc_digits: String = doc_raw.chars().filter(|c| c.is_ascii_digit()).collect();
+
+    let is_cpf = doc_digits.len() == 11;
+    let is_cnpj = doc_digits.len() == 14;
+
+    if !is_cpf && !is_cnpj {
+        tracing::warn!(
+            client_id = %client_id,
+            documento_recebido = %doc_raw,
+            "consultar_divida_pgfn: documento inválido (nem CPF nem CNPJ)"
+        );
+        return json!({
+            "erro": "Documento inválido — deve ser CPF (11 dígitos) ou CNPJ (14 dígitos)",
+            "documento_recebido": doc_raw,
+        });
+    }
+
+    if is_cpf && !validators::validar_cpf(&doc_digits) {
+        return json!({
+            "erro": "CPF inválido — número não passou na validação",
+            "documento_recebido": doc_raw,
+        });
+    }
+
+    if is_cnpj && !validators::validar_cnpj(&doc_digits) {
+        return json!({
+            "erro": "CNPJ inválido — número não passou na validação",
+            "documento_recebido": doc_raw,
+        });
+    }
+
+    tracing::info!(
+        client_id = %client_id,
+        documento = %doc_digits,
+        "consultar_divida_pgfn: iniciando consulta (~15-30s)"
+    );
+    let start = std::time::Instant::now();
+
+    match rpa::pgfn::consultar_divida(&doc_digits).await {
+        Ok(consulta) => {
+            let elapsed_ms = start.elapsed().as_millis();
+            tracing::info!(
+                client_id = %client_id,
+                documento = %doc_digits,
+                elapsed_ms = elapsed_ms as u64,
+                tem_divida = consulta.tem_divida,
+                total_divida = consulta.total_divida,
+                nome = ?consulta.nome,
+                "consultar_divida_pgfn: consulta concluída"
+            );
+
+            let result = json!({
+                "tem_divida": consulta.tem_divida,
+                "total_divida": consulta.total_divida,
+                "nome_devedor": consulta.nome,
+            });
+
+            if let Some(obj) = state_props.as_object_mut() {
+                obj.insert("ultima_consulta_pgfn".into(), result.clone());
+            }
+
+            result
+        }
+        Err(e) => {
+            let elapsed_ms = start.elapsed().as_millis();
+            tracing::warn!(
+                client_id = %client_id,
+                documento = %doc_digits,
+                elapsed_ms = elapsed_ms as u64,
+                error = %e,
+                "consultar_divida_pgfn: falha na consulta"
+            );
+            json!({
+                "erro": format!("Falha ao consultar PGFN: {}", e),
+            })
         }
     }
 }
