@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::states::{self, ConversationMessage};
 use crate::tools::{self, ToolDef, ToolResult};
+use crate::validators;
 use ai::ChatMessage;
 
 /// Modelo usado para transcrever áudios recebidos. O prefixo indica o
@@ -453,14 +454,14 @@ async fn execute_consultar_simei(args: &Value, state_props: &mut Value, client_i
     let cnpj_raw = args.get("cnpj").and_then(|v| v.as_str()).unwrap_or("");
     let cnpj_digits: String = cnpj_raw.chars().filter(|c| c.is_ascii_digit()).collect();
 
-    if cnpj_digits.len() != 14 {
+    if cnpj_digits.len() != 14 || !validators::validar_cnpj(&cnpj_digits) {
         tracing::warn!(
             client_id = %client_id,
             cnpj_recebido = %cnpj_raw,
-            "consultar_simei_cnpj: CNPJ inválido (deve ter 14 dígitos)"
+            "consultar_simei_cnpj: CNPJ inválido"
         );
         return json!({
-            "erro": "CNPJ inválido — deve ter 14 dígitos",
+            "erro": "CNPJ inválido — número não passou na validação",
             "cnpj_recebido": cnpj_raw,
         });
     }
@@ -590,7 +591,15 @@ async fn execute_buscar_cnae_por_atividade(pool: &Pool, args: &Value, client_id:
         return json!({ "erro": "descrição vazia" });
     }
 
+    // Monta tsquery com OR entre as palavras para full-text search com
+    // stemming português ("doces" → radical "doc" → casa com "Doceiro").
+    let ts_input: String = descricao
+        .split_whitespace()
+        .filter(|w| w.len() >= 2)
+        .collect::<Vec<_>>()
+        .join(" | ");
     let pattern = format!("%{}%", descricao);
+
     let db = match pool.get().await {
         Ok(c) => c,
         Err(e) => {
@@ -599,8 +608,8 @@ async fn execute_buscar_cnae_por_atividade(pool: &Pool, args: &Value, client_id:
         }
     };
 
-    let rows = db
-        .query(
+    let rows = if ts_input.is_empty() {
+        db.query(
             "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
              FROM mei_cnaes.ocupacoes
              WHERE ocupacao ILIKE $1 OR cnae_descricao ILIKE $1
@@ -608,7 +617,25 @@ async fn execute_buscar_cnae_por_atividade(pool: &Pool, args: &Value, client_id:
              LIMIT 10",
             &[&pattern],
         )
-        .await;
+        .await
+    } else {
+        db.query(
+            "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
+             FROM mei_cnaes.ocupacoes
+             WHERE to_tsvector('portuguese', ocupacao || ' ' || cnae_descricao)
+                       @@ to_tsquery('portuguese', $1)
+                OR ocupacao ILIKE $2
+                OR cnae_descricao ILIKE $2
+             ORDER BY
+                 ts_rank(
+                     to_tsvector('portuguese', ocupacao || ' ' || cnae_descricao),
+                     to_tsquery('portuguese', $1)
+                 ) DESC
+             LIMIT 10",
+            &[&ts_input, &pattern],
+        )
+        .await
+    };
 
     match rows {
         Ok(rows) => {
