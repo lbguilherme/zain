@@ -1,6 +1,10 @@
 //! Cliente para a API do Ollama.
 //!
-//! Suporta chat com tool calls e embeddings (com cache opcional em disco).
+//! Chat usa o endpoint OpenAI-compatível (`/v1/chat/completions`) em vez
+//! do nativo `/api/chat` — ele aceita `content` como array de parts
+//! (`text` + `image_url`), o que permite intercalar labels e imagens na
+//! mesma user message (coisa que o `/api/chat` não suporta). Embeddings
+//! continuam usando o endpoint nativo `/api/embed`.
 
 use std::path::{Path, PathBuf};
 
@@ -9,7 +13,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::chat::{ChatMessage, ChatResponse, ChatUsage};
+use crate::chat::{
+    ChatMessage, ChatResponse, ChatResponseMessage, ChatUsage, ToolCall, ToolCallFunction,
+};
 
 const EMBED_BATCH_SIZE: usize = 64;
 
@@ -37,65 +43,32 @@ impl OllamaClient {
         messages: &[ChatMessage],
         tools: &[Value],
     ) -> Result<ChatResponse> {
-        let mut body = serde_json::json!({
+        let translated = translate_messages(messages);
+
+        let mut body = json!({
             "model": model,
-            "messages": messages,
+            "messages": translated,
             "stream": false,
         });
-
-        // `ChatMessage.images` é `#[serde(skip)]` porque cada provider tem
-        // seu próprio wire format. Aqui reconstruímos o campo `images` que
-        // o Ollama espera: array de strings base64 por mensagem. O Ollama
-        // detecta o mime type sozinho, então o campo `mime_type` da
-        // `ChatImage` é descartado para esse provider.
-        if let Some(msgs) = body["messages"].as_array_mut() {
-            for (i, msg) in messages.iter().enumerate() {
-                if msg.images.is_empty() {
-                    continue;
-                }
-                let encoded: Vec<String> = msg
-                    .images
-                    .iter()
-                    .map(|img| BASE64.encode(&img.bytes))
-                    .collect();
-                msgs[i]["images"] = json!(encoded);
-            }
-        }
 
         if !tools.is_empty() {
             body["tools"] = Value::Array(tools.to_vec());
         }
 
-        // Parseamos para `Value` primeiro porque Ollama expõe a contagem
-        // de tokens em campos no nível raiz (`prompt_eval_count`,
-        // `eval_count`) que não vivem dentro de `message`, e só depois
-        // desserializamos para `ChatResponse`.
         let raw: Value = self
             .http
-            .post(format!("{}/api/chat", self.base_url))
+            .post(format!("{}/v1/chat/completions", self.base_url))
             .json(&body)
             .send()
-            .await?
-            .error_for_status()?
+            .await
+            .context("falha ao chamar Ollama")?
+            .error_for_status()
+            .context("erro na resposta do Ollama")?
             .json()
-            .await?;
+            .await
+            .context("falha ao parsear JSON do Ollama")?;
 
-        let input_tokens = raw
-            .get("prompt_eval_count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u32;
-        let output_tokens = raw.get("eval_count").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-
-        let mut resp: ChatResponse =
-            serde_json::from_value(raw).context("falha ao parsear resposta do Ollama")?;
-        // Ollama roda local — sem custo monetário.
-        resp.usage = ChatUsage {
-            input_tokens,
-            output_tokens,
-            cost: 0.0,
-        };
-
-        Ok(resp)
+        translate_response(&raw)
     }
 
     // ── Embeddings ─────────────────────────────────────────────────────
@@ -206,4 +179,190 @@ fn write_cached(cache_dir: &Path, text: &str, vec: &[f32]) {
     let path = cache_dir.join(format!("{}.bin", cache_key(text)));
     let data: Vec<u8> = vec.iter().flat_map(|v| v.to_le_bytes()).collect();
     let _ = std::fs::write(&path, &data);
+}
+
+// ── Tradução: ChatMessage[] → messages no formato OpenAI ───────────────
+
+/// Traduz o array genérico `ChatMessage` para o formato esperado pelo
+/// endpoint OpenAI-compatível. Diferente do `/api/chat` nativo, aqui:
+///
+/// * user messages com imagens viram `content` como array de parts
+///   intercalados (`text` + `image_url` com data URI), preservando a
+///   posição de cada label relativa à sua imagem.
+/// * tool_calls no assistant reusam o `ToolCall.id` vindo do provider
+///   (ou gerado sinteticamente na tradução do Gemini), com `arguments`
+///   como string JSON (exigido pelo spec OpenAI).
+/// * mensagens `role=tool` usam o `tool_call_id` guardado no próprio
+///   `ChatMessage` — isso permite que a mesma tool seja chamada várias
+///   vezes sem que respostas sejam trocadas.
+fn translate_messages(messages: &[ChatMessage]) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+
+    for msg in messages.iter() {
+        match msg.role.as_str() {
+            "system" => {
+                out.push(json!({
+                    "role": "system",
+                    "content": msg.content,
+                }));
+            }
+            "user" => {
+                if msg.images.is_empty() {
+                    out.push(json!({
+                        "role": "user",
+                        "content": msg.content,
+                    }));
+                } else {
+                    let mut parts: Vec<Value> = Vec::new();
+                    if !msg.content.is_empty() {
+                        parts.push(json!({ "type": "text", "text": msg.content }));
+                    }
+                    for img in &msg.images {
+                        if let Some(label) = &img.label {
+                            parts.push(json!({ "type": "text", "text": label }));
+                        }
+                        let data_uri = format!(
+                            "data:{};base64,{}",
+                            img.mime_type,
+                            BASE64.encode(&img.bytes)
+                        );
+                        parts.push(json!({
+                            "type": "image_url",
+                            "image_url": { "url": data_uri },
+                        }));
+                    }
+                    out.push(json!({
+                        "role": "user",
+                        "content": parts,
+                    }));
+                }
+            }
+            "assistant" => {
+                if let Some(tool_calls) = &msg.tool_calls {
+                    let calls: Vec<Value> = tool_calls
+                        .iter()
+                        .map(|c| {
+                            // OpenAI exige `arguments` como string JSON.
+                            let args_str = serde_json::to_string(&c.function.arguments)
+                                .unwrap_or_else(|_| "{}".into());
+                            json!({
+                                "id": c.id,
+                                "type": "function",
+                                "function": {
+                                    "name": c.function.name,
+                                    "arguments": args_str,
+                                }
+                            })
+                        })
+                        .collect();
+                    out.push(json!({
+                        "role": "assistant",
+                        "content": Value::Null,
+                        "tool_calls": calls,
+                    }));
+                } else {
+                    out.push(json!({
+                        "role": "assistant",
+                        "content": msg.content,
+                    }));
+                }
+            }
+            "tool" => {
+                let tool_call_id = msg.tool_call_id.as_deref().unwrap_or("");
+                out.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": msg.content,
+                }));
+            }
+            _ => {
+                // roles desconhecidos caem silenciosamente — igual aos
+                // outros providers.
+            }
+        }
+    }
+
+    out
+}
+
+// ── Tradução: response OpenAI → ChatResponse ──────────────────────────
+
+fn translate_response(raw: &Value) -> Result<ChatResponse> {
+    let choice = raw
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|c| c.first())
+        .context("resposta do Ollama sem choices[0]")?;
+
+    let message = choice
+        .get("message")
+        .context("resposta do Ollama sem choices[0].message")?;
+
+    let content = message
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
+
+    let tool_calls: Option<Vec<ToolCall>> = message
+        .get("tool_calls")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .enumerate()
+                .filter_map(|(i, call)| {
+                    let func = call.get("function")?;
+                    let name = func.get("name")?.as_str()?.to_owned();
+                    // OpenAI devolve `arguments` como string JSON, mas
+                    // alguns servidores compatíveis mandam objeto direto.
+                    // Aceitamos os dois formatos.
+                    let args = match func.get("arguments") {
+                        Some(Value::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
+                        Some(v) => v.clone(),
+                        None => Value::Null,
+                    };
+                    // Preferimos o id devolvido pelo servidor; se ausente,
+                    // fabricamos um estável baseado na posição — suficiente
+                    // para pareamento dentro desta mesma rodada.
+                    let id = call
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_owned())
+                        .unwrap_or_else(|| format!("ollama_call_{i}"));
+                    Some(ToolCall {
+                        id,
+                        function: ToolCallFunction {
+                            name,
+                            arguments: args,
+                        },
+                        thought_signature: None,
+                    })
+                })
+                .collect()
+        })
+        .filter(|v: &Vec<ToolCall>| !v.is_empty());
+
+    let usage = raw.get("usage");
+    let input_tokens = usage
+        .and_then(|u| u.get("prompt_tokens"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    let output_tokens = usage
+        .and_then(|u| u.get("completion_tokens"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+
+    Ok(ChatResponse {
+        message: ChatResponseMessage {
+            role: "assistant".into(),
+            content,
+            tool_calls,
+        },
+        usage: ChatUsage {
+            input_tokens,
+            output_tokens,
+            // Ollama roda local — sem custo monetário.
+            cost: 0.0,
+        },
+    })
 }

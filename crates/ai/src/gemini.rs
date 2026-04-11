@@ -4,6 +4,8 @@
 //! OpenAI/Ollama) para o wire format do Gemini (`contents` com `parts`,
 //! `functionDeclarations`, `functionCall`, `functionResponse`) e de volta.
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
@@ -13,6 +15,17 @@ use crate::chat::{
 };
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
+
+/// Contador monotônico para gerar ids de tool_call quando o provider
+/// (Gemini) não expõe um. Único por processo — ids antigos persistidos
+/// no DB continuam consistentes porque o log de mensagens é sempre
+/// reescrito inteiro a cada update.
+static CALL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn next_call_id() -> String {
+    let n = CALL_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("gemini_call_{n}")
+}
 
 pub struct GeminiClient {
     http: reqwest::Client,
@@ -262,12 +275,18 @@ fn translate_messages(messages: &[ChatMessage]) -> Result<(Option<Value>, Vec<Va
             "user" => {
                 // Montamos os parts na ordem: texto primeiro (se houver)
                 // seguido das imagens como `inlineData`. O Gemini exige
-                // `mimeType` + `data` em base64.
+                // `mimeType` + `data` em base64. Quando uma imagem tem
+                // `label`, emitimos um `text` part com o label logo antes
+                // do `inlineData` para o modelo correlacionar a imagem
+                // com menções no histórico.
                 let mut parts: Vec<Value> = Vec::new();
                 if !msg.content.is_empty() || msg.images.is_empty() {
                     parts.push(json!({ "text": msg.content }));
                 }
                 for img in &msg.images {
+                    if let Some(label) = &img.label {
+                        parts.push(json!({ "text": label }));
+                    }
                     parts.push(json!({
                         "inlineData": {
                             "mimeType": img.mime_type,
@@ -405,7 +424,13 @@ fn translate_response(model: &str, resp: &Value) -> Result<ChatResponse> {
                 .get("thoughtSignature")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_owned());
+            // Gemini não expõe um id de chamada no wire — ele casa
+            // `functionCall` com `functionResponse` por nome e posição.
+            // Geramos um id sintético só para o nosso rastreamento
+            // interno (e para providers como Ollama que exigem o campo).
+            let id = next_call_id();
             tool_calls.push(ToolCall {
+                id,
                 function: ToolCallFunction {
                     name,
                     arguments: args,

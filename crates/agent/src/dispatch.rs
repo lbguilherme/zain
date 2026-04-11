@@ -4,7 +4,7 @@ use deadpool_postgres::Pool;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::states::{self, ConversationMessage};
+use crate::states::{self, ConversationMessage, HistoryImage};
 use crate::tools::{self, ToolDef, ToolResult};
 use crate::validators;
 use ai::ChatMessage;
@@ -219,7 +219,13 @@ pub async fn process_client(
         let new_count = new_messages.len();
         let new_summary: String = new_messages
             .iter()
-            .map(|m| m.text.as_str())
+            .map(|m| {
+                let mut line = m.text.clone();
+                for img in &m.images {
+                    line.push_str(&format!(" <attachment type=\"image\" id=\"{}\"/>", img.id));
+                }
+                line
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -301,10 +307,29 @@ async fn run_workflow(
     let user_msg =
         states::build_context_message(client, history, new_message_count, new_messages_summary);
 
-    let mut messages = vec![
-        ChatMessage::system(system_prompt),
-        ChatMessage::user(user_msg),
-    ];
+    // Reúne todas as imagens do histórico na ordem cronológica em que
+    // aparecem. Cada uma vai como uma `ChatImage` anexada à user message,
+    // com `label` trazendo o ID — isso bate com as referências
+    // `<attachment type="image" id="..."/>` espalhadas no texto.
+    let chat_images: Vec<ai::ChatImage> = history
+        .iter()
+        .flat_map(|m| m.images.iter())
+        .map(|img| {
+            ai::ChatImage::with_label(
+                img.bytes.clone(),
+                img.mime_type.clone(),
+                format!("Imagem ID: {}", img.id),
+            )
+        })
+        .collect();
+
+    let user_chat_msg = if chat_images.is_empty() {
+        ChatMessage::user(user_msg)
+    } else {
+        ChatMessage::user_with_images(user_msg, chat_images)
+    };
+
+    let mut messages = vec![ChatMessage::system(system_prompt), user_chat_msg];
 
     let mut current_state = client.state.clone();
     let mut state_props = client.state_props.clone();
@@ -348,6 +373,7 @@ async fn run_workflow(
             for call in tool_calls {
                 let tool_name = &call.function.name;
                 let tool_args = &call.function.arguments;
+                let call_id = &call.id;
 
                 let is_consequential = is_tool_consequential(tool_name, &state_tools);
 
@@ -377,6 +403,7 @@ async fn run_workflow(
                 if tool_name == "done" {
                     messages.push(ChatMessage::tool(
                         tool_name.clone(),
+                        call_id.clone(),
                         json!({ "status": "ok" }).to_string(),
                     ));
                     done = true;
@@ -391,16 +418,25 @@ async fn run_workflow(
                     }
                     messages.push(ChatMessage::tool(
                         tool_name.clone(),
+                        call_id.clone(),
                         json!({ "status": "ok", "mensagem_enviada": true }).to_string(),
                     ));
                 } else if tool_name == "consultar_simei_cnpj" {
                     let result =
                         execute_consultar_simei(tool_args, &mut state_props, &client.id).await;
-                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
+                    messages.push(ChatMessage::tool(
+                        tool_name.clone(),
+                        call_id.clone(),
+                        result.to_string(),
+                    ));
                 } else if tool_name == "consultar_cnae_por_codigo" {
                     let result =
                         execute_consultar_cnae_por_codigo(pool, tool_args, &client.id).await;
-                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
+                    messages.push(ChatMessage::tool(
+                        tool_name.clone(),
+                        call_id.clone(),
+                        result.to_string(),
+                    ));
                 } else if tool_name == "buscar_cnae_por_atividade" {
                     let result = execute_buscar_cnae_por_atividade(
                         pool,
@@ -410,19 +446,31 @@ async fn run_workflow(
                         &client.id,
                     )
                     .await;
-                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
+                    messages.push(ChatMessage::tool(
+                        tool_name.clone(),
+                        call_id.clone(),
+                        result.to_string(),
+                    ));
                 } else if tool_name == "consultar_divida_pgfn" {
                     let result =
                         execute_consultar_divida_pgfn(tool_args, &mut state_props, &client.id)
                             .await;
-                    messages.push(ChatMessage::tool(tool_name.clone(), result.to_string()));
+                    messages.push(ChatMessage::tool(
+                        tool_name.clone(),
+                        call_id.clone(),
+                        result.to_string(),
+                    ));
                 } else {
                     let result =
                         handler.execute_tool(tool_name, tool_args, &mut state_props, &mut memory);
 
                     match result {
                         ToolResult::Ok(value) => {
-                            messages.push(ChatMessage::tool(tool_name.clone(), value.to_string()));
+                            messages.push(ChatMessage::tool(
+                                tool_name.clone(),
+                                call_id.clone(),
+                                value.to_string(),
+                            ));
                         }
                         ToolResult::StateTransition {
                             new_state,
@@ -440,6 +488,7 @@ async fn run_workflow(
                             .await?;
                             messages.push(ChatMessage::tool(
                                 tool_name.clone(),
+                                call_id.clone(),
                                 format!("Transição para estado {new_state} realizada com sucesso."),
                             ));
                         }
@@ -921,12 +970,13 @@ async fn fetch_history(
         msg_type: String,
         text_body: Option<String>,
         voice: Option<Value>,
+        image: Option<Value>,
         timestamp: DateTime<Utc>,
     }
 
     let rows: Vec<Row> = sql!(
         pool,
-        "SELECT from_me, msg_type, text_body, voice, \"timestamp\"
+        "SELECT from_me, msg_type, text_body, voice, image, \"timestamp\"
          FROM whatsapp.messages
          WHERE chat_id = $chat_id
            AND \"timestamp\" >= COALESCE($history_starts_at?, 'epoch'::timestamptz)
@@ -941,6 +991,7 @@ async fn fetch_history(
         msg_type: r.msg_type.clone(),
         text_body: r.text_body.clone(),
         voice: r.voice.clone(),
+        image: r.image.clone(),
         timestamp: r.timestamp,
     })
     .collect();
@@ -950,6 +1001,7 @@ async fn fetch_history(
     let max_ts: Option<DateTime<Utc>> = rows.iter().find(|r| !r.from_me).map(|r| r.timestamp);
 
     for row in &rows {
+        let mut images: Vec<HistoryImage> = Vec::new();
         let text: String = match row.msg_type.as_str() {
             "text" => row.text_body.clone().unwrap_or_default(),
             "voice" => {
@@ -977,12 +1029,62 @@ async fn fetch_history(
                     "[áudio]".into()
                 }
             }
+            "image" => {
+                let img_meta = row.image.as_ref();
+                let id = img_meta
+                    .and_then(|v| v.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let link = img_meta
+                    .and_then(|v| v.get("link"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let mime = img_meta
+                    .and_then(|v| v.get("mime_type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("image/jpeg");
+                let caption = img_meta
+                    .and_then(|v| v.get("caption"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
+
+                if !id.is_empty() && !link.is_empty() {
+                    match fetch_image_cached(id, mime, link).await {
+                        Ok(bytes) => {
+                            images.push(HistoryImage {
+                                id: id.to_owned(),
+                                mime_type: mime.to_owned(),
+                                bytes,
+                            });
+                            if caption.is_empty() {
+                                "[imagem]".into()
+                            } else {
+                                format!("[imagem] {caption}")
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(image_id = id, "Falha ao baixar imagem: {e:#}");
+                            if caption.is_empty() {
+                                "[imagem não carregada]".into()
+                            } else {
+                                format!("[imagem não carregada] {caption}")
+                            }
+                        }
+                    }
+                } else {
+                    "[imagem sem metadados]".into()
+                }
+            }
             other => {
                 tracing::debug!(msg_type = other, "Tipo de mensagem ignorado no histórico");
                 continue;
             }
         };
 
+        // Orçamento de caracteres: limita o histórico para não estourar
+        // contexto. Imagens não contam aqui (bytes ≠ tokens) — o limite
+        // efetivo de imagens vem do próprio LIMIT 60 da query.
         total_chars += text.len();
         if total_chars > 10_000 && !messages.is_empty() {
             break;
@@ -991,11 +1093,57 @@ async fn fetch_history(
             from_me: row.from_me,
             text,
             timestamp: Some(row.timestamp),
+            images,
         });
     }
 
     messages.reverse();
     Ok((messages, max_ts))
+}
+
+/// Baixa uma imagem do WhatsApp e cacheia em disco por ID. Retorna os
+/// bytes crus. O cache é best-effort: falhas de escrita/leitura são
+/// silenciosas e caem no download direto.
+async fn fetch_image_cached(id: &str, mime_type: &str, link: &str) -> anyhow::Result<Vec<u8>> {
+    let cache_dir = std::env::temp_dir().join("zain-images");
+    let _ = std::fs::create_dir_all(&cache_dir);
+
+    // Extensão só para o nome do arquivo em disco — ajuda no debug.
+    let ext = mime_type
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or("bin");
+    // Sanitiza o id para nome de arquivo (evita `/`, `\`, etc).
+    let safe_id: String = id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let cache_path = cache_dir.join(format!("{safe_id}.{ext}"));
+
+    if let Ok(bytes) = std::fs::read(&cache_path) {
+        tracing::debug!(image_id = id, "imagem lida do cache");
+        return Ok(bytes);
+    }
+
+    let bytes = reqwest::Client::new()
+        .get(link)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?
+        .to_vec();
+
+    let _ = std::fs::write(&cache_path, &bytes);
+    tracing::debug!(image_id = id, size = bytes.len(), "imagem baixada");
+    Ok(bytes)
 }
 
 async fn transcribe_voice(

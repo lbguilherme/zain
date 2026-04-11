@@ -13,6 +13,18 @@ pub struct ConversationMessage {
     pub from_me: bool,
     pub text: String,
     pub timestamp: Option<DateTime<Utc>>,
+    /// Imagens anexadas a esta mensagem. Cada imagem tem um ID (do
+    /// WhatsApp) que é mencionado no `text` para o modelo correlacionar
+    /// o anexo com a parte que virá depois da user message.
+    pub images: Vec<HistoryImage>,
+}
+
+/// Imagem anexada a uma [`ConversationMessage`]. Os bytes já foram
+/// baixados (e cacheados em disco) pelo `fetch_history`.
+pub struct HistoryImage {
+    pub id: String,
+    pub mime_type: String,
+    pub bytes: Vec<u8>,
 }
 
 pub trait StateHandler: Send + Sync {
@@ -136,10 +148,11 @@ pub fn format_history(history: &[ConversationMessage]) -> String {
         }
 
         let sender = if msg.from_me { "Zain" } else { "Cliente" };
-        lines.push(format!(
-            "[{sender}]: <message_text>{}</message_text>",
-            msg.text
-        ));
+        let mut body = format!("<message_text>{}</message_text>", msg.text);
+        for img in &msg.images {
+            body.push_str(&format!(" <attachment type=\"image\" id=\"{}\"/>", img.id));
+        }
+        lines.push(format!("[{sender}]: {body}"));
     }
 
     lines.join("\n")

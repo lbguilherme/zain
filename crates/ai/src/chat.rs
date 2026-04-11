@@ -14,6 +14,13 @@ pub struct ChatMessage {
     /// na serialização para providers que não precisam do campo.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
+    /// ID opaco da tool call a que este message responde (role="tool").
+    /// Espelha o `ToolCall.id` do turno anterior. O provider OpenAI-compat
+    /// (Ollama via `/v1/chat/completions`) exige esse campo para
+    /// correlacionar respostas com chamadas — só o nome não basta porque
+    /// a mesma tool pode ser chamada múltiplas vezes numa conversa.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tool_call_id: Option<String>,
     /// Imagens anexadas à mensagem. Vive fora do `content` porque cada
     /// provider codifica anexos de forma diferente (Ollama espera base64
     /// no campo `images`; Gemini espera `inlineData` parts). Por isso é
@@ -25,10 +32,16 @@ pub struct ChatMessage {
 /// Imagem anexada a uma [`ChatMessage`]. Os bytes são crus — cada provider
 /// faz a codificação necessária (base64 para Ollama/Gemini) no momento do
 /// envio.
+///
+/// O campo opcional `label` permite identificar cada imagem (ex.: por ID
+/// do WhatsApp) para que o modelo correlacione menções no texto com o
+/// anexo correspondente. Quando presente, o Gemini emite um `text` part
+/// imediatamente antes do `inlineData` da imagem.
 #[derive(Debug, Clone)]
 pub struct ChatImage {
     pub bytes: Vec<u8>,
     pub mime_type: String,
+    pub label: Option<String>,
 }
 
 impl ChatImage {
@@ -36,12 +49,33 @@ impl ChatImage {
         Self {
             bytes,
             mime_type: mime_type.into(),
+            label: None,
+        }
+    }
+
+    pub fn with_label(
+        bytes: Vec<u8>,
+        mime_type: impl Into<String>,
+        label: impl Into<String>,
+    ) -> Self {
+        Self {
+            bytes,
+            mime_type: mime_type.into(),
+            label: Some(label.into()),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCall {
+    /// Identificador opaco da chamada. Vem do provider quando ele expõe
+    /// um id (ex.: OpenAI/Ollama via `/v1/chat/completions`) ou é gerado
+    /// pelo nosso lado quando não vem (ex.: Gemini). A resposta da tool
+    /// referencia este id via `ChatMessage.tool_call_id`, permitindo que
+    /// a mesma tool seja chamada múltiplas vezes na conversa sem
+    /// ambiguidade.
+    #[serde(default)]
+    pub id: String,
     pub function: ToolCallFunction,
     /// Assinatura opaca devolvida pelo Gemini 3.x junto com o `functionCall`.
     /// DEVE ser reemitida no mesmo Part no turno seguinte, senão o Gemini
@@ -93,6 +127,7 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: None,
+            tool_call_id: None,
             images: Vec::new(),
         }
     }
@@ -103,6 +138,7 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: None,
+            tool_call_id: None,
             images: Vec::new(),
         }
     }
@@ -115,16 +151,22 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: None,
+            tool_call_id: None,
             images,
         }
     }
 
-    pub fn tool(name: String, content: String) -> Self {
+    /// Mensagem `tool` respondendo a uma chamada anterior. `call_id` deve
+    /// espelhar o `ToolCall.id` da chamada correspondente — é isso que
+    /// permite que a mesma tool seja chamada múltiplas vezes e cada
+    /// resposta seja pareada com a chamada certa.
+    pub fn tool(name: String, call_id: String, content: String) -> Self {
         Self {
             role: "tool".into(),
             content,
             tool_calls: None,
             tool_name: Some(name),
+            tool_call_id: Some(call_id),
             images: Vec::new(),
         }
     }
@@ -135,6 +177,7 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: None,
+            tool_call_id: None,
             images: Vec::new(),
         }
     }
@@ -145,6 +188,7 @@ impl ChatMessage {
             content: String::new(),
             tool_calls: Some(calls.to_vec()),
             tool_name: None,
+            tool_call_id: None,
             images: Vec::new(),
         }
     }
