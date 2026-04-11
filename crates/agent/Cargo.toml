@@ -20,6 +20,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 uuid = { version = "1", features = ["v4"] }
 dotenvy = "0.15"
 rpa-mei = { path = "../rpa-mei" }
+rpa-pgfn = { path = "../rpa-pgfn" }
 pgvector = { version = "0.4", features = ["postgres", "halfvec"] }
 half = "2"
 

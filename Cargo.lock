@@ -33,6 +33,7 @@ dependencies = [
  "pgvector",
  "reqwest",
  "rpa-mei",
+ "rpa-pgfn",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2385,6 +2386,20 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "rpa-pgfn"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chromium-driver",
+ "clap",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
