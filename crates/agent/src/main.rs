@@ -6,6 +6,7 @@ use tokio::sync::{Notify, Semaphore};
 use tokio_postgres::{AsyncMessage, NoTls};
 
 use agent::dispatch;
+use agent::dispatch::Models;
 
 const MAX_CONCURRENT: usize = 5;
 
@@ -15,18 +16,17 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let database_url = std::env::var("DATABASE_URL").unwrap();
-    let chat_model = std::env::var("CHAT_MODEL").unwrap();
+    let models = Arc::new(Models::from_env()?);
 
     let mut pool_cfg = Config::new();
     pool_cfg.url = Some(database_url.clone());
     let pool = pool_cfg.create_pool(Some(Runtime::Tokio1), NoTls)?;
 
     let ai_client = Arc::new(ai::Client::from_env());
-    let chat_model = Arc::new(chat_model);
 
     // Recovery: marcar execuções órfãs como crashed e re-agendar clientes
     dispatch::recover_crashed(&pool).await?;
-    tracing::info!("Recovery completo. Iniciando dispatch loop...");
+    tracing::info!("Iniciando dispatch loop...");
 
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT));
 
@@ -53,14 +53,14 @@ async fn main() -> anyhow::Result<()> {
             Ok(Some(client)) => {
                 let pool = pool.clone();
                 let ai_client = ai_client.clone();
-                let chat_model = chat_model.clone();
+                let models = models.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
                     let client_id = client.id;
                     let chat_id = client.chat_id.clone();
                     tracing::info!(%client_id, %chat_id, "Processando cliente");
                     if let Err(e) =
-                        dispatch::process_client(&pool, &ai_client, &chat_model, client).await
+                        dispatch::process_client(&pool, &ai_client, &models, client).await
                     {
                         tracing::error!(%client_id, "Erro processando cliente: {e:#}");
                     }
@@ -112,7 +112,6 @@ async fn listen_task(database_url: &str, notify: &Arc<Notify>) -> anyhow::Result
     client
         .batch_execute("LISTEN zain_clients_needs_processing")
         .await?;
-    tracing::info!("Agent LISTEN conectado no canal zain_clients_needs_processing");
 
     while rx.recv().await.is_some() {
         notify.notify_one();

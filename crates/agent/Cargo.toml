@@ -20,7 +20,10 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 uuid = { version = "1", features = ["v4"] }
 dotenvy = "0.15"
 rpa-mei = { path = "../rpa-mei" }
+pgvector = { version = "0.4", features = ["postgres", "halfvec"] }
+half = "2"
 
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
+extra_migrations = ["../dados-abertos/sql"]
 analysis_mode = "static"
