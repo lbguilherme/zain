@@ -10,7 +10,6 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main" }
 deadpool-postgres = "0.14"
 tokio-postgres = "0.7"
-uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -26,7 +25,7 @@ migrations = "../../migrations"
 extra_migrations = ["../dados-abertos/sql"]
 
 [package.metadata.cubos_sql.enums]
-"zain.govbr_nivel" = "crate::govbr::Nivel"
+"zain.govbr_nivel" = "::rpa::govbr::Nivel"
 
 [package.metadata.cubos_sql.domains]
-"zain.govbr_session" = "crate::govbr::session::SavedSession"
+"zain.govbr_session" = "::rpa::govbr::session::SavedSession"

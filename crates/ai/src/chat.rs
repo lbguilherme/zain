@@ -182,10 +182,10 @@ impl ChatMessage {
         }
     }
 
-    pub fn assistant_tool_calls(calls: &[ToolCall]) -> Self {
+    pub fn assistant_tool_calls(content: String, calls: &[ToolCall]) -> Self {
         Self {
             role: "assistant".into(),
-            content: String::new(),
+            content,
             tool_calls: Some(calls.to_vec()),
             tool_name: None,
             tool_call_id: None,

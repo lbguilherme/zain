@@ -2,14 +2,18 @@
 //!
 //! ## Estratégia
 //!
-//! 1. Se existe `session` no banco, tenta reutilizar: abre browser novo,
-//!    injeta cookies + UA e navega para `contas.acesso.gov.br/contas/{cpf}`.
-//!    Se ainda está logado → extrai perfil, refresca sessão e pronto.
-//! 2. Caso contrário (sem sessão, ou sessão morta), limpa a coluna e faz
-//!    login do zero com `cpf + password`, lidando com 2FA se aparecer.
+//! 1. Se o caller passou uma `session` salva, tenta reutilizar: abre
+//!    browser novo, injeta cookies + UA e navega para
+//!    `contas.acesso.gov.br/contas/{cpf}`. Se ainda está logado → extrai
+//!    perfil, re-captura a sessão e pronto.
+//! 2. Caso contrário (sem sessão, ou sessão morta), faz login do zero com
+//!    `cpf + password`, lidando com 2FA se aparecer.
 //! 3. No 2FA marca "não solicitar verificação em duas etapas novamente
 //!    neste navegador" — é o cookie persistente que fica salvo.
-//! 4. Ao final do caminho feliz, re-captura a sessão e grava no banco.
+//! 4. Ao final do caminho feliz, re-captura a sessão.
+//!
+//! Este módulo é *puro*: não toca banco de dados. O caller é responsável
+//! por persistir a sessão/perfil retornados onde quiser.
 //!
 //! ## Seletores
 //!
@@ -20,13 +24,10 @@
 use std::time::Duration;
 
 use chromium_driver::PageSession;
-use deadpool_postgres::Pool;
 use serde::Serialize;
 use thiserror::Error;
-use uuid::Uuid;
 
 use super::Nivel;
-use super::db;
 use super::launch;
 use super::session::{self, SavedSession};
 use crate::captcha;
@@ -45,27 +46,23 @@ pub struct Profile {
 }
 
 #[derive(Debug)]
-pub enum CheckOutcome {
-    /// Sessão salva ainda era válida.
-    Reused(Profile),
-    /// Login feito do zero.
-    LoggedIn(Profile),
-}
-
-impl CheckOutcome {
-    pub fn profile(&self) -> &Profile {
-        match self {
-            CheckOutcome::Reused(p) | CheckOutcome::LoggedIn(p) => p,
-        }
-    }
+pub struct CheckOutcome {
+    pub profile: Profile,
+    pub session: SavedSession,
+    /// `true` se foi preciso logar do zero; `false` se a sessão salva foi
+    /// reaproveitada.
+    pub fresh_login: bool,
 }
 
 #[derive(Debug, Error)]
 pub enum GovbrError {
-    #[error("client_id não cadastrado em zain.govbr")]
-    NotRegistered,
-    #[error("credenciais inválidas")]
-    InvalidCredentials,
+    /// O gov.br recusou o par cpf+senha. A `String` carrega o texto
+    /// exato do aviso amarelo exibido na página, que pode variar além
+    /// do "usuário e/ou senha inválidos" — conta bloqueada, senha
+    /// expirada, código interno ERLxxxxx, etc. Repassar a mensagem pro
+    /// LLM permite reagir sem adivinhar.
+    #[error("{0}")]
+    InvalidCredentials(String),
     #[error("código OTP ausente ou inválido")]
     MissingOtp,
     #[error("falha ao extrair dados do perfil: {0}")]
@@ -78,39 +75,46 @@ pub enum GovbrError {
 
 /// Ponto de entrada principal.
 ///
-/// Abre o browser em `https://contas.acesso.gov.br/contas/{cpf}`. Se estiver
-/// logado, extrai perfil. Caso contrário faz login com os dados do banco.
+/// Recebe as credenciais do gov.br e, opcionalmente, uma sessão previamente
+/// salva. Tenta reaproveitar a sessão; se não der, loga do zero usando
+/// `password` + `otp`. Devolve sempre uma sessão fresca e o perfil extraído.
 ///
 /// Se o SSO do gov.br exibir um hCaptcha durante o fluxo, o login depende
 /// da extensão NopeCHA estar carregada no browser (via
 /// `NOPECHA_EXTENSION_PATH`) — o Rust apenas espera o iframe sumir.
-pub async fn check_govbr_profile(pool: &Pool, client_id: Uuid) -> Result<CheckOutcome, GovbrError> {
-    let row = db::load(pool, client_id).await?;
-    let Some(row) = row else {
-        return Err(GovbrError::NotRegistered);
-    };
-
-    let cpf = row.cpf.as_str();
-
+pub async fn check_govbr_profile(
+    cpf: &str,
+    password: &str,
+    otp: Option<&str>,
+    saved: Option<&SavedSession>,
+) -> Result<CheckOutcome, GovbrError> {
     // 1. Tentar reusar sessão salva.
-    if let Some(saved) = &row.session {
-        tracing::info!(%client_id, cpf, "Tentando reusar sessão salva");
-        match try_reuse_session(pool, client_id, cpf, saved).await {
-            Ok(Some(profile)) => return Ok(CheckOutcome::Reused(profile)),
+    if let Some(saved) = saved {
+        tracing::info!(cpf, "Tentando reusar sessão salva");
+        match try_reuse_session(cpf, saved).await {
+            Ok(Some((profile, session))) => {
+                return Ok(CheckOutcome {
+                    profile,
+                    session,
+                    fresh_login: false,
+                });
+            }
             Ok(None) => {
-                tracing::info!(%client_id, cpf, "Sessão salva inválida, vai logar do zero");
-                db::clear_session(pool, client_id).await?;
+                tracing::info!(cpf, "Sessão salva inválida, vai logar do zero");
             }
             Err(e) => {
-                tracing::warn!(%client_id, cpf, "Erro reusando sessão: {e:#}");
-                db::clear_session(pool, client_id).await?;
+                tracing::warn!(cpf, "Erro reusando sessão: {e:#}");
             }
         }
     }
 
     // 2. Login do zero.
-    let profile = do_fresh_login(pool, client_id, cpf, &row.password, row.otp.as_deref()).await?;
-    Ok(CheckOutcome::LoggedIn(profile))
+    let (profile, session) = do_fresh_login(cpf, password, otp).await?;
+    Ok(CheckOutcome {
+        profile,
+        session,
+        fresh_login: true,
+    })
 }
 
 // ── Reuso de sessão ───────────────────────────────────────────────────────
@@ -119,11 +123,9 @@ pub async fn check_govbr_profile(pool: &Pool, client_id: Uuid) -> Result<CheckOu
 /// `Ok(None)` = sessão rejeitada (caiu no login).
 /// `Err`     = falha de browser/transporte.
 async fn try_reuse_session(
-    pool: &Pool,
-    client_id: Uuid,
     cpf: &str,
     saved: &SavedSession,
-) -> anyhow::Result<Option<Profile>> {
+) -> anyhow::Result<Option<(Profile, SavedSession)>> {
     let opts = launch::options_with_extensions().await?;
     let (mut process, browser) = chromium_driver::launch(opts).await?;
 
@@ -141,7 +143,7 @@ async fn try_reuse_session(
         tracing::info!(cpf, url = %current, "Após restore + navigate");
 
         if current.contains(SSO_HOST) || current.contains("/login") {
-            return Ok::<Option<Profile>, anyhow::Error>(None);
+            return Ok::<Option<(Profile, SavedSession)>, anyhow::Error>(None);
         }
 
         let profile = match extract_profile(&page, cpf).await {
@@ -152,12 +154,9 @@ async fn try_reuse_session(
             }
         };
 
-        // Refresca a sessão (cookies podem ter girado) e persiste perfil.
+        // Refresca a sessão (cookies podem ter girado).
         let fresh = session::capture(&browser).await?;
-        db::save_session(pool, client_id, &fresh).await?;
-        persist_profile(pool, client_id, &profile).await?;
-
-        Ok(Some(profile))
+        Ok(Some((profile, fresh)))
     }
     .await;
 
@@ -169,12 +168,10 @@ async fn try_reuse_session(
 // ── Login do zero ─────────────────────────────────────────────────────────
 
 async fn do_fresh_login(
-    pool: &Pool,
-    client_id: Uuid,
     cpf: &str,
     password: &str,
     otp: Option<&str>,
-) -> Result<Profile, GovbrError> {
+) -> Result<(Profile, SavedSession), GovbrError> {
     let opts = launch::options_with_extensions().await?;
     let (mut process, browser) = chromium_driver::launch(opts)
         .await
@@ -221,18 +218,24 @@ async fn do_fresh_login(
         // esperando a próxima tela aparecer (2FA, erro de credencial, ou
         // redirect direto pro perfil quando o 2FA está dispensado).
         let post_password_deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        // Senha errada no gov.br: a página volta pra tela de CPF e injeta
+        // um `.br-message.warning` com o texto "Usuário e/ou senha
+        // inválidos. (ERL0003900)". Detectamos isso e retornamos
+        // `InvalidCredentials` — o caller (tool `auth_govbr`) sabe
+        // traduzir pra mensagem ao cliente.
         let needs_2fa = loop {
             if dom.try_query_selector("input#otpInput").await?.is_some() {
                 break true;
             }
-            if dom
-                .try_query_selector(".alert-error, .error-message, .feedback-error")
-                .await?
-                .is_some()
-                && dom.try_query_selector("input#password").await?.is_some()
+            if dom.try_query_selector("input#accountId").await?.is_some()
+                && dom
+                    .try_query_selector(".br-message.warning")
+                    .await?
+                    .is_some()
             {
                 let _ = page.debug_dump("govbr-login-invalid-credentials").await;
-                return Err(GovbrError::InvalidCredentials);
+                let message = read_warning_message(&page).await;
+                return Err(GovbrError::InvalidCredentials(message));
             }
             if current_url(&page).await?.contains("contas.acesso.gov.br") {
                 break false;
@@ -330,12 +333,10 @@ async fn do_fresh_login(
             }
         };
 
-        // Persistência final: cookies atualizados + perfil.
+        // Captura a sessão final para o caller persistir.
         let fresh = session::capture(&browser).await?;
-        db::save_session(pool, client_id, &fresh).await?;
-        persist_profile(pool, client_id, &profile).await?;
 
-        Ok::<Profile, GovbrError>(profile)
+        Ok::<(Profile, SavedSession), GovbrError>((profile, fresh))
     }
     .await;
 
@@ -349,6 +350,30 @@ async fn do_fresh_login(
 async fn current_url(page: &PageSession) -> anyhow::Result<String> {
     let v = page.eval_value("location.href").await?;
     Ok(v.as_str().unwrap_or("").to_string())
+}
+
+/// Lê o texto do banner de aviso amarelo que o SSO exibe quando o login
+/// falha. O texto costuma ser algo como "Usuário e/ou senha inválidos.
+/// (ERL0003900)" mas pode variar (conta bloqueada, senha expirada, ...).
+/// Se a extração falhar, devolve um fallback genérico.
+async fn read_warning_message(page: &PageSession) -> String {
+    const FALLBACK: &str = "gov.br rejeitou o login (mensagem não capturada)";
+    let js = r#"
+        (() => {
+            const el = document.querySelector('.br-message.warning');
+            if (!el) return null;
+            return (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+        })()
+    "#;
+    match page.eval_value(js).await {
+        Ok(v) => v
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| FALLBACK.to_string()),
+        Err(_) => FALLBACK.to_string(),
+    }
 }
 
 fn profile_url(cpf: &str) -> String {
@@ -477,16 +502,4 @@ async fn extract_profile(page: &PageSession, cpf: &str) -> anyhow::Result<Profil
 
         tokio::time::sleep(POLL_INTERVAL).await;
     }
-}
-
-async fn persist_profile(pool: &Pool, client_id: Uuid, profile: &Profile) -> anyhow::Result<()> {
-    db::save_profile(
-        pool,
-        client_id,
-        &profile.nome,
-        profile.email.as_deref(),
-        profile.telefone.as_deref(),
-        profile.nivel,
-    )
-    .await
 }

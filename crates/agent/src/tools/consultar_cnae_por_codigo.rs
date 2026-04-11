@@ -21,22 +21,21 @@ pub fn tool() -> Tool {
             consequential: false,
             parameters: params_for::<Args>(),
         },
-        handler: typed_handler(|ctx: ToolContext, args: Args, props, memory| async move {
-            let value = run(&ctx.pool, ctx.client_id, &args.codigo).await;
-            ToolOutput {
-                value,
-                props,
-                memory,
+        handler: typed_handler(|ctx: ToolContext, args: Args, memory| async move {
+            match run(&ctx.pool, ctx.client_id, &args.codigo).await {
+                Ok(value) => ToolOutput::new(value, memory),
+                Err(value) => ToolOutput::err(value, memory),
             }
         }),
+        must_use_tool_result: false,
     }
 }
 
-async fn run(pool: &Pool, client_id: Uuid, codigo_raw: &str) -> Value {
+async fn run(pool: &Pool, client_id: Uuid, codigo_raw: &str) -> Result<Value, Value> {
     let codigo_norm: String = codigo_raw.chars().filter(|c| c.is_ascii_digit()).collect();
 
     if codigo_norm.is_empty() {
-        return json!({ "erro": "código CNAE vazio" });
+        return Err(json!({ "erro": "código CNAE vazio" }));
     }
 
     let pattern = format!("{}%", codigo_norm);
@@ -64,10 +63,10 @@ async fn run(pool: &Pool, client_id: Uuid, codigo_raw: &str) -> Value {
                 })
                 .collect();
 
-            json!({
+            Ok(json!({
                 "pode_ser_mei": !matches.is_empty(),
                 "matches": matches,
-            })
+            }))
         }
         Err(e) => {
             tracing::warn!(
@@ -75,7 +74,7 @@ async fn run(pool: &Pool, client_id: Uuid, codigo_raw: &str) -> Value {
                 error = %e,
                 "Falha na query de CNAE por código"
             );
-            json!({ "erro": format!("Falha ao consultar CNAE: {}", e) })
+            Err(json!({ "erro": format!("Falha ao consultar CNAE: {}", e) }))
         }
     }
 }

@@ -21,21 +21,21 @@ pub fn tool() -> Tool {
             consequential: false,
             parameters: params_for::<Args>(),
         },
-        handler: typed_handler(|ctx: ToolContext, args: Args, props, memory| async move {
-            let value = run(
+        handler: typed_handler(|ctx: ToolContext, args: Args, memory| async move {
+            match run(
                 &ctx.pool,
                 &ctx.ai,
                 &ctx.models.embedding,
                 ctx.client_id,
                 &args.descricao,
             )
-            .await;
-            ToolOutput {
-                value,
-                props,
-                memory,
+            .await
+            {
+                Ok(value) => ToolOutput::new(value, memory),
+                Err(value) => ToolOutput::err(value, memory),
             }
         }),
+        must_use_tool_result: false,
     }
 }
 
@@ -45,11 +45,11 @@ async fn run(
     embedding_model: &str,
     client_id: Uuid,
     descricao: &str,
-) -> Value {
+) -> Result<Value, Value> {
     let descricao = descricao.trim();
 
     if descricao.is_empty() {
-        return json!({ "erro": "descrição vazia" });
+        return Err(json!({ "erro": "descrição vazia" }));
     }
 
     let embedding = match ai.embed(embedding_model, descricao, None).await {
@@ -59,7 +59,7 @@ async fn run(
         }
         Err(e) => {
             tracing::warn!(client_id = %client_id, error = %e, "Falha ao gerar embedding");
-            return json!({ "erro": format!("Falha ao gerar embedding: {}", e) });
+            return Err(json!({ "erro": format!("Falha ao gerar embedding: {}", e) }));
         }
     };
 
@@ -90,12 +90,12 @@ async fn run(
                 .collect();
 
             if resultados.is_empty() {
-                json!({
+                Ok(json!({
                     "resultados": [],
                     "mensagem": "Nenhuma ocupação MEI bate com essa descrição. Pode ser uma atividade não permitida para MEI.",
-                })
+                }))
             } else {
-                json!({ "resultados": resultados })
+                Ok(json!({ "resultados": resultados }))
             }
         }
         Err(e) => {
@@ -104,7 +104,7 @@ async fn run(
                 error = %e,
                 "Falha na busca de CNAE por atividade"
             );
-            json!({ "erro": format!("Falha ao buscar CNAE: {}", e) })
+            Err(json!({ "erro": format!("Falha ao buscar CNAE: {}", e) }))
         }
     }
 }

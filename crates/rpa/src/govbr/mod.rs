@@ -1,10 +1,9 @@
 //! Login e verificação de perfil no gov.br.
 //!
-//! Tabela de apoio: [`zain.govbr`](../../../../migrations/0011_govbr.sql).
-//! Guarda credenciais, OTP e uma sessão serializada (cookies + user-agent)
-//! que permite reutilizar o "navegador confiável" entre execuções.
+//! O módulo é puro: recebe credenciais + sessão salva e devolve perfil +
+//! sessão fresca. A persistência (em `zain.clients`) fica a cargo do
+//! caller — tipicamente [`crate::main`] para testes locais pela CLI.
 
-pub mod db;
 pub mod extension;
 pub mod flow;
 pub mod launch;

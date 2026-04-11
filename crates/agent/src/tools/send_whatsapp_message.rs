@@ -20,24 +20,27 @@ pub fn tool() -> Tool {
             consequential: true,
             parameters: params_for::<Args>(),
         },
-        handler: typed_handler(|ctx: ToolContext, args: Args, props, memory| async move {
-            let value = if args.message.is_empty() {
-                json!({ "status": "ok", "mensagem_enviada": false })
-            } else {
-                match write_outbox(&ctx.pool, &ctx.chat_id, &args.message).await {
-                    Ok(()) => json!({ "status": "ok", "mensagem_enviada": true }),
-                    Err(e) => {
-                        tracing::warn!(chat_id = %ctx.chat_id, error = %e, "Falha ao escrever no outbox");
-                        json!({ "status": "erro", "mensagem": format!("Falha ao enviar: {e}") })
-                    }
+        handler: typed_handler(|ctx: ToolContext, args: Args, memory| async move {
+            if args.message.is_empty() {
+                return ToolOutput::new(
+                    json!({ "status": "ok", "mensagem_enviada": false }),
+                    memory,
+                );
+            }
+            match write_outbox(&ctx.pool, &ctx.chat_id, &args.message).await {
+                Ok(()) => {
+                    ToolOutput::new(json!({ "status": "ok", "mensagem_enviada": true }), memory)
                 }
-            };
-            ToolOutput {
-                value,
-                props,
-                memory,
+                Err(e) => {
+                    tracing::warn!(chat_id = %ctx.chat_id, error = %e, "Falha ao escrever no outbox");
+                    ToolOutput::err(
+                        json!({ "status": "erro", "mensagem": format!("Falha ao enviar: {e}") }),
+                        memory,
+                    )
+                }
             }
         }),
+        must_use_tool_result: false,
     }
 }
 

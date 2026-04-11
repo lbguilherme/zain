@@ -43,7 +43,19 @@ pub struct ClientRow {
     pub chat_id: String,
     pub phone: Option<String>,
     pub name: Option<String>,
-    pub props: Value,
+    pub cpf: Option<String>,
+    pub cnpj: Option<String>,
+    pub quer_abrir_mei: Option<bool>,
+    pub cnae: Option<String>,
+    /// Descrição da subclasse CNAE, vindo do join com `cnae.subclasses`.
+    /// Não é uma coluna de `zain.clients` — derivada em `claim_next_client`.
+    pub cnae_descricao: Option<String>,
+    pub endereco: Option<String>,
+    pub pagamento_solicitado_em: Option<DateTime<Utc>>,
+    pub recusa_motivo: Option<String>,
+    pub recusado_em: Option<DateTime<Utc>>,
+    /// `true` quando `govbr_session IS NOT NULL` no cliente. Derivada.
+    pub govbr_autenticado: bool,
     pub memory: Value,
     pub last_whatsapp_message_processed_at: Option<DateTime<Utc>>,
     pub history_starts_at: Option<DateTime<Utc>>,
@@ -88,7 +100,11 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
     let mut db = pool.get().await?;
     let tx = db.transaction().await?;
 
-    let row = sql!(
+    // Passo 1: claim + lock atualiza needs_processing e pega o id.
+    // O enriquecimento (join com cnae.subclasses, flag govbr) vem
+    // num SELECT separado — o cubos_sql casa os tipos de colunas da
+    // cláusula RETURNING, o que dificulta misturar joins aqui.
+    let claimed = sql!(
         &tx,
         "UPDATE zain.clients
          SET needs_processing = false, updated_at = now()
@@ -103,8 +119,28 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
              FOR UPDATE SKIP LOCKED
              LIMIT 1
          )
-         RETURNING id, chat_id, phone, name, props, memory,
-                   last_whatsapp_message_processed_at, history_starts_at"
+         RETURNING id"
+    )
+    .fetch_optional()
+    .await?;
+
+    let Some(claimed) = claimed else {
+        return Ok(None);
+    };
+    let claimed_id = claimed.id;
+
+    let row = sql!(
+        &tx,
+        "SELECT c.id, c.chat_id, c.phone, c.name,
+                c.cpf, c.cnpj, c.quer_abrir_mei, c.cnae, c.endereco,
+                c.pagamento_solicitado_em, c.recusa_motivo, c.recusado_em,
+                s.descricao AS cnae_descricao,
+                (c.govbr_session IS NOT NULL) AS govbr_autenticado,
+                c.memory,
+                c.last_whatsapp_message_processed_at, c.history_starts_at
+         FROM zain.clients c
+         LEFT JOIN cnae.subclasses s ON s.id = c.cnae
+         WHERE c.id = $claimed_id"
     )
     .fetch_optional()
     .await?;
@@ -131,7 +167,16 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
         chat_id: r.chat_id,
         phone: r.phone,
         name: r.name,
-        props: r.props,
+        cpf: r.cpf,
+        cnpj: r.cnpj,
+        quer_abrir_mei: r.quer_abrir_mei,
+        cnae: r.cnae,
+        cnae_descricao: r.cnae_descricao,
+        endereco: r.endereco,
+        pagamento_solicitado_em: r.pagamento_solicitado_em,
+        recusa_motivo: r.recusa_motivo,
+        recusado_em: r.recusado_em,
+        govbr_autenticado: r.govbr_autenticado,
         memory: r.memory,
         last_whatsapp_message_processed_at: r.last_whatsapp_message_processed_at,
         history_starts_at: r.history_starts_at,
@@ -163,7 +208,9 @@ pub async fn process_client(
 
         if !has_new {
             tracing::debug!(client_id = %client.id, "Sem mensagens novas, pulando");
-            complete_execution(pool, exec_id, &[]).await?;
+            // LLM não foi chamado nessa execução — apaga a row em vez
+            // de deixar uma execução vazia/ruído no histórico.
+            delete_execution(pool, exec_id).await?;
             break;
         }
 
@@ -184,27 +231,78 @@ pub async fn process_client(
             })
             .collect();
 
-        // Comando /reset: resetar client e limpar histórico
+        // Comando /reset: apaga a row inteira e recria uma nova com
+        // apenas os campos de identidade (chat_id, phone, name), como se
+        // o cliente tivesse acabado de chegar pela integração do
+        // WhatsApp. Qualquer coisa acumulada (props, memory, govbr_*,
+        // etc.) some junto — faz o reset continuar valendo à medida que
+        // novas colunas "de estado" forem adicionadas.
+        //
+        // As únicas duas colunas não-identidade que preservamos na
+        // reinserção são `last_whatsapp_message_processed_at` e
+        // `history_starts_at = reset_ts`: sem esse corte a próxima
+        // iteração do loop re-leria o próprio comando `/reset` como
+        // mensagem nova e disparamos um loop infinito.
         if let Some(reset_msg) = new_messages.iter().find(|m| m.text.trim() == "/reset") {
-            tracing::info!(client_id = %client.id, "Comando /reset recebido, resetando client");
+            tracing::info!(client_id = %client.id, "Comando /reset recebido, recriando client");
             let reset_ts = reset_msg.timestamp;
-            let client_id = client.id;
-            sql!(
-                pool,
-                "UPDATE zain.clients
-                 SET props = '{}', memory = '{}',
-                     updated_at = now(),
-                     last_whatsapp_message_processed_at = $reset_ts,
-                     history_starts_at = $reset_ts
-                 WHERE id = $client_id"
+            let old_id = client.id;
+            let chat_id = client.chat_id.clone();
+            let phone = client.phone.clone();
+            let name = client.name.clone();
+
+            let mut db = pool.get().await?;
+            let tx = db.transaction().await?;
+
+            // Remove todas as execuções (a `running` atual inclusive) —
+            // a FK em zain.executions bloquearia o DELETE do client.
+            sql!(&tx, "DELETE FROM zain.executions WHERE client_id = $old_id")
+                .execute()
+                .await?;
+
+            sql!(&tx, "DELETE FROM zain.clients WHERE id = $old_id")
+                .execute()
+                .await?;
+
+            let new_id: Uuid = sql!(
+                &tx,
+                "INSERT INTO zain.clients (
+                    chat_id, phone, name,
+                    last_whatsapp_message_processed_at,
+                    history_starts_at
+                 )
+                 VALUES ($chat_id, $phone, $name, $reset_ts, $reset_ts)
+                 RETURNING id"
             )
-            .execute()
+            .fetch_value()
             .await?;
-            client.props = json!({});
+
+            let new_exec_id: Uuid = sql!(
+                &tx,
+                "INSERT INTO zain.executions (client_id, trigger_type)
+                 VALUES ($new_id, 'message')
+                 RETURNING id"
+            )
+            .fetch_value()
+            .await?;
+
+            tx.commit().await?;
+
+            client.id = new_id;
+            client.cpf = None;
+            client.cnpj = None;
+            client.quer_abrir_mei = None;
+            client.cnae = None;
+            client.cnae_descricao = None;
+            client.endereco = None;
+            client.pagamento_solicitado_em = None;
+            client.recusa_motivo = None;
+            client.recusado_em = None;
+            client.govbr_autenticado = false;
             client.memory = json!({});
             client.last_whatsapp_message_processed_at = reset_ts;
             client.history_starts_at = reset_ts;
-            exec_id = rotate_execution(pool, exec_id, "cancelled", None).await?;
+            exec_id = new_exec_id;
             continue;
         }
 
@@ -307,21 +405,10 @@ async fn rotate_execution(
     Ok(new_id)
 }
 
-async fn complete_execution(
-    pool: &Pool,
-    exec_id: Uuid,
-    llm_messages: &[ChatMessage],
-) -> anyhow::Result<()> {
-    let llm_json: Option<Value> = Some(serde_json::to_value(llm_messages)?);
-
-    sql!(
-        pool,
-        "UPDATE zain.executions
-         SET status = 'completed', llm_messages = $llm_json, finished_at = now()
-         WHERE id = $exec_id"
-    )
-    .execute()
-    .await?;
+async fn delete_execution(pool: &Pool, exec_id: Uuid) -> anyhow::Result<()> {
+    sql!(pool, "DELETE FROM zain.executions WHERE id = $exec_id")
+        .execute()
+        .await?;
 
     Ok(())
 }
@@ -358,19 +445,17 @@ async fn fail_execution(pool: &Pool, exec_id: Uuid, error: &str) -> anyhow::Resu
     Ok(())
 }
 
-pub async fn save_client_props(
+pub async fn save_client_memory(
     pool: &Pool,
     client_id: Uuid,
-    props: &Value,
     memory: &Value,
 ) -> anyhow::Result<()> {
-    let props = props.clone();
     let memory = memory.clone();
 
     sql!(
         pool,
         "UPDATE zain.clients
-         SET props = $props, memory = $memory, updated_at = now()
+         SET memory = $memory, updated_at = now()
          WHERE id = $client_id"
     )
     .execute()

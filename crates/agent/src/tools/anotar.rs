@@ -18,7 +18,7 @@ pub fn tool() -> Tool {
             consequential: false,
             parameters: params_for::<Args>(),
         },
-        handler: typed_sync_handler(|args: Args, props, mut memory| {
+        handler: typed_sync_handler(|args: Args, mut memory| {
             let existing = memory
                 .get("anotacoes")
                 .and_then(|v| v.as_str())
@@ -29,11 +29,8 @@ pub fn tool() -> Tool {
                 format!("{existing}\n{}", args.texto)
             };
             memory["anotacoes"] = json!(updated);
-            ToolOutput {
-                value: json!({ "status": "ok", "anotacao_salva": true }),
-                props,
-                memory,
-            }
+            ToolOutput::new(json!({ "status": "ok", "anotacao_salva": true }), memory)
         }),
+        must_use_tool_result: false,
     }
 }

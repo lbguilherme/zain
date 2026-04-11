@@ -387,7 +387,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "futures-util",
- "rand 0.10.0",
+ "rand 0.10.1",
  "rand_distr",
  "reqwest",
  "serde",
@@ -639,7 +639,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#fe8bfebf789d7ea12d0b67e45b3f3b91410092a8"
 dependencies = [
  "bytes",
  "chrono",
@@ -659,7 +659,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_analyzer"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#fe8bfebf789d7ea12d0b67e45b3f3b91410092a8"
 dependencies = [
  "cubos_sql_core",
  "pg_query",
@@ -671,7 +671,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_core"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#fe8bfebf789d7ea12d0b67e45b3f3b91410092a8"
 dependencies = [
  "serde",
  "serde_json",
@@ -682,7 +682,7 @@ dependencies = [
 [[package]]
 name = "cubos_sql_macros"
 version = "0.1.0"
-source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#a547bb53d4aeca83e9e5bbc26eaabdf814187125"
+source = "git+ssh://git@github.com/lbguilherme/cubos_sql.git?branch=main#fe8bfebf789d7ea12d0b67e45b3f3b91410092a8"
 dependencies = [
  "cubos_sql_analyzer",
  "cubos_sql_core",
@@ -1930,7 +1930,7 @@ dependencies = [
  "hmac 0.13.0",
  "md-5",
  "memchr",
- "rand 0.10.0",
+ "rand 0.10.1",
  "sha2 0.11.0",
  "stringprep",
 ]
@@ -2110,7 +2110,7 @@ dependencies = [
  "bytes",
  "getrandom 0.3.4",
  "lru-slab",
- "rand 0.9.2",
+ "rand 0.9.3",
  "ring",
  "rustc-hash 2.1.2",
  "rustls",
@@ -2176,9 +2176,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.2"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db2770f06117d490610c7488547d543617b21bfa07796d7a12f6f1bd53850d1"
+checksum = "7ec095654a25171c2124e9e3393a930bddbffdc939556c914957a4c3e0a87166"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.5",
@@ -2186,9 +2186,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc266eb313df6c5c09c1c7b1fbe2510961e5bcd3add930c1e31f7ed9da0feff8"
+checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
  "chacha20",
  "getrandom 0.4.2",
@@ -2246,7 +2246,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d431c2703ccf129de4d45253c03f49ebb22b97d6ad79ee3ecfc7e3f4862c1d8"
 dependencies = [
  "num-traits",
- "rand 0.10.0",
+ "rand 0.10.1",
 ]
 
 [[package]]
@@ -2422,7 +2422,6 @@ dependencies = [
  "tokio-postgres",
  "tracing",
  "tracing-subscriber",
- "uuid",
  "zip",
 ]
 
@@ -3078,7 +3077,7 @@ dependencies = [
  "pin-project-lite",
  "postgres-protocol",
  "postgres-types",
- "rand 0.10.0",
+ "rand 0.10.1",
  "socket2",
  "tokio",
  "tokio-util",
@@ -3290,7 +3289,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
- "rand 0.9.2",
+ "rand 0.9.3",
  "sha1",
  "thiserror 2.0.18",
 ]

@@ -300,37 +300,39 @@ fn translate_messages(messages: &[ChatMessage]) -> Result<(Option<Value>, Vec<Va
                 }));
             }
             "assistant" => {
-                if let Some(tool_calls) = &msg.tool_calls {
-                    let parts: Vec<Value> = tool_calls
-                        .iter()
-                        .map(|c| {
-                            let mut part = json!({
-                                "functionCall": {
-                                    "name": c.function.name,
-                                    "args": c.function.arguments,
-                                }
-                            });
-                            // Gemini 3.x exige que `thoughtSignature` seja
-                            // reemitido no mesmo Part do functionCall
-                            // original — sem isso a API devolve 400
-                            // INVALID_ARGUMENT. Vive como irmão de
-                            // `functionCall` no Part, não dentro dele.
-                            if let Some(sig) = &c.thought_signature {
-                                part["thoughtSignature"] = json!(sig);
-                            }
-                            part
-                        })
-                        .collect();
-                    contents.push(json!({
-                        "role": "model",
-                        "parts": parts,
-                    }));
-                } else {
-                    contents.push(json!({
-                        "role": "model",
-                        "parts": [{ "text": msg.content }],
-                    }));
+                let mut parts: Vec<Value> = Vec::new();
+                // Texto vem antes das tool calls — quando o LLM gera
+                // ambos na mesma resposta, o text part precisa ser
+                // preservado senão ele some do histórico.
+                if !msg.content.is_empty() {
+                    parts.push(json!({ "text": msg.content }));
                 }
+                if let Some(tool_calls) = &msg.tool_calls {
+                    for c in tool_calls {
+                        let mut part = json!({
+                            "functionCall": {
+                                "name": c.function.name,
+                                "args": c.function.arguments,
+                            }
+                        });
+                        // Gemini 3.x exige que `thoughtSignature` seja
+                        // reemitido no mesmo Part do functionCall
+                        // original — sem isso a API devolve 400
+                        // INVALID_ARGUMENT. Vive como irmão de
+                        // `functionCall` no Part, não dentro dele.
+                        if let Some(sig) = &c.thought_signature {
+                            part["thoughtSignature"] = json!(sig);
+                        }
+                        parts.push(part);
+                    }
+                }
+                if parts.is_empty() {
+                    parts.push(json!({ "text": "" }));
+                }
+                contents.push(json!({
+                    "role": "model",
+                    "parts": parts,
+                }));
             }
             "tool" => {
                 let name = msg.tool_name.as_deref().ok_or_else(|| {

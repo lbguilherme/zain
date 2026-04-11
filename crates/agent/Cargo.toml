@@ -27,3 +27,9 @@ schemars = "1"
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
 extra_migrations = ["../dados-abertos/sql"]
+
+[package.metadata.cubos_sql.enums]
+"zain.govbr_nivel" = "::rpa::govbr::Nivel"
+
+[package.metadata.cubos_sql.domains]
+"zain.govbr_session" = "::rpa::govbr::session::SavedSession"

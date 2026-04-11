@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use deadpool_postgres::{Config, Runtime};
-use tokio::sync::{Notify, Semaphore};
+use tokio::signal::unix::{SignalKind, signal};
+use tokio::sync::{Notify, Semaphore, watch};
 use tokio_postgres::{AsyncMessage, NoTls};
 
 use agent::dispatch;
@@ -33,21 +34,42 @@ async fn main() -> anyhow::Result<()> {
     // Notify compartilhado entre o listener e o loop principal.
     let notify = Arc::new(Notify::new());
 
+    // Sinal de shutdown disparado por SIGTERM/SIGINT.
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    tokio::spawn(shutdown_signal(shutdown_tx));
+
     // Task dedicada de LISTEN em uma conexão fora do pool. Reconecta em loop
     // com backoff se a conexão cair.
     let listen_notify = notify.clone();
     let listen_url = database_url.clone();
+    let mut listen_shutdown = shutdown_rx.clone();
     tokio::spawn(async move {
         loop {
-            if let Err(e) = listen_task(&listen_url, &listen_notify).await {
-                tracing::error!("Listen task caiu: {e:#}. Reconectando em 5s...");
+            tokio::select! {
+                biased;
+                _ = listen_shutdown.wait_for(|v| *v) => return,
+                r = listen_task(&listen_url, &listen_notify) => {
+                    if let Err(e) = r {
+                        tracing::error!("Listen task caiu: {e:#}. Reconectando em 5s...");
+                    }
+                }
             }
-            tokio::time::sleep(Duration::from_secs(5)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                _ = listen_shutdown.wait_for(|v| *v) => return,
+            }
         }
     });
 
     loop {
-        let permit = semaphore.clone().acquire_owned().await?;
+        let permit = {
+            let mut sd = shutdown_rx.clone();
+            tokio::select! {
+                biased;
+                _ = sd.wait_for(|v| *v) => break,
+                r = semaphore.clone().acquire_owned() => r?,
+            }
+        };
 
         match dispatch::claim_next_client(&pool).await {
             Ok(Some(client)) => {
@@ -68,18 +90,54 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(None) => {
                 drop(permit);
+                let mut sd = shutdown_rx.clone();
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(20)) => {}
                     _ = notify.notified() => {}
+                    _ = sd.wait_for(|v| *v) => break,
                 }
             }
             Err(e) => {
                 drop(permit);
                 tracing::error!("Erro no claim: {e:#}");
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                let mut sd = shutdown_rx.clone();
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                    _ = sd.wait_for(|v| *v) => break,
+                }
             }
         }
     }
+
+    tracing::info!("Shutdown solicitado: aguardando execuções em andamento...");
+    let _all = semaphore
+        .acquire_many(MAX_CONCURRENT as u32)
+        .await
+        .expect("semaphore fechado inesperadamente");
+    tracing::info!("Graceful shutdown concluído.");
+    Ok(())
+}
+
+async fn shutdown_signal(tx: watch::Sender<bool>) {
+    let mut sigterm = match signal(SignalKind::terminate()) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Falha ao instalar handler SIGTERM: {e}");
+            return;
+        }
+    };
+    let mut sigint = match signal(SignalKind::interrupt()) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Falha ao instalar handler SIGINT: {e}");
+            return;
+        }
+    };
+    tokio::select! {
+        _ = sigterm.recv() => tracing::info!("SIGTERM recebido, iniciando graceful shutdown..."),
+        _ = sigint.recv() => tracing::info!("SIGINT recebido, iniciando graceful shutdown..."),
+    }
+    let _ = tx.send(true);
 }
 
 async fn listen_task(database_url: &str, notify: &Arc<Notify>) -> anyhow::Result<()> {

@@ -255,9 +255,17 @@ fn translate_messages(messages: &[ChatMessage]) -> Vec<Value> {
                             })
                         })
                         .collect();
+                    // OpenAI-compat aceita `content` junto com `tool_calls`
+                    // no turno do assistant — preserva o texto quando o
+                    // modelo devolve ambos, senão manda null.
+                    let content = if msg.content.is_empty() {
+                        Value::Null
+                    } else {
+                        Value::String(msg.content.clone())
+                    };
                     out.push(json!({
                         "role": "assistant",
-                        "content": Value::Null,
+                        "content": content,
                         "tool_calls": calls,
                     }));
                 } else {
