@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::{CONSULTA_URL, ConsultaOptante, Periodo, Situacao};
+use super::{CONSULTA_URL, ConsultaOptante, Periodo, Situacao};
 
 /// Strips CNPJ formatting, keeping only digits.
 fn normalize_cnpj(cnpj: &str) -> String {

@@ -24,7 +24,6 @@ dotenvy = "0.15"
 
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
-analysis_mode = "static"
 
 [package.metadata.cubos_sql.domains]
 "whatsapp.image_content" = "crate::domains::ImageContent"

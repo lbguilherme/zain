@@ -1,0 +1,31 @@
+[package]
+name = "rpa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chromium-driver = { path = "../chromium-driver" }
+reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
+cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main" }
+deadpool-postgres = "0.14"
+tokio-postgres = "0.7"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+dotenvy = "0.15"
+
+[package.metadata.cubos_sql.database]
+migrations = "../../migrations"
+extra_migrations = ["../dados-abertos/sql"]
+
+[package.metadata.cubos_sql.enums]
+"zain.govbr_nivel" = "crate::govbr::Nivel"
+
+[package.metadata.cubos_sql.domains]
+"zain.govbr_session" = "crate::govbr::session::SavedSession"

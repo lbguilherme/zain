@@ -19,11 +19,10 @@ ai = { path = "../ai" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 uuid = { version = "1", features = ["v4"] }
 dotenvy = "0.15"
-rpa-mei = { path = "../rpa-mei" }
+rpa = { path = "../rpa" }
 pgvector = { version = "0.4", features = ["postgres", "halfvec"] }
 half = "2"
 
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
 extra_migrations = ["../dados-abertos/sql"]
-analysis_mode = "static"

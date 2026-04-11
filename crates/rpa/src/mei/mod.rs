@@ -1,4 +1,8 @@
+//! RPA para consulta de optantes do Simples Nacional / SIMEI.
+
 pub mod consulta;
+
+pub use consulta::consultar_optante;
 
 use serde::{Deserialize, Serialize};
 

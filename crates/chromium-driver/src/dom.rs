@@ -148,7 +148,21 @@ impl Dom {
     /// Finds the first element matching a CSS selector.
     ///
     /// Returns `None` if no element matches.
+    ///
+    /// If the cached document root was replaced by a navigation between
+    /// calls, CDP returns `-32000 Could not find node with given id`.
+    /// This method transparently invalidates the cache and retries once.
     pub async fn try_query_selector(&self, selector: &str) -> Result<Option<Element>> {
+        match self.try_query_selector_inner(selector).await {
+            Err(e) if is_stale_node(&e) => {
+                self.invalidate();
+                self.try_query_selector_inner(selector).await
+            }
+            other => other,
+        }
+    }
+
+    async fn try_query_selector_inner(&self, selector: &str) -> Result<Option<Element>> {
         let root_id = self.root_id().await?;
         let qs = self.cdp.dom_query_selector(root_id, selector).await?;
         if qs.node_id.0 > 0 {
@@ -191,7 +205,8 @@ impl Dom {
     /// Waits for an element matching the selector to appear in the DOM.
     ///
     /// Polls at ~500ms intervals. Returns the element once found, or
-    /// a timeout error.
+    /// a timeout error. Resilient to navigations thanks to the self-healing
+    /// [`try_query_selector`](Self::try_query_selector).
     pub async fn wait_for(&self, selector: &str, timeout: Duration) -> Result<Element> {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
@@ -321,6 +336,19 @@ impl Dom {
         *self.cached_root.lock().unwrap() = Some(id);
         Ok(id)
     }
+}
+
+/// Detects CDP errors that indicate the cached root node no longer
+/// exists — typically because the page navigated between calls.
+///
+/// Chromium returns `-32000 Could not find node with given id` when a
+/// node id from a previous document is referenced after a navigation.
+fn is_stale_node(err: &CdpError) -> bool {
+    matches!(
+        err,
+        CdpError::Protocol { code: -32000, message }
+            if message.contains("Could not find node")
+    )
 }
 
 /// A reference to a DOM element with methods for inspection and interaction.

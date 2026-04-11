@@ -471,7 +471,7 @@ fn is_tool_consequential(tool_name: &str, tools: &[ToolDef]) -> bool {
 
 // ── Global tools de consulta externa ──────────────────────────────────
 
-/// Executa a consulta SIMEI via rpa-mei. Salva o resultado em
+/// Executa a consulta SIMEI via rpa::mei. Salva o resultado em
 /// state_props["ultima_consulta_simei"] para auditoria.
 async fn execute_consultar_simei(args: &Value, state_props: &mut Value, client_id: &Uuid) -> Value {
     let cnpj_raw = args.get("cnpj").and_then(|v| v.as_str()).unwrap_or("");
@@ -492,11 +492,11 @@ async fn execute_consultar_simei(args: &Value, state_props: &mut Value, client_i
     tracing::info!(
         client_id = %client_id,
         cnpj = %cnpj_digits,
-        "consultar_simei_cnpj: iniciando consulta via rpa-mei (~15-30s)"
+        "consultar_simei_cnpj: iniciando consulta via rpa::mei (~15-30s)"
     );
     let start = std::time::Instant::now();
 
-    match rpa_mei::consulta::consultar_optante(&cnpj_digits).await {
+    match rpa::mei::consultar_optante(&cnpj_digits).await {
         Ok(consulta) => {
             let elapsed_ms = start.elapsed().as_millis();
             tracing::info!(
