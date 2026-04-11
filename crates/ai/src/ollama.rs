@@ -5,7 +5,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use serde_json::Value;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::chat::{ChatMessage, ChatResponse, ChatUsage};
@@ -41,6 +42,25 @@ impl OllamaClient {
             "messages": messages,
             "stream": false,
         });
+
+        // `ChatMessage.images` é `#[serde(skip)]` porque cada provider tem
+        // seu próprio wire format. Aqui reconstruímos o campo `images` que
+        // o Ollama espera: array de strings base64 por mensagem. O Ollama
+        // detecta o mime type sozinho, então o campo `mime_type` da
+        // `ChatImage` é descartado para esse provider.
+        if let Some(msgs) = body["messages"].as_array_mut() {
+            for (i, msg) in messages.iter().enumerate() {
+                if msg.images.is_empty() {
+                    continue;
+                }
+                let encoded: Vec<String> = msg
+                    .images
+                    .iter()
+                    .map(|img| BASE64.encode(&img.bytes))
+                    .collect();
+                msgs[i]["images"] = json!(encoded);
+            }
+        }
 
         if !tools.is_empty() {
             body["tools"] = Value::Array(tools.to_vec());

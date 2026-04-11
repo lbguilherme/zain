@@ -5,6 +5,7 @@
 //! `functionDeclarations`, `functionCall`, `functionResponse`) e de volta.
 
 use anyhow::{Context, Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 
 use crate::chat::{
@@ -259,9 +260,24 @@ fn translate_messages(messages: &[ChatMessage]) -> Result<(Option<Value>, Vec<Va
                 system_parts.push(json!({ "text": msg.content }));
             }
             "user" => {
+                // Montamos os parts na ordem: texto primeiro (se houver)
+                // seguido das imagens como `inlineData`. O Gemini exige
+                // `mimeType` + `data` em base64.
+                let mut parts: Vec<Value> = Vec::new();
+                if !msg.content.is_empty() || msg.images.is_empty() {
+                    parts.push(json!({ "text": msg.content }));
+                }
+                for img in &msg.images {
+                    parts.push(json!({
+                        "inlineData": {
+                            "mimeType": img.mime_type,
+                            "data": BASE64.encode(&img.bytes),
+                        }
+                    }));
+                }
                 contents.push(json!({
                     "role": "user",
-                    "parts": [{ "text": msg.content }],
+                    "parts": parts,
                 }));
             }
             "assistant" => {

@@ -14,6 +14,30 @@ pub struct ChatMessage {
     /// na serialização para providers que não precisam do campo.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
+    /// Imagens anexadas à mensagem. Vive fora do `content` porque cada
+    /// provider codifica anexos de forma diferente (Ollama espera base64
+    /// no campo `images`; Gemini espera `inlineData` parts). Por isso é
+    /// `skip_serializing` — cada provider reconstrói o wire format.
+    #[serde(skip, default)]
+    pub images: Vec<ChatImage>,
+}
+
+/// Imagem anexada a uma [`ChatMessage`]. Os bytes são crus — cada provider
+/// faz a codificação necessária (base64 para Ollama/Gemini) no momento do
+/// envio.
+#[derive(Debug, Clone)]
+pub struct ChatImage {
+    pub bytes: Vec<u8>,
+    pub mime_type: String,
+}
+
+impl ChatImage {
+    pub fn new(bytes: Vec<u8>, mime_type: impl Into<String>) -> Self {
+        Self {
+            bytes,
+            mime_type: mime_type.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +93,7 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: None,
+            images: Vec::new(),
         }
     }
 
@@ -78,6 +103,19 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: None,
+            images: Vec::new(),
+        }
+    }
+
+    /// Mensagem `user` carregando uma ou mais imagens além do texto. O
+    /// `content` pode ser vazio se só as imagens importarem.
+    pub fn user_with_images(content: String, images: Vec<ChatImage>) -> Self {
+        Self {
+            role: "user".into(),
+            content,
+            tool_calls: None,
+            tool_name: None,
+            images,
         }
     }
 
@@ -87,6 +125,7 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: Some(name),
+            images: Vec::new(),
         }
     }
 
@@ -96,6 +135,7 @@ impl ChatMessage {
             content,
             tool_calls: None,
             tool_name: None,
+            images: Vec::new(),
         }
     }
 
@@ -105,6 +145,7 @@ impl ChatMessage {
             content: String::new(),
             tool_calls: Some(calls.to_vec()),
             tool_name: None,
+            images: Vec::new(),
         }
     }
 }

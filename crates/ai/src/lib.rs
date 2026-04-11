@@ -26,6 +26,7 @@ pub mod ollama;
 pub mod whisper;
 
 pub use chat::{
-    ChatMessage, ChatResponse, ChatResponseMessage, ChatUsage, ToolCall, ToolCallFunction,
+    ChatImage, ChatMessage, ChatResponse, ChatResponseMessage, ChatUsage, ToolCall,
+    ToolCallFunction,
 };
 pub use client::{Client, ClientBuilder};
