@@ -8,6 +8,7 @@ use tokio_postgres::{AsyncMessage, NoTls};
 
 use agent::dispatch;
 use agent::dispatch::Models;
+use agent::govbr_validator;
 
 const MAX_CONCURRENT: usize = 5;
 
@@ -37,6 +38,9 @@ async fn main() -> anyhow::Result<()> {
     // Sinal de shutdown disparado por SIGTERM/SIGINT.
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     tokio::spawn(shutdown_signal(shutdown_tx));
+
+    // Background: revalida sessões gov.br persistidas a cada hora.
+    tokio::spawn(govbr_validator::run(pool.clone(), shutdown_rx.clone()));
 
     // Task dedicada de LISTEN em uma conexão fora do pool. Reconecta em loop
     // com backoff se a conexão cair.
