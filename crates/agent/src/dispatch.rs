@@ -4,6 +4,7 @@ use ai::ChatMessage;
 use chrono::{DateTime, Utc};
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
+use rpa::govbr::Nivel;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -56,6 +57,10 @@ pub struct ClientRow {
     pub recusado_em: Option<DateTime<Utc>>,
     /// `true` quando `govbr_session IS NOT NULL` no cliente. Derivada.
     pub govbr_autenticado: bool,
+    /// Nome retornado pelo perfil gov.br após login bem-sucedido.
+    pub govbr_nome: Option<String>,
+    /// Selo gov.br (bronze/prata/ouro) retornado pelo perfil.
+    pub govbr_nivel: Option<Nivel>,
     pub memory: Value,
     pub last_whatsapp_message_processed_at: Option<DateTime<Utc>>,
     pub history_starts_at: Option<DateTime<Utc>>,
@@ -136,6 +141,7 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
                 c.pagamento_solicitado_em, c.recusa_motivo, c.recusado_em,
                 s.descricao AS cnae_descricao,
                 (c.govbr_session IS NOT NULL) AS govbr_autenticado,
+                c.govbr_nome, c.govbr_nivel,
                 c.memory,
                 c.last_whatsapp_message_processed_at, c.history_starts_at
          FROM zain.clients c
@@ -177,6 +183,8 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
         recusa_motivo: r.recusa_motivo,
         recusado_em: r.recusado_em,
         govbr_autenticado: r.govbr_autenticado,
+        govbr_nome: r.govbr_nome,
+        govbr_nivel: r.govbr_nivel,
         memory: r.memory,
         last_whatsapp_message_processed_at: r.last_whatsapp_message_processed_at,
         history_starts_at: r.history_starts_at,

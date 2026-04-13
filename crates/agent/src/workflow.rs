@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use ai::ChatMessage;
+use ai::{ChatMessage, ChatRequest};
 use chrono::{DateTime, Utc};
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
-use serde_json::Value;
 use uuid::Uuid;
 
 use crate::dispatch::{
@@ -28,38 +27,29 @@ pub async fn run_workflow(
 ) -> anyhow::Result<WorkflowOutcome> {
     let ctx = ToolContext::new(pool.clone(), ai.clone(), models.clone(), client);
     let installed_tools: Vec<Tool> = tools::all_tools();
-    let tools_json: Vec<Value> = installed_tools
+    let chat_tools: Vec<ai::ChatTool> = installed_tools
         .iter()
-        .map(|t| t.def.to_ollama_json())
+        .map(|t| t.def.as_chat_tool())
         .collect();
 
     let system_prompt = prompt::build_system_prompt();
     let user_msg =
         prompt::build_context_message(client, history, new_message_count, new_messages_summary);
 
-    // Reúne todas as imagens do histórico na ordem cronológica em que
-    // aparecem. Cada uma vai como uma `ChatImage` anexada à user message,
-    // com `label` trazendo o ID — isso bate com as referências
-    // `<attachment type="image" id="..."/>` espalhadas no texto.
-    let chat_images: Vec<ai::ChatImage> = history
-        .iter()
-        .flat_map(|m| m.images.iter())
-        .map(|img| {
-            ai::ChatImage::with_label(
-                img.bytes.clone(),
-                img.mime_type.clone(),
-                format!("Imagem ID: {}", img.id),
-            )
-        })
-        .collect();
-
-    let user_chat_msg = if chat_images.is_empty() {
-        ChatMessage::user(user_msg)
-    } else {
-        ChatMessage::user_with_images(user_msg, chat_images)
-    };
-
-    let mut messages = vec![ChatMessage::system(system_prompt), user_chat_msg];
+    // Cada imagem vira um par `InputText` (com o ID, batendo nas
+    // referências `<attachment type="image" id="..."/>` do texto) +
+    // `InputImage`, na ordem cronológica do histórico.
+    let mut messages: Vec<ChatMessage> = Vec::new();
+    messages.push(ChatMessage::InputText { text: user_msg });
+    for img in history.iter().flat_map(|m| m.images.iter()) {
+        messages.push(ChatMessage::InputText {
+            text: format!("Imagem ID: {}", img.id),
+        });
+        messages.push(ChatMessage::InputImage {
+            bytes: img.bytes.clone(),
+            mime_type: img.mime_type.clone(),
+        });
+    }
 
     let mut memory = client.memory.clone();
     let mut executed_consequential = false;
@@ -75,14 +65,21 @@ pub async fn run_workflow(
             iteration = iteration,
             "Chamando LLM"
         );
-        let response = ai.chat(&models.chat, &messages, &tools_json).await?;
+        let response = ai
+            .chat(ChatRequest {
+                model: &models.chat,
+                system: &system_prompt,
+                messages: &messages,
+                tools: &chat_tools,
+            })
+            .await?;
 
         tracing::info!(
             client_id = %client.id,
             iteration = iteration,
-            input_tokens = response.usage.input_tokens,
-            output_tokens = response.usage.output_tokens,
-            cost_usd = format!("{:.6}", response.usage.cost),
+            input_tokens = response.input_tokens,
+            output_tokens = response.output_tokens,
+            cost_usd = format!("{:.6}", response.cost),
             "Resposta do LLM"
         );
 
@@ -93,20 +90,27 @@ pub async fn run_workflow(
         // tool, aborta o turno com erro pra não perder a mensagem do
         // cliente silenciosamente.
         let has_tool_calls = response
-            .message
-            .tool_calls
-            .as_ref()
-            .is_some_and(|c| !c.is_empty());
+            .messages
+            .iter()
+            .any(|m| matches!(m, ChatMessage::ToolCall { .. }));
         if !has_tool_calls {
+            let texto: String = response
+                .messages
+                .iter()
+                .filter_map(|m| match m {
+                    ChatMessage::OutputText { text, .. } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
             tracing::warn!(
                 client_id = %client.id,
                 iteration = iteration,
-                texto = %response.message.content,
+                %texto,
                 "LLM respondeu sem tool calls"
             );
             // Preserva o texto no log pra inspeção posterior, mesmo que
             // seja invisível pro cliente.
-            messages.push(ChatMessage::assistant(response.message.content));
+            messages.extend(response.messages);
             if text_only_retries >= MAX_TEXT_ONLY_RETRIES {
                 save_client_memory(pool, client.id, &memory).await?;
                 update_execution_messages(pool, exec_id, &messages).await?;
@@ -115,51 +119,62 @@ pub async fn run_workflow(
                 ));
             }
             text_only_retries += 1;
-            messages.push(ChatMessage::user(
-                "Lembrete: texto solto não chega pro cliente. A ÚNICA forma de \
+            messages.push(ChatMessage::InputText {
+                text: "Lembrete: texto solto não chega pro cliente. A ÚNICA forma de \
                  falar com ele é chamando `send_whatsapp_message`. Se precisa \
                  salvar algo, chame as tools `save_*`/`anotar`. Sempre termine \
                  o turno com `done()`."
                     .into(),
-            ));
+            });
             update_execution_messages(pool, exec_id, &messages).await?;
             continue;
         }
-        let tool_calls = response.message.tool_calls.as_ref().unwrap();
 
-        let tool_names: Vec<&str> = tool_calls
+        let tool_names: Vec<&str> = response
+            .messages
             .iter()
-            .map(|c| c.function.name.as_str())
+            .filter_map(|m| match m {
+                ChatMessage::ToolCall { name, .. } => Some(name.as_str()),
+                _ => None,
+            })
             .collect();
+        let tool_count = tool_names.len();
         tracing::info!(
             client_id = %client.id,
             iteration = iteration,
-            tool_count = tool_calls.len(),
+            tool_count,
             tools = ?tool_names,
             "LLM retornou tool calls"
         );
-        messages.push(ChatMessage::assistant_tool_calls(
-            response.message.content.clone(),
-            tool_calls,
-        ));
+
+        // Empurra todas as `OutputText`/`ToolCall` no
+        // histórico, na ordem em que o modelo emitiu. As tool calls
+        // entram com `result: None` e vão ser preenchidas in-place
+        // logo abaixo.
+        let history_start = messages.len();
+        messages.extend(response.messages);
 
         // Reordena as tool calls pra que `send_whatsapp_message` rode
         // antes de qualquer outra tool — assim a mensagem pro cliente
         // sai primeiro e as tools lentas/consequenciais que vierem na
         // mesma leva (consultas, auth gov.br, etc.) não atrasam o envio.
-        let mut ordered_calls: Vec<_> = tool_calls.iter().collect();
-        ordered_calls.sort_by_key(|c| {
-            if c.function.name == "send_whatsapp_message" {
-                0
-            } else {
-                1
-            }
+        // A ordem de execução é independente da ordem no histórico:
+        // mutamos `messages[abs_idx]` no final pra preencher o result.
+        let mut execution_order: Vec<usize> = (history_start..messages.len())
+            .filter(|&i| matches!(messages[i], ChatMessage::ToolCall { .. }))
+            .collect();
+        execution_order.sort_by_key(|&i| match &messages[i] {
+            ChatMessage::ToolCall { name, .. } if name == "send_whatsapp_message" => 0,
+            _ => 1,
         });
 
-        for call in ordered_calls {
-            let tool_name = &call.function.name;
-            let tool_args = &call.function.arguments;
-            let call_id = &call.id;
+        for abs_idx in execution_order {
+            let (tool_name, tool_args) = match &messages[abs_idx] {
+                ChatMessage::ToolCall {
+                    name, arguments, ..
+                } => (name.clone(), arguments.clone()),
+                _ => unreachable!("execution_order contém apenas ToolCall"),
+            };
 
             let installed = installed_tools.iter().find(|t| t.def.name == tool_name);
             // Tools desconhecidas são tratadas como consequenciais por segurança.
@@ -187,26 +202,21 @@ pub async fn run_workflow(
             tracing::info!(client_id = %client.id, tool_name, "Executando tool");
 
             let Some(tool) = installed else {
-                messages.push(ChatMessage::tool(
-                    tool_name.clone(),
-                    call_id.clone(),
+                fill_tool_result(
+                    &mut messages[abs_idx],
                     serde_json::json!({
                         "status": "erro",
                         "mensagem": format!("Ferramenta '{tool_name}' não reconhecida"),
                     })
                     .to_string(),
-                ));
+                );
                 continue;
             };
 
-            let out = (tool.handler)(ctx.clone(), tool_args.clone(), memory).await;
+            let out = (tool.handler)(ctx.clone(), tool_args, memory).await;
             memory = out.memory;
 
-            messages.push(ChatMessage::tool(
-                tool_name.clone(),
-                call_id.clone(),
-                out.value.to_string(),
-            ));
+            fill_tool_result(&mut messages[abs_idx], out.value.to_string());
 
             if tool.must_use_tool_result || out.is_error {
                 must_reprompt = true;
@@ -238,6 +248,15 @@ pub async fn run_workflow(
     save_client_memory(pool, client.id, &memory).await?;
 
     Ok(WorkflowOutcome::Completed { llm_log: messages })
+}
+
+fn fill_tool_result(msg: &mut ChatMessage, content: String) {
+    match msg {
+        ChatMessage::ToolCall { result, .. } => {
+            *result = Some(content);
+        }
+        _ => unreachable!("fill_tool_result chamado em variante não-ToolCall"),
+    }
 }
 
 async fn has_new_messages(

@@ -79,12 +79,22 @@ fn format_dados_coletados(client: &ClientRow) -> String {
         // Quando o CPF já está salvo, o lead pode estar (ou não) com
         // uma sessão gov.br ativa. Saber disso evita pedir a senha de
         // novo ou chamar `auth_govbr` sem necessidade.
-        let status = if client.govbr_autenticado {
-            "autenticado"
+        if client.govbr_autenticado {
+            let mut detalhes: Vec<String> = Vec::new();
+            if let Some(nome) = &client.govbr_nome {
+                detalhes.push(format!("nome \"{nome}\""));
+            }
+            if let Some(nivel) = client.govbr_nivel {
+                detalhes.push(format!("nível {}", nivel.as_str()));
+            }
+            if detalhes.is_empty() {
+                lines.push("- gov.br: autenticado".into());
+            } else {
+                lines.push(format!("- gov.br: autenticado ({})", detalhes.join(", ")));
+            }
         } else {
-            "não autenticado"
-        };
-        lines.push(format!("- gov.br: {status}"));
+            lines.push("- gov.br: não autenticado".into());
+        }
     }
     if let Some(cnpj) = &client.cnpj {
         lines.push(format!("- CNPJ: {cnpj}"));
