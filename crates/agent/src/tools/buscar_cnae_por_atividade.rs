@@ -66,10 +66,10 @@ async fn run(
     let rows = sql!(
         pool,
         "SELECT s.id AS codigo,
-            s.descricao AS descricao,
-            o.ocupacao AS ocupacao
+            s.descricao,
+            o.nome AS ocupacao
          FROM cnae.subclasses s
-         JOIN mei_cnaes.ocupacoes o ON o.cnae_subclasse_id = s.id
+         JOIN mei_cnaes.ocupacoes o ON o.cnae = s.id
          ORDER BY s.embedding <=> $embedding
          LIMIT 6"
     )
