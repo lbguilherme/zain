@@ -4,6 +4,7 @@ use ai::{ChatMessage, ChatRequest};
 use chrono::{DateTime, Utc};
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
+use serde_json::Value;
 use uuid::Uuid;
 
 use crate::dispatch::{
@@ -36,9 +37,9 @@ pub async fn run_workflow(
     let user_msg =
         prompt::build_context_message(client, history, new_message_count, new_messages_summary);
 
-    // Cada imagem vira um par `InputText` (com o ID, batendo nas
-    // referências `<attachment type="image" id="..."/>` do texto) +
-    // `InputImage`, na ordem cronológica do histórico.
+    // Cada imagem vira um par `InputText` (com o ID que bate nas
+    // referências `<attachment type="image" id="..."/>` do prompt) +
+    // `InputImage`.
     let mut messages: Vec<ChatMessage> = Vec::new();
     messages.push(ChatMessage::InputText { text: user_msg });
     for img in history.iter().flat_map(|m| m.images.iter()) {
@@ -83,12 +84,10 @@ pub async fn run_workflow(
             "Resposta do LLM"
         );
 
-        // Texto solto é invisível pro cliente — a única forma de falar é
-        // via `send_whatsapp_message`. Se o LLM devolveu só texto (ou uma
-        // lista vazia de tool calls), injeta um lembrete e força mais uma
-        // rodada. Se mesmo após o lembrete o LLM insistir em não chamar
-        // tool, aborta o turno com erro pra não perder a mensagem do
-        // cliente silenciosamente.
+        // Texto solto é invisível pro cliente — a única forma de falar
+        // é via `send_whatsapp_message`. Se o LLM só devolveu texto,
+        // injeta um lembrete e força mais uma rodada; se persistir,
+        // aborta o turno pra não perder a mensagem silenciosamente.
         let has_tool_calls = response
             .messages
             .iter()
@@ -108,8 +107,6 @@ pub async fn run_workflow(
                 %texto,
                 "LLM respondeu sem tool calls"
             );
-            // Preserva o texto no log pra inspeção posterior, mesmo que
-            // seja invisível pro cliente.
             messages.extend(response.messages);
             if text_only_retries >= MAX_TEXT_ONLY_RETRIES {
                 save_client_memory(pool, client.id, &memory).await?;
@@ -147,19 +144,14 @@ pub async fn run_workflow(
             "LLM retornou tool calls"
         );
 
-        // Empurra todas as `OutputText`/`ToolCall` no
-        // histórico, na ordem em que o modelo emitiu. As tool calls
-        // entram com `result: None` e vão ser preenchidas in-place
-        // logo abaixo.
+        // Tool calls entram no histórico com `result: None` e são
+        // preenchidas in-place na ordem de execução abaixo.
         let history_start = messages.len();
         messages.extend(response.messages);
 
-        // Reordena as tool calls pra que `send_whatsapp_message` rode
-        // antes de qualquer outra tool — assim a mensagem pro cliente
-        // sai primeiro e as tools lentas/consequenciais que vierem na
-        // mesma leva (consultas, auth gov.br, etc.) não atrasam o envio.
-        // A ordem de execução é independente da ordem no histórico:
-        // mutamos `messages[abs_idx]` no final pra preencher o result.
+        // `send_whatsapp_message` roda antes de qualquer outra tool pra
+        // que a resposta pro cliente saia rápido, sem ficar esperando
+        // tools lentas (consultas externas, auth gov.br) da mesma leva.
         let mut execution_order: Vec<usize> = (history_start..messages.len())
             .filter(|&i| matches!(messages[i], ChatMessage::ToolCall { .. }))
             .collect();
@@ -169,18 +161,26 @@ pub async fn run_workflow(
         });
 
         for abs_idx in execution_order {
-            let (tool_name, tool_args) = match &messages[abs_idx] {
-                ChatMessage::ToolCall {
-                    name, arguments, ..
-                } => (name.clone(), arguments.clone()),
-                _ => unreachable!("execution_order contém apenas ToolCall"),
-            };
+            // `result_slot` segura a borrow em `messages[abs_idx]` até
+            // o fim da iteração; no branch de restart abaixo, NLL
+            // libera a borrow porque o slot não é mais usado naquela
+            // path, então `update_execution_messages` consegue tomar
+            // `&messages`.
+            let (tool_name, tool_args, result_slot): (String, Value, &mut Option<String>) =
+                match &mut messages[abs_idx] {
+                    ChatMessage::ToolCall {
+                        name,
+                        arguments,
+                        result,
+                        ..
+                    } => (name.clone(), arguments.clone(), result),
+                    _ => unreachable!("execution_order contém apenas ToolCall"),
+                };
 
             let installed = installed_tools.iter().find(|t| t.def.name == tool_name);
             // Tools desconhecidas são tratadas como consequenciais por segurança.
             let is_consequential = installed.map(|t| t.def.consequential).unwrap_or(true);
 
-            // Antes da primeira tool consequencial, verificar se chegou msg nova
             if is_consequential
                 && !executed_consequential
                 && has_new_messages(pool, &client.chat_id, known_max_ts).await?
@@ -202,8 +202,7 @@ pub async fn run_workflow(
             tracing::info!(client_id = %client.id, tool_name, "Executando tool");
 
             let Some(tool) = installed else {
-                fill_tool_result(
-                    &mut messages[abs_idx],
+                *result_slot = Some(
                     serde_json::json!({
                         "status": "erro",
                         "mensagem": format!("Ferramenta '{tool_name}' não reconhecida"),
@@ -216,7 +215,7 @@ pub async fn run_workflow(
             let out = (tool.handler)(ctx.clone(), tool_args, memory).await;
             memory = out.memory;
 
-            fill_tool_result(&mut messages[abs_idx], out.value.to_string());
+            *result_slot = Some(out.value.to_string());
 
             if tool.must_use_tool_result || out.is_error {
                 must_reprompt = true;
@@ -232,8 +231,8 @@ pub async fn run_workflow(
             break;
         }
         if done && must_reprompt {
-            // Alguma tool da leva exige que o LLM veja o resultado antes
-            // de encerrar — ignora o `done` e força mais uma iteração.
+            // Alguma tool da leva exige que o LLM veja o resultado
+            // antes de encerrar — ignora o `done` e força outra rodada.
             tracing::info!(
                 client_id = %client.id,
                 iteration = iteration,
@@ -248,15 +247,6 @@ pub async fn run_workflow(
     save_client_memory(pool, client.id, &memory).await?;
 
     Ok(WorkflowOutcome::Completed { llm_log: messages })
-}
-
-fn fill_tool_result(msg: &mut ChatMessage, content: String) {
-    match msg {
-        ChatMessage::ToolCall { result, .. } => {
-            *result = Some(content);
-        }
-        _ => unreachable!("fill_tool_result chamado em variante não-ToolCall"),
-    }
 }
 
 async fn has_new_messages(
