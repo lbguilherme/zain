@@ -71,6 +71,7 @@ dependencies = [
  "anyhow",
  "base64",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2408,6 +2409,7 @@ dependencies = [
 name = "rpa"
 version = "0.1.0"
 dependencies = [
+ "ai",
  "anyhow",
  "chromium-driver",
  "clap",
@@ -2415,6 +2417,7 @@ dependencies = [
  "deadpool-postgres",
  "dotenvy",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

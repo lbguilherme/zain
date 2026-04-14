@@ -3,25 +3,30 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use deadpool_postgres::Pool;
-use schemars::{JsonSchema, schema_for};
+use schemars::JsonSchema;
+use schemars::generate::{SchemaGenerator, SchemaSettings};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::dispatch::{ClientRow, Models};
 
+/// Tipo do predicado que decide, a partir do estado atual do cliente,
+/// se uma tool deve ser exposta ao LLM no turno corrente. É usado pra
+/// esconder tools que só fazem sentido em estados específicos (ex:
+/// `auth_govbr_otp`, que só é útil no meio de um fluxo de 2FA).
+pub type ToolEnabledPredicate = fn(&ClientRow) -> bool;
+
+pub mod abrir_empresa;
 mod anotar;
-mod buscar_cnae_por_atividade;
-mod consultar_cnae_por_codigo;
+mod buscar_cnae;
 mod done;
 mod govbr;
 mod iniciar_pagamento;
 mod pgfn;
 mod recusar_lead;
-mod save_atividade;
 mod save_cnpj;
 mod save_cpf;
-mod save_endereco;
 mod save_quer_abrir_mei;
 mod send_whatsapp_message;
 
@@ -103,6 +108,12 @@ pub struct Tool {
     /// que `done` tenha sido chamado na mesma leva de tool calls, ele é
     /// ignorado e o loop segue para que o LLM veja o resultado da tool.
     pub must_use_tool_result: bool,
+    /// Predicado opcional que controla se a tool fica disponível pro
+    /// LLM neste turno. `None` = sempre ativa. `Some(f)` = só inclui
+    /// no set de tools quando `f(client)` retorna `true`. Serve pra
+    /// esconder tools que só têm sentido em estados específicos
+    /// (ex: `auth_govbr_otp` só durante um fluxo de 2FA em andamento).
+    pub enabled_when: Option<ToolEnabledPredicate>,
 }
 
 /// Contexto de execução de uma tool call — passado como argumento pro
@@ -138,15 +149,13 @@ pub fn all_tools() -> Vec<Tool> {
         save_cpf::tool(),
         save_quer_abrir_mei::tool(),
         save_cnpj::tool(),
-        save_atividade::tool(),
-        save_endereco::tool(),
         govbr::auth_tool(),
         govbr::otp_tool(),
         anotar::tool(),
         iniciar_pagamento::tool(),
         recusar_lead::tool(),
-        consultar_cnae_por_codigo::tool(),
-        buscar_cnae_por_atividade::tool(),
+        buscar_cnae::tool(),
+        abrir_empresa::tool(),
     ]
 }
 
@@ -161,7 +170,13 @@ pub fn all_tools() -> Vec<Tool> {
 /// OpenAPI `type: "string", nullable: true`, que Gemini aceita e os
 /// demais providers toleram.
 pub fn params_for<T: JsonSchema>() -> Value {
-    let schema = schema_for!(T);
+    // `inline_subschemas: true` evita `$defs` + `$ref` no root: alguns
+    // providers de LLM rejeitam esquemas com definições separadas, então
+    // pedimos ao schemars pra expandir tudo inline.
+    let mut settings = SchemaSettings::draft2020_12();
+    settings.inline_subschemas = true;
+    let generator: SchemaGenerator = settings.into();
+    let schema = generator.into_root_schema_for::<T>();
     let mut v = serde_json::to_value(&schema).unwrap_or_else(|_| json!({ "type": "object" }));
     if let Some(obj) = v.as_object_mut() {
         obj.remove("$schema");

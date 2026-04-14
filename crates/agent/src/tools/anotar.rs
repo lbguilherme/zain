@@ -32,5 +32,6 @@ pub fn tool() -> Tool {
             ToolOutput::new(json!({ "status": "ok", "anotacao_salva": true }), memory)
         }),
         must_use_tool_result: false,
+        enabled_when: None,
     }
 }

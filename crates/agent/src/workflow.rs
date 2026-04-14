@@ -27,13 +27,20 @@ pub async fn run_workflow(
     exec_id: Uuid,
 ) -> anyhow::Result<WorkflowOutcome> {
     let ctx = ToolContext::new(pool.clone(), ai.clone(), models.clone(), client);
-    let installed_tools: Vec<Tool> = tools::all_tools();
+    // Tools com `enabled_when` definido só entram no set do turno
+    // quando o predicado bate com o estado atual do cliente. Isso
+    // esconde do LLM tools que não fazem sentido no momento (ex:
+    // `auth_govbr_otp` só aparece no meio de um fluxo de 2FA).
+    let installed_tools: Vec<Tool> = tools::all_tools()
+        .into_iter()
+        .filter(|t| t.enabled_when.map(|f| f(client)).unwrap_or(true))
+        .collect();
     let chat_tools: Vec<ai::ChatTool> = installed_tools
         .iter()
         .map(|t| t.def.as_chat_tool())
         .collect();
 
-    let system_prompt = prompt::build_system_prompt();
+    let system_prompt = prompt::build_system_prompt(pool, client).await?;
     let user_msg =
         prompt::build_context_message(client, history, new_message_count, new_messages_summary);
 
@@ -55,6 +62,11 @@ pub async fn run_workflow(
     let mut memory = client.memory.clone();
     let mut executed_consequential = false;
     let mut done = false;
+    // Fica `true` a partir do momento que o LLM chamou `done()` em
+    // *alguma* iteração, mesmo que o `done` tenha sido ignorado porque
+    // uma tool `must_use_tool_result` forçou mais uma rodada. Permite
+    // aceitar uma resposta vazia na rodada seguinte como "já terminei".
+    let mut done_seen = false;
     let mut text_only_retries = 0;
     const MAX_TEXT_ONLY_RETRIES: u32 = 1;
 
@@ -83,6 +95,20 @@ pub async fn run_workflow(
             cost_usd = format!("{:.6}", response.cost),
             "Resposta do LLM"
         );
+
+        // Se o LLM já tinha chamado `done()` antes (ignorado por
+        // `must_use_tool_result`) e nessa rodada não devolveu nada —
+        // nem texto, nem tool call — significa que ele não tinha mais
+        // o que dizer sobre o resultado da tool forçada. Aceita como
+        // encerramento implícito em vez de insistir.
+        if done_seen && response.messages.is_empty() {
+            tracing::info!(
+                client_id = %client.id,
+                iteration = iteration,
+                "LLM devolveu resposta vazia após done anterior — encerrando turno"
+            );
+            break;
+        }
 
         // Texto solto é invisível pro cliente — a única forma de falar
         // é via `send_whatsapp_message`. Se o LLM só devolveu texto,
@@ -224,6 +250,7 @@ pub async fn run_workflow(
             // `done` é a única tool que também controla o fluxo do loop.
             if tool_name == "done" {
                 done = true;
+                done_seen = true;
             }
         }
 

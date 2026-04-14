@@ -12,7 +12,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::chat::{ChatMessage, ChatRequest, ChatResponse};
+use crate::chat::{ChatMessage, ChatRequest, ChatResponse, StructuredRequest};
 
 const EMBED_BATCH_SIZE: usize = 64;
 
@@ -65,10 +65,50 @@ impl OllamaClient {
             body["tools"] = Value::Array(tools);
         }
 
-        let raw: Value = self
-            .http
+        let raw = self.post_chat(&body).await?;
+        translate_response(&raw)
+    }
+
+    /// Structured output: força o Ollama a devolver um JSON que
+    /// decodifica na struct do caller. O schema vai no campo `format`
+    /// (extensão do endpoint OpenAI-compat do Ollama). Tools não são
+    /// suportadas neste modo — o tipo [`StructuredRequest`] não
+    /// carrega o campo.
+    pub async fn chat_structured(
+        &self,
+        request: StructuredRequest<'_>,
+        schema: &Value,
+    ) -> Result<(String, u32, u32, f64)> {
+        let mut translated = Vec::with_capacity(request.messages.len() + 1);
+        if !request.system.is_empty() {
+            translated.push(json!({ "role": "system", "content": request.system }));
+        }
+        translated.extend(translate_messages(request.messages));
+
+        let body = json!({
+            "model": request.model,
+            "messages": translated,
+            "stream": false,
+            "format": schema,
+        });
+
+        let raw = self.post_chat(&body).await?;
+        let resp = translate_response(&raw)?;
+        let text = resp
+            .messages
+            .into_iter()
+            .find_map(|m| match m {
+                ChatMessage::OutputText { text, .. } => Some(text),
+                _ => None,
+            })
+            .context("resposta do Ollama sem texto")?;
+        Ok((text, resp.input_tokens, resp.output_tokens, resp.cost))
+    }
+
+    async fn post_chat(&self, body: &Value) -> Result<Value> {
+        self.http
             .post(format!("{}/v1/chat/completions", self.base_url))
-            .json(&body)
+            .json(body)
             .send()
             .await
             .context("falha ao chamar Ollama")?
@@ -76,9 +116,7 @@ impl OllamaClient {
             .context("erro na resposta do Ollama")?
             .json()
             .await
-            .context("falha ao parsear JSON do Ollama")?;
-
-        translate_response(&raw)
+            .context("falha ao parsear JSON do Ollama")
     }
 
     // ── Embeddings ─────────────────────────────────────────────────────

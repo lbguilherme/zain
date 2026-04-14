@@ -101,3 +101,27 @@ pub struct ChatResponse {
     /// pricing.
     pub cost: f64,
 }
+
+// ── Structured output ──────────────────────────────────────────────────
+
+/// Argumentos para [`crate::Client::chat_structured`]. Igual a
+/// [`ChatRequest`] mas sem `tools` — structured output e tool calls são
+/// mutuamente exclusivos nos providers.
+pub struct StructuredRequest<'a> {
+    /// Modelo qualificado pelo provider, no formato `"provider/modelo"`.
+    pub model: &'a str,
+    /// Prompt fixo que vai no topo da conversa. Passe `""` para omitir.
+    pub system: &'a str,
+    pub messages: &'a [ChatMessage],
+}
+
+/// Resultado de [`crate::Client::chat_structured`]. `value` é a struct
+/// já decodificada; `input_tokens`/`output_tokens`/`cost` seguem a
+/// mesma semântica de [`ChatResponse`].
+#[derive(Debug)]
+pub struct StructuredResponse<T> {
+    pub value: T,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cost: f64,
+}

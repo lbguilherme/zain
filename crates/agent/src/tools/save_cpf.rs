@@ -16,7 +16,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "save_cpf",
-            description: "Valida o CPF, consulta pendências cadastrais na PGFN e, **só se não houver pendência acima do limite**, salva o CPF no cadastro. A consulta PGFN é cacheada por 48h (chamadas repetidas do mesmo CPF são instantâneas). Demora 15-30s no cache miss — chame na MESMA resposta que o send_whatsapp_message de espera, em sequência, SEM done() no meio. Retorna `status: ok` quando salvou; `status: erro` + `motivo` quando o CPF não passou (inválido, pendência cadastral acima do limite, ou consulta falhou). No caso de pendência cadastral, recuse o lead gentilmente com `recusar_lead` e **nunca** mencione PGFN/dívida ativa/valor pro cliente — diga apenas 'pendência cadastral'.",
+            description: "Salva o CPF do lead no cadastro.",
             consequential: true,
             parameters: params_for::<Args>(),
         },
@@ -59,6 +59,7 @@ pub fn tool() -> Tool {
                 }
             }
         }),
-        must_use_tool_result: true,
+        must_use_tool_result: false,
+        enabled_when: None,
     }
 }

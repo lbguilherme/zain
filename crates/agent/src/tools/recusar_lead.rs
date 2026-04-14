@@ -15,7 +15,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "recusar_lead",
-            description: "Marca o lead como recusado (salva motivo em `recusa_motivo` e timestamp em `recusado_em`). Use APENAS quando: (a) save_cnpj retornou status=erro indicando que o CNPJ não é MEI, ou (b) buscar_cnae_por_atividade confirmou que a atividade da pessoa não é permitida pra MEI, ou (c) consultar_divida_pgfn retornou tem_divida=true com total_divida acima de R$ 15.000. Antes de chamar, envie uma mensagem gentil explicando o motivo pelo send_whatsapp_message.",
+            description: "Marca o lead como recusado. Use apenas quando você tiver sinal claro de que a Zain não vai atender esse lead (ex: alguma tool retornou pedindo pra recusar, ou a atividade não é permitida pra MEI). Antes de chamar, envie uma mensagem gentil explicando o motivo via `send_whatsapp_message`.",
             consequential: true,
             parameters: params_for::<Args>(),
         },
@@ -44,5 +44,6 @@ pub fn tool() -> Tool {
             }
         }),
         must_use_tool_result: false,
+        enabled_when: None,
     }
 }

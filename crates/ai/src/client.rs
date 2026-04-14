@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 
-use crate::chat::{ChatRequest, ChatResponse};
+use crate::chat::{ChatRequest, ChatResponse, StructuredRequest, StructuredResponse};
 use crate::gemini::GeminiClient;
 use crate::ollama::OllamaClient;
 use crate::whisper::WhisperClient;
@@ -123,6 +123,39 @@ impl Client {
             Provider::Gemini(c) => c.chat(request).await,
             Provider::Whisper(_) => bail!("provider 'whisper' não suporta chat"),
         }
+    }
+
+    /// Chat com structured output. O modelo é obrigado a devolver um
+    /// JSON que decodifica em `T`. `T` precisa implementar
+    /// [`schemars::JsonSchema`] (para gerar o schema passado ao
+    /// provider) e [`serde::de::DeserializeOwned`] (para o parse).
+    ///
+    /// Tools não são suportadas neste modo — o tipo
+    /// [`StructuredRequest`] não carrega o campo.
+    pub async fn chat_structured<T>(
+        &self,
+        request: StructuredRequest<'_>,
+    ) -> Result<StructuredResponse<T>>
+    where
+        T: schemars::JsonSchema + serde::de::DeserializeOwned,
+    {
+        let (provider, model) = self.resolve(request.model)?;
+        let schema = serde_json::to_value(schemars::schema_for!(T))
+            .context("falha ao serializar JSON schema de T")?;
+        let request = StructuredRequest { model, ..request };
+        let (raw, input_tokens, output_tokens, cost) = match provider {
+            Provider::Ollama(c) => c.chat_structured(request, &schema).await?,
+            Provider::Gemini(c) => c.chat_structured(request, &schema).await?,
+            Provider::Whisper(_) => bail!("provider 'whisper' não suporta chat"),
+        };
+        let value = serde_json::from_str(&raw)
+            .with_context(|| format!("falha ao parsear resposta estruturada: {raw}"))?;
+        Ok(StructuredResponse {
+            value,
+            input_tokens,
+            output_tokens,
+            cost,
+        })
     }
 
     /// Gera embeddings para uma lista de textos. `model` deve ser

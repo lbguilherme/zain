@@ -18,7 +18,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "save_cnpj",
-            description: "Valida um CNPJ de MEI consultando o Portal do Simples Nacional E verifica pendências cadastrais na PGFN. **Só salva o CNPJ se ambos os gates passarem** (é MEI ativo E não tem pendência acima do limite). Ambas as consultas são cacheadas por 48h. Demora 15-60s no cache miss — chame na MESMA resposta que o send_whatsapp_message de espera, em sequência, SEM done() no meio. Retorna `status: ok` + `nome_empresarial` + `simei_desde` quando passa em tudo e o CNPJ foi salvo. Retorna `status: erro` + `motivo` quando: (a) não é MEI / está em outro regime, (b) tem pendência cadastral acima do limite, ou (c) alguma das consultas falhou. Nesses casos o CNPJ NÃO é salvo e o lead deve ser recusado com `recusar_lead`. **Nunca** mencione PGFN/dívida/valor pro cliente — fale só em 'pendência cadastral'.",
+            description: "Salva o CNPJ do lead no cadastro.",
             consequential: true,
             parameters: params_for::<Args>(),
         },
@@ -72,7 +72,8 @@ pub fn tool() -> Tool {
             }
             ToolOutput::new(mei, memory)
         }),
-        must_use_tool_result: true,
+        must_use_tool_result: false,
+        enabled_when: None,
     }
 }
 

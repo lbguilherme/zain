@@ -41,6 +41,7 @@ pub fn tool() -> Tool {
             }
         }),
         must_use_tool_result: false,
+        enabled_when: None,
     }
 }
 

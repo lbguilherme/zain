@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
 use rpa::govbr::Nivel;
-use serde_json::{Value, json};
+use serde_json::Value;
+use tokio_postgres::Transaction;
 use uuid::Uuid;
 
 use crate::history::{self, ConversationMessage};
@@ -47,16 +48,15 @@ pub struct ClientRow {
     pub cpf: Option<String>,
     pub cnpj: Option<String>,
     pub quer_abrir_mei: Option<bool>,
-    pub cnae: Option<String>,
-    /// Descrição da subclasse CNAE, vindo do join com `cnae.subclasses`.
-    /// Não é uma coluna de `zain.clients` — derivada em `claim_next_client`.
-    pub cnae_descricao: Option<String>,
-    pub endereco: Option<String>,
     pub pagamento_solicitado_em: Option<DateTime<Utc>>,
     pub recusa_motivo: Option<String>,
     pub recusado_em: Option<DateTime<Utc>>,
     /// `true` quando `govbr_session IS NOT NULL` no cliente. Derivada.
     pub govbr_autenticado: bool,
+    /// `true` quando `govbr_password IS NOT NULL` — isto é, o lead já
+    /// passou pelo primeiro passo do `auth_govbr` e forneceu a senha.
+    /// Derivada.
+    pub govbr_has_password: bool,
     /// Nome retornado pelo perfil gov.br após login bem-sucedido.
     pub govbr_nome: Option<String>,
     /// Selo gov.br (bronze/prata/ouro) retornado pelo perfil.
@@ -134,29 +134,7 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
     };
     let claimed_id = claimed.id;
 
-    let row = sql!(
-        &tx,
-        "SELECT c.id, c.chat_id, c.phone, c.name,
-                c.cpf, c.cnpj, c.quer_abrir_mei, c.cnae, c.endereco,
-                c.pagamento_solicitado_em, c.recusa_motivo, c.recusado_em,
-                s.descricao AS cnae_descricao,
-                (c.govbr_session IS NOT NULL) AS govbr_autenticado,
-                c.govbr_nome, c.govbr_nivel,
-                c.memory,
-                c.last_whatsapp_message_processed_at, c.history_starts_at
-         FROM zain.clients c
-         LEFT JOIN cnae.subclasses s ON s.id = c.cnae
-         WHERE c.id = $claimed_id"
-    )
-    .fetch_optional()
-    .await?;
-
-    let Some(r) = row else {
-        // Nenhum client para processar — não precisa commitar
-        return Ok(None);
-    };
-
-    let client_id = r.id;
+    let client_id = claimed_id;
     let exec_id: Uuid = sql!(
         &tx,
         "INSERT INTO zain.executions (client_id, trigger_type)
@@ -166,9 +144,40 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
     .fetch_value()
     .await?;
 
+    let row = load_client_row(&tx, claimed_id, exec_id).await?;
+
     tx.commit().await?;
 
-    Ok(Some(ClientRow {
+    Ok(row)
+}
+
+/// Lê `zain.clients` pelo id e monta um [`ClientRow`] completo — é a
+/// fonte única de verdade do mapeamento schema → struct. Usar esta
+/// função em vez de construir o struct manualmente (ex: após `/reset`)
+/// garante que qualquer coluna nova adicionada ao SELECT seja
+/// automaticamente refletida em todos os caminhos.
+async fn load_client_row(
+    tx: &Transaction<'_>,
+    client_id: Uuid,
+    exec_id: Uuid,
+) -> anyhow::Result<Option<ClientRow>> {
+    let row = sql!(
+        tx,
+        "SELECT c.id, c.chat_id, c.phone, c.name,
+                c.cpf, c.cnpj, c.quer_abrir_mei,
+                c.pagamento_solicitado_em, c.recusa_motivo, c.recusado_em,
+                (c.govbr_session IS NOT NULL) AS govbr_autenticado,
+                (c.govbr_password IS NOT NULL) AS govbr_has_password,
+                c.govbr_nome, c.govbr_nivel,
+                c.memory,
+                c.last_whatsapp_message_processed_at, c.history_starts_at
+         FROM zain.clients c
+         WHERE c.id = $client_id"
+    )
+    .fetch_optional()
+    .await?;
+
+    Ok(row.map(|r| ClientRow {
         id: r.id,
         chat_id: r.chat_id,
         phone: r.phone,
@@ -176,13 +185,11 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
         cpf: r.cpf,
         cnpj: r.cnpj,
         quer_abrir_mei: r.quer_abrir_mei,
-        cnae: r.cnae,
-        cnae_descricao: r.cnae_descricao,
-        endereco: r.endereco,
         pagamento_solicitado_em: r.pagamento_solicitado_em,
         recusa_motivo: r.recusa_motivo,
         recusado_em: r.recusado_em,
         govbr_autenticado: r.govbr_autenticado,
+        govbr_has_password: r.govbr_has_password,
         govbr_nome: r.govbr_nome,
         govbr_nivel: r.govbr_nivel,
         memory: r.memory,
@@ -294,22 +301,19 @@ pub async fn process_client(
             .fetch_value()
             .await?;
 
+            // Refetch via `load_client_row` em vez de montar o struct
+            // na mão — assim o estado pós-reset vem da mesma fonte de
+            // verdade que o claim inicial e qualquer coluna nova é
+            // refletida automaticamente.
+            let refreshed = load_client_row(&tx, new_id, new_exec_id)
+                .await?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("client recém-inserido não encontrado após /reset")
+                })?;
+
             tx.commit().await?;
 
-            client.id = new_id;
-            client.cpf = None;
-            client.cnpj = None;
-            client.quer_abrir_mei = None;
-            client.cnae = None;
-            client.cnae_descricao = None;
-            client.endereco = None;
-            client.pagamento_solicitado_em = None;
-            client.recusa_motivo = None;
-            client.recusado_em = None;
-            client.govbr_autenticado = false;
-            client.memory = json!({});
-            client.last_whatsapp_message_processed_at = reset_ts;
-            client.history_starts_at = reset_ts;
+            client = refreshed;
             exec_id = new_exec_id;
             continue;
         }

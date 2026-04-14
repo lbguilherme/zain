@@ -12,7 +12,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "iniciar_pagamento",
-            description: "Sinaliza que o lead está pronto pro cadastro de cartão de crédito. Requer CPF salvo e que o lead esteja num estado qualificado: ou já tem CNPJ MEI salvo (via save_cnpj com sucesso), ou `quer_abrir_mei = true`. Depois de chamar, seta `pagamento_solicitado_em` no cliente.",
+            description: "Sinaliza que o lead está pronto pro cadastro de cartão de crédito. Requer CPF salvo e que o lead esteja qualificado — já tem CNPJ MEI salvo ou declarou que quer abrir um MEI novo.",
             consequential: true,
             parameters: params_for::<Args>(),
         },
@@ -89,5 +89,6 @@ pub fn tool() -> Tool {
             )
         }),
         must_use_tool_result: false,
+        enabled_when: None,
     }
 }

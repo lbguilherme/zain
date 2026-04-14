@@ -36,7 +36,7 @@ pub fn auth_tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "auth_govbr",
-            description: "Tenta autenticar no gov.br usando a senha fornecida e o CPF previamente salvo via save_cpf. IMPORTANTE: chamar esta tool apenas dispara a tentativa de login — ela pode falhar (senha errada, conta bloqueada, 2FA exigido, erro interno). SEMPRE aguarde o retorno da tool e verifique o campo `status` antes de comunicar qualquer coisa ao cliente. NUNCA diga ao cliente que o login deu certo sem ter visto `status: ok` no resultado. Se o SSO pedir 2FA, oriente a chamar auth_govbr_otp na sequência.",
+            description: "Autentica no gov.br usando a senha fornecida e o CPF previamente salvo via save_cpf. SEMPRE aguarde o retorno da tool e verifique o campo `status` antes de comunicar qualquer coisa ao cliente — NUNCA diga que o login deu certo sem ter visto `status: ok`.",
             consequential: true,
             parameters: params_for::<AuthArgs>(),
         },
@@ -48,6 +48,7 @@ pub fn auth_tool() -> Tool {
             ToolOutput::new(run_auth(&ctx, &args.senha).await, memory)
         }),
         must_use_tool_result: true,
+        enabled_when: None,
     }
 }
 
@@ -55,7 +56,7 @@ pub fn otp_tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "auth_govbr_otp",
-            description: "Tenta completar o login gov.br quando o SSO pediu 2FA, usando o código OTP de 6 dígitos que o usuário recebeu. Reutiliza o CPF e a senha salvos pela chamada anterior de auth_govbr — não precisa repassá-los. IMPORTANTE: chamar esta tool apenas dispara a tentativa de validação do OTP — ela pode falhar (código errado, expirado, sessão perdida, etc.). SEMPRE aguarde o retorno da tool e verifique o campo `status` antes de comunicar qualquer coisa ao cliente. NUNCA diga ao cliente que o login deu certo sem ter visto `status: ok` no resultado.",
+            description: "Completa o login gov.br quando o 2FA foi exigido, usando o código de 6 dígitos que o cliente recebeu. Reutiliza o CPF e a senha da chamada anterior de `auth_govbr`. SEMPRE aguarde o retorno da tool e verifique o campo `status` antes de comunicar qualquer coisa ao cliente.",
             consequential: true,
             parameters: params_for::<OtpArgs>(),
         },
@@ -63,6 +64,11 @@ pub fn otp_tool() -> Tool {
             ToolOutput::new(run_otp(&ctx, &args.otp).await, memory)
         }),
         must_use_tool_result: true,
+        // Só exposta quando o lead já forneceu a senha do gov.br
+        // (via `auth_govbr`) mas ainda não completou o login — i.e.
+        // tem password salvo e não tem session. Fora desse estado, a
+        // tool não tem o que fazer.
+        enabled_when: Some(|client| client.govbr_has_password && !client.govbr_autenticado),
     }
 }
 

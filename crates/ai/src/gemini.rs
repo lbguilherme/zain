@@ -8,7 +8,7 @@ use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 
-use crate::chat::{ChatMessage, ChatRequest, ChatResponse, ChatTool};
+use crate::chat::{ChatMessage, ChatRequest, ChatResponse, ChatTool, StructuredRequest};
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -42,13 +42,47 @@ impl GeminiClient {
             body["tools"] = json!([{ "functionDeclarations": function_declarations }]);
         }
 
-        let model = request.model;
+        let resp = self.post(request.model, &body).await?;
+        translate_response(request.model, &resp)
+    }
+
+    /// Structured output: força o modelo a devolver um JSON que
+    /// decodifica na struct do caller. O schema vem do `schemars` e é
+    /// passado em `generationConfig.responseSchema`. Tools são
+    /// inexpressáveis neste modo — o tipo [`StructuredRequest`] não
+    /// carrega o campo.
+    pub async fn chat_structured(
+        &self,
+        request: StructuredRequest<'_>,
+        schema: &Value,
+    ) -> Result<(String, u32, u32, f64)> {
+        let contents = translate_messages(request.messages);
+
+        let mut body = json!({
+            "contents": contents,
+            "generationConfig": {
+                "responseMimeType": "application/json",
+                "responseSchema": schema,
+            }
+        });
+
+        if !request.system.is_empty() {
+            body["systemInstruction"] = json!({ "parts": [{ "text": request.system }] });
+        }
+
+        let resp = self.post(request.model, &body).await?;
+        let text = extract_text(&resp)?;
+        let (input_tokens, output_tokens, cost) = compute_usage(request.model, &resp);
+        Ok((text, input_tokens, output_tokens, cost))
+    }
+
+    async fn post(&self, model: &str, body: &Value) -> Result<Value> {
         let url = format!("{BASE_URL}/models/{model}:generateContent");
         let http_resp = self
             .http
             .post(&url)
             .header("x-goog-api-key", &self.api_key)
-            .json(&body)
+            .json(body)
             .send()
             .await
             .context("falha ao chamar Gemini")?;
@@ -65,11 +99,29 @@ impl GeminiClient {
             ));
         }
 
-        let resp: Value =
-            serde_json::from_str(&body_text).context("falha ao parsear resposta do Gemini")?;
-
-        translate_response(model, &resp)
+        serde_json::from_str(&body_text).context("falha ao parsear resposta do Gemini")
     }
+}
+
+/// Concatena todos os `parts[].text` do primeiro candidate. Structured
+/// output em teoria vem num único part, mas concatenar é robusto caso
+/// o modelo emita texto vazio de prefixo.
+fn extract_text(resp: &Value) -> Result<String> {
+    let parts = resp
+        .get("candidates")
+        .and_then(|c| c.get(0))
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(|p| p.as_array())
+        .context("resposta do Gemini sem candidates[0].content.parts")?;
+
+    let mut out = String::new();
+    for part in parts {
+        if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
+            out.push_str(text);
+        }
+    }
+    Ok(out)
 }
 
 // ── Pricing (USD por 1M tokens) ────────────────────────────────────────
@@ -114,8 +166,6 @@ fn p(
 fn pricing_for(model: &str, input_tokens: u32) -> Option<Pricing> {
     let over_200k = input_tokens > 200_000;
     Some(match model {
-        "gemini-2.0-flash-001" => p(0.1, 0.7, 0.4, 0.4, 0.025, 0.175),
-        "gemini-2.0-flash-lite-001" => p(0.075, 0.075, 0.3, 0.3, 0.0, 0.0),
         "gemini-2.5-pro" => {
             if over_200k {
                 p(2.5, 2.5, 15.0, 15.0, 0.25, 0.25)
@@ -443,13 +493,17 @@ fn translate_tools(tools: &[ChatTool<'_>]) -> Vec<Value> {
 // ── Tradução: response Gemini → ChatResponse ───────────────────────────
 
 fn translate_response(model: &str, resp: &Value) -> Result<ChatResponse> {
+    // Quando o Gemini não tem nada a dizer (ex: finishReason=STOP sem
+    // gerar mais output), a resposta pode vir sem `candidates[0].content.parts`.
+    // Tratamos como uma resposta vazia — o caller decide o que fazer com isso.
+    let parts_default: Vec<Value> = Vec::new();
     let parts = resp
         .get("candidates")
         .and_then(|c| c.get(0))
         .and_then(|c| c.get("content"))
         .and_then(|c| c.get("parts"))
         .and_then(|p| p.as_array())
-        .context("resposta do Gemini sem candidates[0].content.parts")?;
+        .unwrap_or(&parts_default);
 
     let mut messages: Vec<ChatMessage> = Vec::new();
 

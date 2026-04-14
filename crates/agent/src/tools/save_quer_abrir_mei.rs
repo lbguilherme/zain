@@ -17,7 +17,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "save_quer_abrir_mei",
-            description: "Registra se a pessoa tem intenção de abrir um MEI novo. Use `true` quando ela disser que quer abrir/começar um MEI (e ainda não tem CNPJ). Use `false` quando ela desistir ou quando ficar claro que ela não quer abrir. Quando ela informa que já tem MEI via `save_cnpj` com sucesso, esse campo é zerado automaticamente — não precisa chamar esta tool nesse caso.",
+            description: "Registra se a pessoa tem intenção de abrir um MEI novo. Use `true` quando ela disser que quer abrir/começar um MEI (e ainda não tem CNPJ). Use `false` quando ela desistir. Quando a pessoa diz que já tem MEI e você confirma o CNPJ via `save_cnpj`, não precisa chamar esta tool.",
             consequential: false,
             parameters: params_for::<Args>(),
         },
@@ -44,5 +44,6 @@ pub fn tool() -> Tool {
             }
         }),
         must_use_tool_result: false,
+        enabled_when: None,
     }
 }
