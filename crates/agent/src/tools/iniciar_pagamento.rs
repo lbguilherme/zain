@@ -12,7 +12,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "iniciar_pagamento",
-            description: "Sinaliza que o lead está pronto pro cadastro de cartão de crédito. Requer CPF salvo e que o lead esteja num estado qualificado: ou já tem CNPJ MEI salvo (via save_cnpj com sucesso), ou `quer_abrir_mei = true`. Depois de chamar, seta `pagamento_solicitado_em` no cliente.",
+            description: "Sinaliza que o lead está pronto pro cadastro de cartão de crédito. Requer CPF salvo, gov.br autenticado (via auth_govbr com sucesso) e `quer_abrir_mei` definido (save_quer_abrir_mei chamado com true ou false). Depois de chamar, seta `pagamento_solicitado_em` no cliente.",
             consequential: true,
             parameters: params_for::<Args>(),
         },
@@ -20,7 +20,8 @@ pub fn tool() -> Tool {
             let client_id = ctx.client_id;
             let row = match sql!(
                 &ctx.pool,
-                "SELECT cpf, cnpj, quer_abrir_mei FROM zain.clients WHERE id = $client_id"
+                "SELECT cpf, quer_abrir_mei, govbr_session_valid_at
+                 FROM zain.clients WHERE id = $client_id"
             )
             .fetch_one()
             .await
@@ -48,17 +49,28 @@ pub fn tool() -> Tool {
                 );
             }
 
-            // Qualificação: o lead precisa estar num estado onde faz
-            // sentido cadastrar o cartão. Ou já tem CNPJ MEI salvo
-            // (save_cnpj só salva quando SIMEI confirma), ou declarou
-            // intenção de abrir um novo MEI.
-            let tem_cnpj = row.cnpj.is_some();
-            let quer_abrir = row.quer_abrir_mei == Some(true);
-            if !tem_cnpj && !quer_abrir {
+            // Gov.br tem que estar autenticado antes do pagamento: se
+            // o login não funciona, não faz sentido cobrar a pessoa.
+            // `govbr_session_valid_at` só é preenchido quando uma
+            // autenticação real retornou `status: ok`.
+            if row.govbr_session_valid_at.is_none() {
                 return ToolOutput::err(
                     json!({
                         "status": "erro",
-                        "mensagem": "Lead não qualificado. Precisa ter CNPJ MEI salvo (save_cnpj) OU declarar intenção de abrir MEI (save_quer_abrir_mei=true)."
+                        "mensagem": "Gov.br ainda não autenticado. Chame auth_govbr (e auth_govbr_otp se necessário) antes de iniciar o pagamento."
+                    }),
+                    memory,
+                );
+            }
+
+            // Agente precisa ter estabelecido a situação de MEI
+            // (sim ou não) via save_quer_abrir_mei. Sem esse sinal,
+            // não dá pra saber se é caso de abertura ou gestão.
+            if row.quer_abrir_mei.is_none() {
+                return ToolOutput::err(
+                    json!({
+                        "status": "erro",
+                        "mensagem": "Situação de MEI não confirmada. Pergunte ao cliente se já é MEI ou quer abrir, e chame save_quer_abrir_mei antes de iniciar o pagamento."
                     }),
                     memory,
                 );

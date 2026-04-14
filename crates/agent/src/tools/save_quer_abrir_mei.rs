@@ -7,9 +7,9 @@ use super::{Tool, ToolContext, ToolDef, ToolOutput, params_for, typed_handler};
 
 #[derive(Deserialize, JsonSchema)]
 struct Args {
-    /// `true` se a pessoa tem intenção de abrir um MEI novo (ou seja,
-    /// ela ainda não possui CNPJ MEI). `false` se ela não quer abrir
-    /// (já tem, ou desistiu). Registro de *intent*, não de posse.
+    /// `true` se a pessoa quer abrir um MEI novo (ainda não é MEI).
+    /// `false` se a pessoa já é MEI (não precisa abrir um novo).
+    /// Registra a situação de MEI do cliente.
     quer_abrir_mei: bool,
 }
 
@@ -17,7 +17,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "save_quer_abrir_mei",
-            description: "Registra se a pessoa tem intenção de abrir um MEI novo. Use `true` quando ela disser que quer abrir/começar um MEI (e ainda não tem CNPJ). Use `false` quando ela desistir ou quando ficar claro que ela não quer abrir. Quando ela informa que já tem MEI via `save_cnpj` com sucesso, esse campo é zerado automaticamente — não precisa chamar esta tool nesse caso.",
+            description: "Registra a situação de MEI do cliente. Use `true` quando ela disser que quer abrir/começar um MEI (ainda não é MEI). Use `false` quando ela disser que já é MEI. Chame esta tool depois que o gov.br estiver autenticado e o cliente responder a pergunta 'já é MEI ou quer abrir?'. A tool `iniciar_pagamento` exige que esse campo esteja definido.",
             consequential: false,
             parameters: params_for::<Args>(),
         },

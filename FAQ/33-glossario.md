@@ -1,0 +1,25 @@
+# Glossario das siglas e abreviacoes
+
+- **CNAE** - Classificacao Nacional de Atividade Economica. Serve para determinar a area de atuacao da atividade empresarial, ou seja, e um codigo que atribui um conjunto de atividades desempenhadas pelo Empresario.
+- **NIT** - Numero de Identificacao do Trabalhador, fornecido pelo INSS que confirma a inscricao do Trabalhador na Previdencia Social.
+- **MEI** - Microempreendedor Individual.
+- **DAS** ou **DAS-MEI** - Documento de Arrecadacao do Simples Nacional.
+- **DASN-SIMEI** - Declaracao Anual do Simples Nacional do MEI.
+- **CGSN** - Comite Gestor do Simples Nacional.
+- **CGSIM** - Comite para Gestao da Rede Nacional para a Simplificacao do Registro e da Legalizacao de Empresas e Negocios.
+- **CPP** - Contribuicao Patronal Previdenciaria.
+- **CCMEI** - Certificado da Condicao de Microempreendedor Individual.
+- **DIRPF** - Declaracao Anual de Imposto de Renda Pessoa Fisica.
+- **INSS** - Instituto Nacional do Seguro Social.
+- **CPF** - Cadastro de Pessoas Fisicas.
+- **CTPS** - Carteira de Trabalho e Previdencia Social.
+- **GPS** - Guia da Previdencia Social.
+- **PIS** - Programa de Integracao Social.
+- **GFIP** - Guia de Recolhimento do FGTS e Informacoes a Previdencia Social.
+- **RAIS** - Relacao Anual de Informacoes Sociais.
+- **PGMEI** - Programa Gerador de DAS do Microempreendedor Individual.
+- **PBF** - Programa Bolsa Familia.
+- **NF-e** - Nota Fiscal Eletronica.
+- **PGDAS-D** - Programa Gerador do Documento de Arrecadacao do Simples Nacional - Declaratorio.
+- **RFB** - Receita Federal do Brasil.
+- **CLT** - Consolidacao das Leis do Trabalho.

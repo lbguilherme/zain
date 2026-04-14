@@ -39,6 +39,7 @@
 30. [Programa Bolsa Familia](#30-programa-bolsa-familia)
 31. [Cadastur](#31-cadastur)
 32. [Outros assuntos](#32-outros-assuntos)
+33. [Glossario das siglas e abreviacoes](#33-glossario-das-siglas-e-abreviacoes)
 
 ---
 
@@ -383,7 +384,7 @@ A formalizacao e o procedimento que da vida a empresa, ou seja, e o registro emp
 
 A formalizacao e gratuita e deve ser feita pelo Portal Empresas & Negocios no endereco https://www.gov.br/empresas-e-negocios/pt-br/empreendedor/quero-ser-mei.
 
-Apos a formalizacao, o/a MEI deve pagar mensalmente o seu DAS contribuindo com o valor de R$ 76,90 ao INSS, acrescido de R$ 5,00 para Prestadores de Servico ou R$ 1,00 para Comercio e Industria.
+Apos a formalizacao, o/a MEI deve pagar mensalmente o seu DAS contribuindo com o valor de R$ 81,05 ao INSS, acrescido de R$ 5,00 para Prestadores de Servico ou R$ 1,00 para Comercio e Industria.
 
 ### Quanto tempo demora a formalizacao?
 
@@ -564,7 +565,7 @@ Sim. O direito ao beneficio seguro-desemprego nao se da pela existencia ou ausen
 
 ### O cidadao que estiver recebendo o seguro-desemprego ao se cadastrar como MEI perde esse beneficio?
 
-Nao.
+Nao necessariamente. A simples formalizacao como MEI nao gera o cancelamento automatico do seguro-desemprego. Porem, se for identificada renda propria suficiente para a manutencao da familia, demonstrada na Declaracao Anual Simplificada da Microempresa Individual (DASN-SIMEI), o beneficio podera ser suspenso. Em caso de suspensao, o MEI devera recorrer nos postos de atendimento do Ministerio do Trabalho.
 
 ---
 
@@ -1005,11 +1006,52 @@ O Sebrae oferece o curso BPSA - Boas praticas nos Servicos de Alimentacao. Acess
 
 ### O que e Debito Automatico do MEI?
 
-*(Informacoes disponiveis no Portal do Empreendedor)*
+O Debito Automatico e uma forma de pagamento em que o valor do DAS e debitado automaticamente da conta bancaria do MEI todo mes, na data de vencimento (dia 20). Com isso, o MEI nao precisa se preocupar em gerar e pagar o boleto mensalmente.
+
+**Como cadastrar o Debito Automatico:**
+
+1. Acesse o Portal do Empreendedor (https://gov.br/mei).
+2. Clique em "Ja sou MEI" e depois em "Pagamento de contribuicao mensal e parcelamentos".
+3. Selecione a opcao "Debito Automatico".
+4. Informe os dados da conta bancaria (pode ser conta PF ou PJ).
+5. Apos o cadastro, o debito sera realizado automaticamente a cada mes.
+
+**Bancos disponiveis para debito automatico:**
+
+- 001 - Banco do Brasil S/A
+- 003 - Banco da Amazonia S/A
+- 004 - Banco do Nordeste do Brasil S/A
+- 021 - Banco Banestes S/A
+- 033 - Banco Santander (Brasil) S/A
+- 041 - Banco do Estado do Rio Grande do Sul S/A
+- 047 - Banco do Estado de Sergipe S/A
+- 070 - Banco de Brasilia S/A
+- 104 - Caixa Economica Federal
+- 237 - Banco Bradesco S/A
+- 341 - Itau Unibanco S/A
+- 389 - Banco Mercantil do Brasil S/A
+- 748 - Banco Cooperativo Sicredi S/A
+- 756 - Banco Cooperativo do Brasil S/A
+
+> Para cancelar o debito automatico, basta acessar o mesmo caminho no Portal e solicitar o cancelamento.
 
 ### O que e o pagamento online?
 
-*(Informacoes disponiveis no Portal do Empreendedor)*
+O pagamento online e a opcao que permite ao MEI pagar o DAS diretamente pela internet, sem precisar imprimir boleto. O MEI e direcionado ao internet banking do Banco do Brasil para efetuar o pagamento.
+
+**Requisitos:**
+- Ser correntista do Banco do Brasil.
+- Ter acesso ao internet banking.
+
+**Como pagar online:**
+
+1. Acesse o Portal do Empreendedor (https://gov.br/mei).
+2. Clique em "Ja sou MEI" e depois em "Pagamento de contribuicao mensal e parcelamentos".
+3. Selecione a opcao "Pagamento Online".
+4. Voce sera redirecionado para o internet banking do Banco do Brasil.
+5. Confirme o pagamento.
+
+> O pagamento online esta disponivel apenas para correntistas do Banco do Brasil. Para os demais bancos, utilize o boleto (DAS) ou o debito automatico.
 
 ---
 
@@ -1329,7 +1371,38 @@ Nao. O CRED+ e totalmente gratuito.
 
 ## 29. eSocial MEI
 
-*(Informacoes disponiveis no Portal do Empreendedor)*
+### O que e o eSocial para o MEI?
+
+O eSocial e o sistema do Governo Federal que unifica o envio de informacoes trabalhistas, previdenciarias e fiscais dos empregadores. O MEI que contrata um empregado e obrigado a utilizar o eSocial para prestar informacoes sobre esse empregado.
+
+### O MEI sem empregado precisa acessar o eSocial?
+
+Nao. O MEI que nao possui empregado nao tem obrigacao de se cadastrar ou enviar informacoes pelo eSocial.
+
+### Quais informacoes o MEI com empregado deve enviar pelo eSocial?
+
+O MEI com empregado deve informar:
+
+- Admissao do empregado (ate um dia antes do inicio do trabalho);
+- Dados cadastrais do empregado;
+- Folha de pagamento mensal;
+- Ferias;
+- Afastamentos (doenca, acidente, licenca maternidade, etc.);
+- Rescisao do contrato de trabalho;
+- Recolhimento do FGTS (GFIP).
+
+### Como o MEI acessa o eSocial?
+
+O MEI acessa o eSocial pelo modulo simplificado disponivel em https://login.esocial.gov.br/, utilizando login e senha da conta gov.br (codigo de acesso ou certificado digital).
+
+> O MEI nao e obrigado a possuir certificado digital para acessar o eSocial. Pode utilizar o codigo de acesso.
+
+### Qual o prazo para o MEI enviar os eventos no eSocial?
+
+- **Admissao:** ate 1 dia antes do inicio do trabalho.
+- **Folha de pagamento:** ate o dia 7 do mes seguinte.
+- **Rescisao:** ate 10 dias apos o termino do contrato.
+- **Afastamentos:** ate o dia 7 do mes seguinte ao da ocorrencia, ou imediatamente em caso de acidente de trabalho.
 
 ---
 
@@ -1415,6 +1488,19 @@ Sim. Neste caso, informando R$ 0,00 (sem faturamento).
 
 Sim, para a Receita Federal do Brasil, atraves da DASN-SIMEI ate 31 de maio de cada ano.
 
+### O MEI precisa declarar Imposto de Renda Pessoa Fisica (IRPF)?
+
+O fato de ter uma empresa MEI nao obriga automaticamente a pessoa a fazer a declaracao de Imposto de Renda Pessoa Fisica. Porem, se o empreendedor se enquadrar em uma das condicoes de obrigatoriedade determinadas pela Receita Federal, precisara declarar.
+
+As principais situacoes de obrigatoriedade incluem:
+
+- Rendimentos tributaveis acima do limite anual estabelecido pela Receita Federal;
+- Rendimentos isentos, nao tributaveis ou tributados exclusivamente na fonte acima do limite;
+- Posse de bens ou direitos acima do limite estabelecido;
+- Realizacao de operacoes em bolsa de valores.
+
+> **Como calcular o rendimento tributavel do MEI:** Do faturamento bruto anual, subtrai-se a parcela isenta (8% para comercio, 16% para transporte de passageiros, ou 32% para servicos) e as despesas comprovadas do negocio. O valor restante e considerado rendimento tributavel.
+
 ### E possivel transferir o CNPJ do MEI para outra pessoa?
 
 Nao. O CCMEI e um registro pessoal e intransferivel.
@@ -1455,3 +1541,31 @@ Sim. Nao existem restricoes ou impedimentos.
 ### Como Posso Consultar os Debitos do MEI?
 
 Os debitos podem ser consultados no PGMEI (versao completa), com certificado digital ou codigo de acesso, na opcao "Consulta Extrato/Pendencias > Consulta Pendencias no Simei".
+
+---
+
+## 33. Glossario das siglas e abreviacoes
+
+- **CNAE** - Classificacao Nacional de Atividade Economica. Serve para determinar a area de atuacao da atividade empresarial, ou seja, e um codigo que atribui um conjunto de atividades desempenhadas pelo Empresario.
+- **NIT** - Numero de Identificacao do Trabalhador, fornecido pelo INSS que confirma a inscricao do Trabalhador na Previdencia Social.
+- **MEI** - Microempreendedor Individual.
+- **DAS** ou **DAS-MEI** - Documento de Arrecadacao do Simples Nacional.
+- **DASN-SIMEI** - Declaracao Anual do Simples Nacional do MEI.
+- **CGSN** - Comite Gestor do Simples Nacional.
+- **CGSIM** - Comite para Gestao da Rede Nacional para a Simplificacao do Registro e da Legalizacao de Empresas e Negocios.
+- **CPP** - Contribuicao Patronal Previdenciaria.
+- **CCMEI** - Certificado da Condicao de Microempreendedor Individual.
+- **DIRPF** - Declaracao Anual de Imposto de Renda Pessoa Fisica.
+- **INSS** - Instituto Nacional do Seguro Social.
+- **CPF** - Cadastro de Pessoas Fisicas.
+- **CTPS** - Carteira de Trabalho e Previdencia Social.
+- **GPS** - Guia da Previdencia Social.
+- **PIS** - Programa de Integracao Social.
+- **GFIP** - Guia de Recolhimento do FGTS e Informacoes a Previdencia Social.
+- **RAIS** - Relacao Anual de Informacoes Sociais.
+- **PGMEI** - Programa Gerador de DAS do Microempreendedor Individual.
+- **PBF** - Programa Bolsa Familia.
+- **NF-e** - Nota Fiscal Eletronica.
+- **PGDAS-D** - Programa Gerador do Documento de Arrecadacao do Simples Nacional - Declaratorio.
+- **RFB** - Receita Federal do Brasil.
+- **CLT** - Consolidacao das Leis do Trabalho.
