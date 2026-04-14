@@ -3,9 +3,9 @@ use crate::source::{DataSource, Download};
 
 // http://arquivos.receitafederal.gov.br/index.php/s/gn672Ad4CF8N6TK?dir=/Dados/Cadastros/CNPJ
 
-const DATA_VERSION: &str = "2026-03";
+const DATA_VERSION: &str = "2026-04";
 const EXTRACTOR_VERSION: u32 = 3;
-const BASE_URL: &str = "http://arquivos.receitafederal.gov.br/index.php/s/gn672Ad4CF8N6TK?dir=/Dados/Cadastros/CNPJ/2026-03";
+const BASE_URL: &str = "https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNPJ/2026-04/";
 
 fn parse_date_ymd(val: &str) -> Result<String, &'static str> {
     if val == "00000000" || val == "0" {

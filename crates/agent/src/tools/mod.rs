@@ -20,7 +20,6 @@ pub type ToolEnabledPredicate = fn(&ClientRow) -> bool;
 pub mod abrir_empresa;
 mod anotar;
 mod buscar_cnae;
-mod done;
 mod govbr;
 mod iniciar_pagamento;
 mod pgfn;
@@ -29,6 +28,7 @@ mod save_cnpj;
 mod save_cpf;
 mod save_quer_abrir_mei;
 mod send_whatsapp_message;
+mod wait_client_message;
 
 /// Definição de uma tool — o que o LLM vê.
 #[derive(Debug)]
@@ -64,7 +64,7 @@ pub struct ToolOutput {
     /// mais uma vez antes de encerrar o turno — mesmo efeito de
     /// `Tool::must_use_tool_result`, só que decidido por chamada em
     /// vez de por tool. Útil quando uma tool às vezes devolve sucesso
-    /// (pode seguir pro done) e às vezes devolve um erro que exige
+    /// (pode seguir pro wait_client_message) e às vezes devolve um erro que exige
     /// reação do LLM (ex: `save_cnpj` quando o CNPJ não é MEI).
     pub is_error: bool,
 }
@@ -105,7 +105,7 @@ pub struct Tool {
     pub handler: ToolHandler,
     /// Se `true`, o workflow garante que o LLM seja chamado ao menos
     /// mais uma vez depois desta tool antes de encerrar o turno: mesmo
-    /// que `done` tenha sido chamado na mesma leva de tool calls, ele é
+    /// que `wait_client_message` tenha sido chamado na mesma leva de tool calls, ele é
     /// ignorado e o loop segue para que o LLM veja o resultado da tool.
     pub must_use_tool_result: bool,
     /// Predicado opcional que controla se a tool fica disponível pro
@@ -145,7 +145,7 @@ impl ToolContext {
 pub fn all_tools() -> Vec<Tool> {
     vec![
         send_whatsapp_message::tool(),
-        done::tool(),
+        wait_client_message::tool(),
         save_cpf::tool(),
         save_quer_abrir_mei::tool(),
         save_cnpj::tool(),

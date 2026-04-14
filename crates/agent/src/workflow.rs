@@ -61,12 +61,13 @@ pub async fn run_workflow(
 
     let mut memory = client.memory.clone();
     let mut executed_consequential = false;
-    let mut done = false;
-    // Fica `true` a partir do momento que o LLM chamou `done()` em
-    // *alguma* iteração, mesmo que o `done` tenha sido ignorado porque
-    // uma tool `must_use_tool_result` forçou mais uma rodada. Permite
-    // aceitar uma resposta vazia na rodada seguinte como "já terminei".
-    let mut done_seen = false;
+    let mut wait_called = false;
+    // Fica `true` a partir do momento que o LLM chamou
+    // `wait_client_message()` em *alguma* iteração, mesmo que a chamada
+    // tenha sido ignorada porque uma tool `must_use_tool_result` forçou
+    // mais uma rodada. Permite aceitar uma resposta vazia na rodada
+    // seguinte como "já terminei".
+    let mut wait_seen = false;
     let mut text_only_retries = 0;
     const MAX_TEXT_ONLY_RETRIES: u32 = 1;
 
@@ -96,16 +97,16 @@ pub async fn run_workflow(
             "Resposta do LLM"
         );
 
-        // Se o LLM já tinha chamado `done()` antes (ignorado por
-        // `must_use_tool_result`) e nessa rodada não devolveu nada —
-        // nem texto, nem tool call — significa que ele não tinha mais
-        // o que dizer sobre o resultado da tool forçada. Aceita como
-        // encerramento implícito em vez de insistir.
-        if done_seen && response.messages.is_empty() {
+        // Se o LLM já tinha chamado `wait_client_message()` antes
+        // (ignorado por `must_use_tool_result`) e nessa rodada não
+        // devolveu nada — nem texto, nem tool call — significa que ele
+        // não tinha mais o que dizer sobre o resultado da tool forçada.
+        // Aceita como encerramento implícito em vez de insistir.
+        if wait_seen && response.messages.is_empty() {
             tracing::info!(
                 client_id = %client.id,
                 iteration = iteration,
-                "LLM devolveu resposta vazia após done anterior — encerrando turno"
+                "LLM devolveu resposta vazia após wait_client_message anterior — encerrando turno"
             );
             break;
         }
@@ -146,7 +147,7 @@ pub async fn run_workflow(
                 text: "Lembrete: texto solto não chega pro cliente. A ÚNICA forma de \
                  falar com ele é chamando `send_whatsapp_message`. Se precisa \
                  salvar algo, chame as tools `save_*`/`anotar`. Sempre termine \
-                 o turno com `done()`."
+                 o turno com `wait_client_message()`."
                     .into(),
             });
             update_execution_messages(pool, exec_id, &messages).await?;
@@ -247,25 +248,27 @@ pub async fn run_workflow(
                 must_reprompt = true;
             }
 
-            // `done` é a única tool que também controla o fluxo do loop.
-            if tool_name == "done" {
-                done = true;
-                done_seen = true;
+            // `wait_client_message` é a única tool que também controla
+            // o fluxo do loop.
+            if tool_name == "wait_client_message" {
+                wait_called = true;
+                wait_seen = true;
             }
         }
 
-        if done && !must_reprompt {
+        if wait_called && !must_reprompt {
             break;
         }
-        if done && must_reprompt {
+        if wait_called && must_reprompt {
             // Alguma tool da leva exige que o LLM veja o resultado
-            // antes de encerrar — ignora o `done` e força outra rodada.
+            // antes de encerrar — ignora o `wait_client_message` e
+            // força outra rodada.
             tracing::info!(
                 client_id = %client.id,
                 iteration = iteration,
-                "done ignorado: tool com must_use_tool_result na mesma leva"
+                "wait_client_message ignorado: tool com must_use_tool_result na mesma leva"
             );
-            done = false;
+            wait_called = false;
         }
 
         update_execution_messages(pool, exec_id, &messages).await?;
