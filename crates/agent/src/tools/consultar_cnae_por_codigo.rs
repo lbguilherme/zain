@@ -41,10 +41,11 @@ async fn run(pool: &Pool, client_id: Uuid, codigo_raw: &str) -> Result<Value, Va
     let pattern = format!("{}%", codigo_norm);
     let rows = sql!(
         pool,
-        "SELECT ocupacao, cnae_subclasse_id, cnae_descricao
-         FROM mei_cnaes.ocupacoes
-         WHERE cnae_subclasse_id LIKE $pattern
-         ORDER BY ocupacao
+        "SELECT o.nome AS ocupacao, o.cnae, s.descricao
+         FROM mei_cnaes.ocupacoes o
+         JOIN cnae.subclasses s ON s.id = o.cnae
+         WHERE o.cnae LIKE $pattern
+         ORDER BY o.nome
          LIMIT 6"
     )
     .fetch_all()
@@ -56,9 +57,9 @@ async fn run(pool: &Pool, client_id: Uuid, codigo_raw: &str) -> Result<Value, Va
                 .iter()
                 .map(|row| {
                     json!({
-                        "codigo": row.cnae_subclasse_id.trim(),
+                        "codigo": row.cnae.trim(),
                         "ocupacao": row.ocupacao,
-                        "descricao": row.cnae_descricao,
+                        "descricao": row.descricao,
                     })
                 })
                 .collect();

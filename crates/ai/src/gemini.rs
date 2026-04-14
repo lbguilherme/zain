@@ -4,28 +4,13 @@
 //! OpenAI/Ollama) para o wire format do Gemini (`contents` com `parts`,
 //! `functionDeclarations`, `functionCall`, `functionResponse`) e de volta.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 
-use crate::chat::{
-    ChatMessage, ChatResponse, ChatResponseMessage, ChatUsage, ToolCall, ToolCallFunction,
-};
+use crate::chat::{ChatMessage, ChatRequest, ChatResponse, ChatTool};
 
 const BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
-
-/// Contador monotônico para gerar ids de tool_call quando o provider
-/// (Gemini) não expõe um. Único por processo — ids antigos persistidos
-/// no DB continuam consistentes porque o log de mensagens é sempre
-/// reescrito inteiro a cada update.
-static CALL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-fn next_call_id() -> String {
-    let n = CALL_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("gemini_call_{n}")
-}
 
 pub struct GeminiClient {
     http: reqwest::Client,
@@ -43,25 +28,21 @@ impl GeminiClient {
         }
     }
 
-    pub async fn chat(
-        &self,
-        model: &str,
-        messages: &[ChatMessage],
-        tools: &[Value],
-    ) -> Result<ChatResponse> {
-        let (system_instruction, contents) = translate_messages(messages)?;
-        let function_declarations = translate_tools(tools);
+    pub async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse> {
+        let contents = translate_messages(request.messages);
+        let function_declarations = translate_tools(request.tools);
 
         let mut body = json!({ "contents": contents });
 
-        if let Some(sys) = system_instruction {
-            body["systemInstruction"] = sys;
+        if !request.system.is_empty() {
+            body["systemInstruction"] = json!({ "parts": [{ "text": request.system }] });
         }
 
         if !function_declarations.is_empty() {
             body["tools"] = json!([{ "functionDeclarations": function_declarations }]);
         }
 
+        let model = request.model;
         let url = format!("{BASE_URL}/models/{model}:generateContent");
         let http_resp = self
             .http
@@ -107,8 +88,7 @@ struct Pricing {
     cache_audio: f64,
 }
 
-/// Construtor espelhado do helper `p(...)` do TypeScript — recebe os
-/// preços em USD por 1M de tokens e devolve o preço por token.
+/// Recebe preços em USD por 1M de tokens e devolve o preço por token.
 fn p(
     input: f64,
     audio_input: f64,
@@ -174,9 +154,8 @@ fn pricing_for(model: &str, input_tokens: u32) -> Option<Pricing> {
     })
 }
 
-/// Tokens quebrados por modalidade (`text`, `audio`, `image`). Espelha
-/// o `getTokensByModality` do TS — percorre o array `*TokensDetails`
-/// que o Gemini devolve e soma por `modality`.
+/// Tokens quebrados por modalidade (`text`, `audio`, `image`),
+/// somados a partir do array `*TokensDetails` que o Gemini devolve.
 #[derive(Default, Clone, Copy)]
 struct TokensByModality {
     text: u64,
@@ -200,7 +179,10 @@ fn tokens_by_modality(details: Option<&Value>) -> TokensByModality {
     out
 }
 
-fn compute_usage(model: &str, resp: &Value) -> ChatUsage {
+/// Devolve `(input_tokens, output_tokens, cost)` extraídos do
+/// `usageMetadata` da resposta. `output_tokens` já inclui os
+/// `thoughtsTokenCount` — é o que foi gerado e faturado de fato.
+fn compute_usage(model: &str, resp: &Value) -> (u32, u32, f64) {
     let meta = resp.get("usageMetadata");
 
     let input_tokens = meta
@@ -219,8 +201,8 @@ fn compute_usage(model: &str, resp: &Value) -> ChatUsage {
     let cost = match pricing_for(model, input_tokens) {
         Some(pricing) => {
             // Se o Gemini devolveu o detalhamento por modalidade usamos
-            // a fórmula completa (espelhada do cliente TS). Do contrário
-            // caímos num fallback que trata tudo como texto.
+            // a fórmula completa; caso contrário caímos num fallback
+            // que trata tudo como texto.
             if let Some(input_details) = meta.and_then(|m| m.get("promptTokensDetails")) {
                 let input = tokens_by_modality(Some(input_details));
                 let output =
@@ -236,8 +218,8 @@ fn compute_usage(model: &str, resp: &Value) -> ChatUsage {
                     + (cache.audio as f64) * pricing.cache_audio
                     + (cache.image as f64) * pricing.cache;
 
-                // Audio output é cobrado na mesma alíquota do text output
-                // (o TS faz o mesmo — não existe tarifa separada ainda).
+                // Audio output é cobrado na mesma alíquota do text
+                // output — a API não expõe tarifa separada.
                 let output_cost = (output.text as f64) * pricing.output
                     + (output.image as f64) * pricing.image_output
                     + (output.audio as f64) * pricing.output;
@@ -252,145 +234,208 @@ fn compute_usage(model: &str, resp: &Value) -> ChatUsage {
         None => 0.0,
     };
 
-    ChatUsage {
-        // Reportamos output_tokens somando thinking — é o que foi gerado
-        // e faturado de fato.
-        input_tokens,
-        output_tokens: output_tokens + thinking_tokens,
-        cost,
-    }
+    (input_tokens, output_tokens + thinking_tokens, cost)
 }
 
-// ── Tradução: ChatMessage[] → (systemInstruction, contents[]) ──────────
+// ── Tradução: ChatMessage[] → contents[] ───────────────────────────────
 
-fn translate_messages(messages: &[ChatMessage]) -> Result<(Option<Value>, Vec<Value>)> {
-    let mut system_parts: Vec<Value> = Vec::new();
+/// Traduz `ChatMessage`s para o `contents[]` do Gemini, agrupando
+/// variantes adjacentes do mesmo role num único `Content` com vários
+/// `parts`:
+///
+/// * `InputText`/`InputImage` → `role=user` com `text`/`inlineData`
+///   parts.
+/// * `OutputText`/`ToolCall` → um `role=model` (texto e
+///   `functionCall` parts), seguido de `role=user` com
+///   `functionResponse` parts para as calls que têm `result: Some`,
+///   seguido de outro `role=model` com o sufixo quando houver.
+///   `thoughtSignature` (Gemini 3.x) é reemitido como irmão do part
+///   de origem.
+fn translate_messages(messages: &[ChatMessage]) -> Vec<Value> {
     let mut contents: Vec<Value> = Vec::new();
+    let mut i = 0;
 
-    for msg in messages {
-        match msg.role.as_str() {
-            "system" => {
-                system_parts.push(json!({ "text": msg.content }));
-            }
-            "user" => {
-                // Montamos os parts na ordem: texto primeiro (se houver)
-                // seguido das imagens como `inlineData`. O Gemini exige
-                // `mimeType` + `data` em base64. Quando uma imagem tem
-                // `label`, emitimos um `text` part com o label logo antes
-                // do `inlineData` para o modelo correlacionar a imagem
-                // com menções no histórico.
-                let mut parts: Vec<Value> = Vec::new();
-                if !msg.content.is_empty() || msg.images.is_empty() {
-                    parts.push(json!({ "text": msg.content }));
-                }
-                for img in &msg.images {
-                    if let Some(label) = &img.label {
-                        parts.push(json!({ "text": label }));
-                    }
-                    parts.push(json!({
-                        "inlineData": {
-                            "mimeType": img.mime_type,
-                            "data": BASE64.encode(&img.bytes),
-                        }
-                    }));
-                }
-                contents.push(json!({
-                    "role": "user",
-                    "parts": parts,
-                }));
-            }
-            "assistant" => {
-                let mut parts: Vec<Value> = Vec::new();
-                // Texto vem antes das tool calls — quando o LLM gera
-                // ambos na mesma resposta, o text part precisa ser
-                // preservado senão ele some do histórico.
-                if !msg.content.is_empty() {
-                    parts.push(json!({ "text": msg.content }));
-                }
-                if let Some(tool_calls) = &msg.tool_calls {
-                    for c in tool_calls {
-                        let mut part = json!({
-                            "functionCall": {
-                                "name": c.function.name,
-                                "args": c.function.arguments,
-                            }
-                        });
-                        // Gemini 3.x exige que `thoughtSignature` seja
-                        // reemitido no mesmo Part do functionCall
-                        // original — sem isso a API devolve 400
-                        // INVALID_ARGUMENT. Vive como irmão de
-                        // `functionCall` no Part, não dentro dele.
-                        if let Some(sig) = &c.thought_signature {
-                            part["thoughtSignature"] = json!(sig);
-                        }
-                        parts.push(part);
-                    }
-                }
-                if parts.is_empty() {
-                    parts.push(json!({ "text": "" }));
-                }
-                contents.push(json!({
-                    "role": "model",
-                    "parts": parts,
-                }));
-            }
-            "tool" => {
-                let name = msg.tool_name.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "ChatMessage role='tool' sem tool_name — Gemini requer o nome da função"
+    while i < messages.len() {
+        match &messages[i] {
+            ChatMessage::InputText { .. } | ChatMessage::InputImage { .. } => {
+                let start = i;
+                while i < messages.len()
+                    && matches!(
+                        messages[i],
+                        ChatMessage::InputText { .. } | ChatMessage::InputImage { .. }
                     )
-                })?;
-                // Gemini espera `response` como objeto. Se o conteúdo já for
-                // JSON-objeto, usa direto; caso contrário envolve em
-                // {"content": <valor>}.
-                let response = match serde_json::from_str::<Value>(&msg.content) {
-                    Ok(v) if v.is_object() => v,
-                    Ok(v) => json!({ "content": v }),
-                    Err(_) => json!({ "content": msg.content }),
-                };
-                contents.push(json!({
-                    "role": "user",
-                    "parts": [{
-                        "functionResponse": {
-                            "name": name,
-                            "response": response,
-                        }
-                    }],
-                }));
+                {
+                    i += 1;
+                }
+                contents.push(translate_user_group(&messages[start..i]));
             }
-            other => {
-                bail!("role desconhecido em ChatMessage: '{other}'");
+            ChatMessage::OutputText { .. } | ChatMessage::ToolCall { .. } => {
+                let start = i;
+                while i < messages.len()
+                    && matches!(
+                        messages[i],
+                        ChatMessage::OutputText { .. } | ChatMessage::ToolCall { .. }
+                    )
+                {
+                    i += 1;
+                }
+                expand_assistant_group(&messages[start..i], &mut contents);
             }
         }
     }
 
-    let system_instruction = if system_parts.is_empty() {
-        None
-    } else {
-        Some(json!({ "parts": system_parts }))
-    };
-
-    Ok((system_instruction, contents))
+    contents
 }
 
-// ── Tradução: tools (schema OpenAI) → functionDeclarations ─────────────
+fn translate_user_group(group: &[ChatMessage]) -> Value {
+    let mut parts: Vec<Value> = Vec::new();
+    for msg in group {
+        match msg {
+            ChatMessage::InputText { text } => {
+                parts.push(json!({ "text": text }));
+            }
+            ChatMessage::InputImage { bytes, mime_type } => {
+                parts.push(json!({
+                    "inlineData": {
+                        "mimeType": mime_type,
+                        "data": BASE64.encode(bytes),
+                    }
+                }));
+            }
+            _ => unreachable!("translate_user_group recebeu variante não-user"),
+        }
+    }
+    // Gemini exige pelo menos um part no Content.
+    if parts.is_empty() {
+        parts.push(json!({ "text": "" }));
+    }
+    json!({ "role": "user", "parts": parts })
+}
 
-fn translate_tools(tools: &[Value]) -> Vec<Value> {
+/// Expande um run de variantes assistant em um ou mais `Content`s do
+/// Gemini. Ver `expand_assistant_group` em `ollama.rs` para a forma
+/// geral; aqui o user turn intermediário vira `role=user` com
+/// `functionResponse` parts em vez de `role=tool` messages.
+fn expand_assistant_group(group: &[ChatMessage], out: &mut Vec<Value>) {
+    let split = group
+        .iter()
+        .position(|m| matches!(m, ChatMessage::ToolCall { result: None, .. }))
+        .unwrap_or(group.len());
+
+    let prefix_has_result = group[..split].iter().any(|m| {
+        matches!(
+            m,
+            ChatMessage::ToolCall {
+                result: Some(_),
+                ..
+            }
+        )
+    });
+
+    if !prefix_has_result {
+        out.push(build_model_content(group));
+        return;
+    }
+
+    out.push(build_model_content(&group[..split]));
+    out.push(build_function_response_content(&group[..split]));
+    if split < group.len() {
+        out.push(build_model_content(&group[split..]));
+    }
+}
+
+fn build_model_content(slice: &[ChatMessage]) -> Value {
+    let mut parts: Vec<Value> = Vec::new();
+    for msg in slice {
+        match msg {
+            ChatMessage::OutputText {
+                text,
+                thought_signature,
+            } => {
+                if text.is_empty() && thought_signature.is_none() {
+                    continue;
+                }
+                let mut part = json!({ "text": text });
+                if let Some(sig) = thought_signature {
+                    part["thoughtSignature"] = json!(sig);
+                }
+                parts.push(part);
+            }
+            ChatMessage::ToolCall {
+                name,
+                arguments,
+                thought_signature,
+                ..
+            } => {
+                let mut part = json!({
+                    "functionCall": {
+                        "name": name,
+                        "args": arguments,
+                    }
+                });
+                // Gemini 3.x exige que `thoughtSignature` seja reemitido
+                // no mesmo Part do functionCall original — sem isso a
+                // API devolve 400 INVALID_ARGUMENT. Vive como irmão de
+                // `functionCall` no Part, não dentro dele.
+                if let Some(sig) = thought_signature {
+                    part["thoughtSignature"] = json!(sig);
+                }
+                parts.push(part);
+            }
+            _ => unreachable!("build_model_content recebeu variante não-assistant"),
+        }
+    }
+    if parts.is_empty() {
+        parts.push(json!({ "text": "" }));
+    }
+    json!({ "role": "model", "parts": parts })
+}
+
+/// Emite um `role=user` com `functionResponse` parts para cada
+/// `ToolCall` do slice que tenha `result: Some`. Ignora texto
+/// e calls com `result: None` (o caller deve garantir que o slice
+/// corresponde ao prefix da expansão).
+fn build_function_response_content(slice: &[ChatMessage]) -> Value {
+    let parts: Vec<Value> = slice
+        .iter()
+        .filter_map(|msg| match msg {
+            ChatMessage::ToolCall {
+                name,
+                result: Some(content),
+                ..
+            } => {
+                // Gemini espera `response` como objeto. Se o conteúdo já
+                // for JSON-objeto, usa direto; caso contrário envolve em
+                // {"content": <valor>}.
+                let response = match serde_json::from_str::<Value>(content) {
+                    Ok(v) if v.is_object() => v,
+                    Ok(v) => json!({ "content": v }),
+                    Err(_) => json!({ "content": content }),
+                };
+                Some(json!({
+                    "functionResponse": {
+                        "name": name,
+                        "response": response,
+                    }
+                }))
+            }
+            _ => None,
+        })
+        .collect();
+    json!({ "role": "user", "parts": parts })
+}
+
+// ── Tradução: ChatTool[] → functionDeclarations ────────────────────────
+
+fn translate_tools(tools: &[ChatTool<'_>]) -> Vec<Value> {
     tools
         .iter()
-        .filter_map(|t| {
-            let func = t.get("function")?;
-            let name = func.get("name")?.as_str()?;
-            let description = func
-                .get("description")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let parameters = func.get("parameters").cloned().unwrap_or(json!({}));
-            Some(json!({
-                "name": name,
-                "description": description,
-                "parameters": parameters,
-            }))
+        .map(|t| {
+            json!({
+                "name": t.name,
+                "description": t.description,
+                "parameters": t.parameters,
+            })
         })
         .collect()
 }
@@ -406,52 +451,44 @@ fn translate_response(model: &str, resp: &Value) -> Result<ChatResponse> {
         .and_then(|p| p.as_array())
         .context("resposta do Gemini sem candidates[0].content.parts")?;
 
-    let mut text_chunks: Vec<String> = Vec::new();
-    let mut tool_calls: Vec<ToolCall> = Vec::new();
+    let mut messages: Vec<ChatMessage> = Vec::new();
 
     for part in parts {
+        // `thoughtSignature` vive no Part (irmão de `text`/`functionCall`),
+        // não dentro do objeto interno. Gemini 3.x exige que ele seja
+        // devolvido no turno seguinte no mesmo Part de origem — então
+        // capturamos por part, não por tipo.
+        let thought_signature = part
+            .get("thoughtSignature")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_owned());
+
         if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-            text_chunks.push(text.to_owned());
+            messages.push(ChatMessage::OutputText {
+                text: text.to_owned(),
+                thought_signature,
+            });
         } else if let Some(call) = part.get("functionCall") {
             let name = call
                 .get("name")
                 .and_then(|v| v.as_str())
                 .context("functionCall sem 'name'")?
                 .to_owned();
-            let args = call.get("args").cloned().unwrap_or(json!({}));
-            // `thoughtSignature` vive no Part (irmão de `functionCall`),
-            // não dentro do objeto functionCall. Gemini 3.x exige que ele
-            // seja devolvido no turno seguinte.
-            let thought_signature = part
-                .get("thoughtSignature")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_owned());
-            // Gemini não expõe um id de chamada no wire — ele casa
-            // `functionCall` com `functionResponse` por nome e posição.
-            // Geramos um id sintético só para o nosso rastreamento
-            // interno (e para providers como Ollama que exigem o campo).
-            let id = next_call_id();
-            tool_calls.push(ToolCall {
-                id,
-                function: ToolCallFunction {
-                    name,
-                    arguments: args,
-                },
+            let arguments = call.get("args").cloned().unwrap_or(json!({}));
+            messages.push(ChatMessage::ToolCall {
+                name,
+                arguments,
+                result: None,
                 thought_signature,
             });
         }
     }
 
+    let (input_tokens, output_tokens, cost) = compute_usage(model, resp);
     Ok(ChatResponse {
-        message: ChatResponseMessage {
-            role: "assistant".into(),
-            content: text_chunks.join(""),
-            tool_calls: if tool_calls.is_empty() {
-                None
-            } else {
-                Some(tool_calls)
-            },
-        },
-        usage: compute_usage(model, resp),
+        messages,
+        input_tokens,
+        output_tokens,
+        cost,
     })
 }

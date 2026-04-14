@@ -1,10 +1,9 @@
 //! Cliente para a API do Ollama.
 //!
-//! Chat usa o endpoint OpenAI-compatível (`/v1/chat/completions`) em vez
-//! do nativo `/api/chat` — ele aceita `content` como array de parts
-//! (`text` + `image_url`), o que permite intercalar labels e imagens na
-//! mesma user message (coisa que o `/api/chat` não suporta). Embeddings
-//! continuam usando o endpoint nativo `/api/embed`.
+//! Chat usa o endpoint OpenAI-compatível (`/v1/chat/completions`), que
+//! aceita `content` como array de parts (`text` + `image_url`) e
+//! permite intercalar texto e imagens na mesma user message. Embeddings
+//! usam o endpoint nativo `/api/embed`.
 
 use std::path::{Path, PathBuf};
 
@@ -13,9 +12,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::chat::{
-    ChatMessage, ChatResponse, ChatResponseMessage, ChatUsage, ToolCall, ToolCallFunction,
-};
+use crate::chat::{ChatMessage, ChatRequest, ChatResponse};
 
 const EMBED_BATCH_SIZE: usize = 64;
 
@@ -37,22 +34,35 @@ impl OllamaClient {
 
     // ── Chat ───────────────────────────────────────────────────────────
 
-    pub async fn chat(
-        &self,
-        model: &str,
-        messages: &[ChatMessage],
-        tools: &[Value],
-    ) -> Result<ChatResponse> {
-        let translated = translate_messages(messages);
+    pub async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse> {
+        let mut translated = Vec::with_capacity(request.messages.len() + 1);
+        if !request.system.is_empty() {
+            translated.push(json!({ "role": "system", "content": request.system }));
+        }
+        translated.extend(translate_messages(request.messages));
 
         let mut body = json!({
-            "model": model,
+            "model": request.model,
             "messages": translated,
             "stream": false,
         });
 
-        if !tools.is_empty() {
-            body["tools"] = Value::Array(tools.to_vec());
+        if !request.tools.is_empty() {
+            let tools: Vec<Value> = request
+                .tools
+                .iter()
+                .map(|t| {
+                    json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.parameters,
+                        }
+                    })
+                })
+                .collect();
+            body["tools"] = Value::Array(tools);
         }
 
         let raw: Value = self
@@ -183,114 +193,195 @@ fn write_cached(cache_dir: &Path, text: &str, vec: &[f32]) {
 
 // ── Tradução: ChatMessage[] → messages no formato OpenAI ───────────────
 
-/// Traduz o array genérico `ChatMessage` para o formato esperado pelo
-/// endpoint OpenAI-compatível. Diferente do `/api/chat` nativo, aqui:
+/// Traduz `ChatMessage`s para o formato esperado pelo endpoint
+/// OpenAI-compatível. Variantes adjacentes do mesmo role são fundidas
+/// numa única entrada:
 ///
-/// * user messages com imagens viram `content` como array de parts
-///   intercalados (`text` + `image_url` com data URI), preservando a
-///   posição de cada label relativa à sua imagem.
-/// * tool_calls no assistant reusam o `ToolCall.id` vindo do provider
-///   (ou gerado sinteticamente na tradução do Gemini), com `arguments`
-///   como string JSON (exigido pelo spec OpenAI).
-/// * mensagens `role=tool` usam o `tool_call_id` guardado no próprio
-///   `ChatMessage` — isso permite que a mesma tool seja chamada várias
-///   vezes sem que respostas sejam trocadas.
+/// * `InputText`/`InputImage` → `role=user` com `content` como array de
+///   parts (`text` + `image_url` com data URI).
+/// * `OutputText`/`ToolCall` → um `role=assistant` (texto
+///   concatenado + `tool_calls`), seguido de uma `role=tool` por call
+///   que tem `result: Some`, seguido de um segundo `role=assistant`
+///   com o sufixo (texto e calls com `result: None`), quando houver.
 fn translate_messages(messages: &[ChatMessage]) -> Vec<Value> {
     let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+    let mut call_id_seq: u64 = 0;
+    let mut i = 0;
 
-    for msg in messages.iter() {
-        match msg.role.as_str() {
-            "system" => {
-                out.push(json!({
-                    "role": "system",
-                    "content": msg.content,
-                }));
-            }
-            "user" => {
-                if msg.images.is_empty() {
-                    out.push(json!({
-                        "role": "user",
-                        "content": msg.content,
-                    }));
-                } else {
-                    let mut parts: Vec<Value> = Vec::new();
-                    if !msg.content.is_empty() {
-                        parts.push(json!({ "type": "text", "text": msg.content }));
-                    }
-                    for img in &msg.images {
-                        if let Some(label) = &img.label {
-                            parts.push(json!({ "type": "text", "text": label }));
-                        }
-                        let data_uri = format!(
-                            "data:{};base64,{}",
-                            img.mime_type,
-                            BASE64.encode(&img.bytes)
-                        );
-                        parts.push(json!({
-                            "type": "image_url",
-                            "image_url": { "url": data_uri },
-                        }));
-                    }
-                    out.push(json!({
-                        "role": "user",
-                        "content": parts,
-                    }));
+    while i < messages.len() {
+        match &messages[i] {
+            ChatMessage::InputText { .. } | ChatMessage::InputImage { .. } => {
+                let start = i;
+                while i < messages.len()
+                    && matches!(
+                        messages[i],
+                        ChatMessage::InputText { .. } | ChatMessage::InputImage { .. }
+                    )
+                {
+                    i += 1;
                 }
+                out.push(translate_user_group(&messages[start..i]));
             }
-            "assistant" => {
-                if let Some(tool_calls) = &msg.tool_calls {
-                    let calls: Vec<Value> = tool_calls
-                        .iter()
-                        .map(|c| {
-                            // OpenAI exige `arguments` como string JSON.
-                            let args_str = serde_json::to_string(&c.function.arguments)
-                                .unwrap_or_else(|_| "{}".into());
-                            json!({
-                                "id": c.id,
-                                "type": "function",
-                                "function": {
-                                    "name": c.function.name,
-                                    "arguments": args_str,
-                                }
-                            })
-                        })
-                        .collect();
-                    // OpenAI-compat aceita `content` junto com `tool_calls`
-                    // no turno do assistant — preserva o texto quando o
-                    // modelo devolve ambos, senão manda null.
-                    let content = if msg.content.is_empty() {
-                        Value::Null
-                    } else {
-                        Value::String(msg.content.clone())
-                    };
-                    out.push(json!({
-                        "role": "assistant",
-                        "content": content,
-                        "tool_calls": calls,
-                    }));
-                } else {
-                    out.push(json!({
-                        "role": "assistant",
-                        "content": msg.content,
-                    }));
+            ChatMessage::OutputText { .. } | ChatMessage::ToolCall { .. } => {
+                let start = i;
+                while i < messages.len()
+                    && matches!(
+                        messages[i],
+                        ChatMessage::OutputText { .. } | ChatMessage::ToolCall { .. }
+                    )
+                {
+                    i += 1;
                 }
-            }
-            "tool" => {
-                let tool_call_id = msg.tool_call_id.as_deref().unwrap_or("");
-                out.push(json!({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": msg.content,
-                }));
-            }
-            _ => {
-                // roles desconhecidos caem silenciosamente — igual aos
-                // outros providers.
+                expand_assistant_group(&messages[start..i], &mut call_id_seq, &mut out);
             }
         }
     }
 
     out
+}
+
+fn translate_user_group(group: &[ChatMessage]) -> Value {
+    // Caso comum: um único texto. Mantém `content` como string para não
+    // forçar o array de parts (mais barato e mais legível no log).
+    if let [ChatMessage::InputText { text }] = group {
+        return json!({ "role": "user", "content": text });
+    }
+
+    let mut parts: Vec<Value> = Vec::new();
+    for msg in group {
+        match msg {
+            ChatMessage::InputText { text } if text.is_empty() => {}
+            ChatMessage::InputText { text } => {
+                parts.push(json!({ "type": "text", "text": text }));
+            }
+            ChatMessage::InputImage { bytes, mime_type } => {
+                let data_uri = format!("data:{};base64,{}", mime_type, BASE64.encode(bytes));
+                parts.push(json!({
+                    "type": "image_url",
+                    "image_url": { "url": data_uri },
+                }));
+            }
+            _ => unreachable!("translate_user_group recebeu variante não-user"),
+        }
+    }
+    json!({ "role": "user", "content": parts })
+}
+
+/// Expande um run de variantes assistant em mensagens OpenAI:
+/// assistant → (tool messages com results) → assistant (sufixo).
+///
+/// `split` = índice da primeira `ToolCall` com `result: None`
+/// (ou `group.len()` se não houver). Se o prefix `[0..split]` contém
+/// pelo menos uma call com `result: Some`, emite o par
+/// assistant+tool_messages; caso contrário o run inteiro vira uma
+/// única mensagem assistant (evita dois `role=assistant` adjacentes).
+fn expand_assistant_group(group: &[ChatMessage], call_id_seq: &mut u64, out: &mut Vec<Value>) {
+    let split = group
+        .iter()
+        .position(|m| matches!(m, ChatMessage::ToolCall { result: None, .. }))
+        .unwrap_or(group.len());
+
+    let prefix_has_result = group[..split].iter().any(|m| {
+        matches!(
+            m,
+            ChatMessage::ToolCall {
+                result: Some(_),
+                ..
+            }
+        )
+    });
+
+    if !prefix_has_result {
+        // Nenhuma call resolvida → emite o run inteiro como um único
+        // assistant message (sem user turn subsequente).
+        out.push(build_assistant_message(group, call_id_seq, None));
+        return;
+    }
+
+    // Prefix carrega pelo menos uma call com result. Quebra em:
+    // assistant(prefix) → tool messages → assistant(sufixo) [se houver].
+    let mut collected_results: Vec<(String, String)> = Vec::new();
+    out.push(build_assistant_message(
+        &group[..split],
+        call_id_seq,
+        Some(&mut collected_results),
+    ));
+    for (id, content) in collected_results {
+        out.push(json!({
+            "role": "tool",
+            "tool_call_id": id,
+            "content": content,
+        }));
+    }
+    if split < group.len() {
+        out.push(build_assistant_message(&group[split..], call_id_seq, None));
+    }
+}
+
+/// Monta um único `role=assistant` com texto concatenado e `tool_calls`.
+/// Se `results_sink` for `Some`, cada call com `result: Some` tem seu
+/// id sintético e content empurrados lá (para emitir como `role=tool`
+/// logo em seguida).
+fn build_assistant_message(
+    slice: &[ChatMessage],
+    call_id_seq: &mut u64,
+    mut results_sink: Option<&mut Vec<(String, String)>>,
+) -> Value {
+    let mut text_chunks: Vec<&str> = Vec::new();
+    let mut tool_calls: Vec<Value> = Vec::new();
+
+    for msg in slice {
+        match msg {
+            ChatMessage::OutputText { text, .. } => {
+                if !text.is_empty() {
+                    text_chunks.push(text);
+                }
+            }
+            ChatMessage::ToolCall {
+                name,
+                arguments,
+                result,
+                ..
+            } => {
+                let id = format!("call_{}", *call_id_seq);
+                *call_id_seq += 1;
+                // OpenAI exige `arguments` como string JSON.
+                let args_str = serde_json::to_string(arguments).unwrap_or_else(|_| "{}".into());
+                tool_calls.push(json!({
+                    "id": &id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": args_str,
+                    }
+                }));
+                if let (Some(sink), Some(content)) = (results_sink.as_deref_mut(), result.as_ref())
+                {
+                    sink.push((id, content.clone()));
+                }
+            }
+            _ => unreachable!("build_assistant_message recebeu variante não-assistant"),
+        }
+    }
+
+    // OpenAI-compat aceita `content` junto com `tool_calls` no turno
+    // do assistant — preserva o texto quando o modelo devolve ambos,
+    // senão manda null.
+    let content = if text_chunks.is_empty() {
+        Value::Null
+    } else {
+        Value::String(text_chunks.concat())
+    };
+
+    if tool_calls.is_empty() {
+        json!({ "role": "assistant", "content": content })
+    } else {
+        json!({
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls,
+        })
+    }
 }
 
 // ── Tradução: response OpenAI → ChatResponse ──────────────────────────
@@ -312,43 +403,38 @@ fn translate_response(raw: &Value) -> Result<ChatResponse> {
         .unwrap_or("")
         .to_owned();
 
-    let tool_calls: Option<Vec<ToolCall>> = message
-        .get("tool_calls")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .enumerate()
-                .filter_map(|(i, call)| {
-                    let func = call.get("function")?;
-                    let name = func.get("name")?.as_str()?.to_owned();
-                    // OpenAI devolve `arguments` como string JSON, mas
-                    // alguns servidores compatíveis mandam objeto direto.
-                    // Aceitamos os dois formatos.
-                    let args = match func.get("arguments") {
-                        Some(Value::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
-                        Some(v) => v.clone(),
-                        None => Value::Null,
-                    };
-                    // Preferimos o id devolvido pelo servidor; se ausente,
-                    // fabricamos um estável baseado na posição — suficiente
-                    // para pareamento dentro desta mesma rodada.
-                    let id = call
-                        .get("id")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_owned())
-                        .unwrap_or_else(|| format!("ollama_call_{i}"));
-                    Some(ToolCall {
-                        id,
-                        function: ToolCallFunction {
-                            name,
-                            arguments: args,
-                        },
-                        thought_signature: None,
-                    })
-                })
-                .collect()
-        })
-        .filter(|v: &Vec<ToolCall>| !v.is_empty());
+    let mut messages: Vec<ChatMessage> = Vec::new();
+    if !content.is_empty() {
+        messages.push(ChatMessage::OutputText {
+            text: content,
+            thought_signature: None,
+        });
+    }
+
+    if let Some(arr) = message.get("tool_calls").and_then(|v| v.as_array()) {
+        for call in arr {
+            let Some(func) = call.get("function") else {
+                continue;
+            };
+            let Some(name) = func.get("name").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            // OpenAI devolve `arguments` como string JSON, mas alguns
+            // servidores compatíveis mandam objeto direto. Aceitamos os
+            // dois formatos.
+            let arguments = match func.get("arguments") {
+                Some(Value::String(s)) => serde_json::from_str(s).unwrap_or(Value::Null),
+                Some(v) => v.clone(),
+                None => Value::Null,
+            };
+            messages.push(ChatMessage::ToolCall {
+                name: name.to_owned(),
+                arguments,
+                result: None,
+                thought_signature: None,
+            });
+        }
+    }
 
     let usage = raw.get("usage");
     let input_tokens = usage
@@ -361,16 +447,10 @@ fn translate_response(raw: &Value) -> Result<ChatResponse> {
         .unwrap_or(0) as u32;
 
     Ok(ChatResponse {
-        message: ChatResponseMessage {
-            role: "assistant".into(),
-            content,
-            tool_calls,
-        },
-        usage: ChatUsage {
-            input_tokens,
-            output_tokens,
-            // Ollama roda local — sem custo monetário.
-            cost: 0.0,
-        },
+        messages,
+        input_tokens,
+        output_tokens,
+        // Ollama roda local — sem custo monetário.
+        cost: 0.0,
     })
 }

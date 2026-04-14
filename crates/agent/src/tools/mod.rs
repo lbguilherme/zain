@@ -38,15 +38,12 @@ pub struct ToolDef {
 }
 
 impl ToolDef {
-    pub fn to_ollama_json(&self) -> Value {
-        json!({
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
-            }
-        })
+    pub fn as_chat_tool(&self) -> ai::ChatTool<'_> {
+        ai::ChatTool {
+            name: self.name,
+            description: self.description,
+            parameters: &self.parameters,
+        }
     }
 }
 

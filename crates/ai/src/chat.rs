@@ -1,195 +1,103 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// ── Request types ──────────────────────────────────────────────────────
+// ── Mensagem ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<Vec<ToolCall>>,
-    /// Nome da tool a que este message responde (role="tool"). Usado pelo
-    /// provider Gemini para montar o `functionResponse.name`. É ignorado
-    /// na serialização para providers que não precisam do campo.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_name: Option<String>,
-    /// ID opaco da tool call a que este message responde (role="tool").
-    /// Espelha o `ToolCall.id` do turno anterior. O provider OpenAI-compat
-    /// (Ollama via `/v1/chat/completions`) exige esse campo para
-    /// correlacionar respostas com chamadas — só o nome não basta porque
-    /// a mesma tool pode ser chamada múltiplas vezes numa conversa.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub tool_call_id: Option<String>,
-    /// Imagens anexadas à mensagem. Vive fora do `content` porque cada
-    /// provider codifica anexos de forma diferente (Ollama espera base64
-    /// no campo `images`; Gemini espera `inlineData` parts). Por isso é
-    /// `skip_serializing` — cada provider reconstrói o wire format.
-    #[serde(skip, default)]
-    pub images: Vec<ChatImage>,
-}
-
-/// Imagem anexada a uma [`ChatMessage`]. Os bytes são crus — cada provider
-/// faz a codificação necessária (base64 para Ollama/Gemini) no momento do
-/// envio.
+/// Uma única "linha" da conversa.
 ///
-/// O campo opcional `label` permite identificar cada imagem (ex.: por ID
-/// do WhatsApp) para que o modelo correlacione menções no texto com o
-/// anexo correspondente. Quando presente, o Gemini emite um `text` part
-/// imediatamente antes do `inlineData` da imagem.
-#[derive(Debug, Clone)]
-pub struct ChatImage {
-    pub bytes: Vec<u8>,
-    pub mime_type: String,
-    pub label: Option<String>,
-}
-
-impl ChatImage {
-    pub fn new(bytes: Vec<u8>, mime_type: impl Into<String>) -> Self {
-        Self {
-            bytes,
-            mime_type: mime_type.into(),
-            label: None,
-        }
-    }
-
-    pub fn with_label(
+/// Variantes conceitualmente do mesmo turno (texto + imagem de input,
+/// texto + tool calls de output) ficam adjacentes na `Vec<ChatMessage>`;
+/// cada provider funde as adjacências do mesmo lado num único
+/// content/message no seu tradutor.
+///
+/// O system prompt vai como argumento separado de [`ChatRequest`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatMessage {
+    InputText {
+        text: String,
+    },
+    /// Imagem anexada ao turno de input. Os bytes são crus — a
+    /// codificação necessária para o wire format acontece no momento
+    /// do envio.
+    ///
+    /// Para correlacionar a imagem com menções no texto, empurre uma
+    /// `InputText` com o label imediatamente antes da `InputImage` —
+    /// os tradutores agrupam adjacências do mesmo lado num único
+    /// content/parts, então a ordem é preservada no wire.
+    ///
+    /// `bytes` é marcado `serde(skip)` porque serializar imagens em
+    /// base64 num log JSON é desperdício; quem precisar persistir deve
+    /// guardar os bytes por fora.
+    InputImage {
+        #[serde(skip, default)]
         bytes: Vec<u8>,
-        mime_type: impl Into<String>,
-        label: impl Into<String>,
-    ) -> Self {
-        Self {
-            bytes,
-            mime_type: mime_type.into(),
-            label: Some(label.into()),
-        }
-    }
+        mime_type: String,
+    },
+    OutputText {
+        text: String,
+        /// Assinatura opaca de "raciocínio" que alguns modelos anexam
+        /// ao Part e exigem de volta no turno seguinte. Providers que
+        /// não usam o campo ignoram; `skip_serializing_if` impede
+        /// vazamento no wire quando `None`.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        thought_signature: Option<String>,
+    },
+    /// Chamada de tool, já acoplada à sua resposta. O caller empurra
+    /// com `result: None`, executa a tool, e muta `result` em `Some(...)`
+    /// na mesma posição do histórico. O tradutor de cada provider
+    /// expande o par chamada+resultado no wire format nativo (uma
+    /// mensagem "assistant" com a call, seguida de uma mensagem de
+    /// resposta com o result).
+    ///
+    /// Invariante: a partir da primeira `ToolCall { result: None }`
+    /// dentro de um run de variantes de output, só podem vir
+    /// `OutputText` ou mais `ToolCall { result: None }`. Nunca outra
+    /// call com `Some` depois dessa fronteira — caller que violar
+    /// produz wire format rejeitado pelo provider.
+    ToolCall {
+        name: String,
+        arguments: Value,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        result: Option<String>,
+        /// Ver [`ChatMessage::OutputText::thought_signature`].
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        thought_signature: Option<String>,
+    },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    /// Identificador opaco da chamada. Vem do provider quando ele expõe
-    /// um id (ex.: OpenAI/Ollama via `/v1/chat/completions`) ou é gerado
-    /// pelo nosso lado quando não vem (ex.: Gemini). A resposta da tool
-    /// referencia este id via `ChatMessage.tool_call_id`, permitindo que
-    /// a mesma tool seja chamada múltiplas vezes na conversa sem
-    /// ambiguidade.
-    #[serde(default)]
-    pub id: String,
-    pub function: ToolCallFunction,
-    /// Assinatura opaca devolvida pelo Gemini 3.x junto com o `functionCall`.
-    /// DEVE ser reemitida no mesmo Part no turno seguinte, senão o Gemini
-    /// rejeita com 400 INVALID_ARGUMENT. Outros providers (Ollama etc.)
-    /// ignoram o campo — `skip_serializing_if` impede vazamento no wire.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub thought_signature: Option<String>,
+// ── Requisição ─────────────────────────────────────────────────────────
+
+/// Argumentos para [`crate::Client::chat`].
+pub struct ChatRequest<'a> {
+    /// Modelo qualificado pelo provider, no formato `"provider/modelo"`.
+    pub model: &'a str,
+    /// Prompt fixo que vai no topo da conversa. Passe `""` para omitir.
+    pub system: &'a str,
+    pub messages: &'a [ChatMessage],
+    pub tools: &'a [ChatTool<'a>],
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCallFunction {
-    pub name: String,
-    pub arguments: Value,
+/// Definição de uma tool exposta ao modelo. `parameters` é um JSON
+/// Schema — `Value` arbitrário porque o shape varia por tool.
+pub struct ChatTool<'a> {
+    pub name: &'a str,
+    pub description: &'a str,
+    pub parameters: &'a Value,
 }
 
-// ── Response types ─────────────────────────────────────────────────────
+// ── Resposta ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Deserialize)]
+/// Resultado de uma chamada de chat. `messages` carrega zero ou mais
+/// variantes de output ([`ChatMessage::OutputText`] e
+/// [`ChatMessage::ToolCall`]) na ordem em que o modelo as emitiu —
+/// pode haver texto antes, depois ou intercalado com tool calls.
+#[derive(Debug)]
 pub struct ChatResponse {
-    pub message: ChatResponseMessage,
-    #[serde(default)]
-    pub usage: ChatUsage,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ChatResponseMessage {
-    pub role: String,
-    #[serde(default)]
-    pub content: String,
-    pub tool_calls: Option<Vec<ToolCall>>,
-}
-
-/// Contabilidade de tokens e custo estimado de uma resposta. O custo
-/// é sempre em USD; providers sem pricing conhecido (ex.: Ollama local)
-/// devolvem `cost = 0.0`.
-#[derive(Debug, Default, Clone, Deserialize)]
-pub struct ChatUsage {
+    pub messages: Vec<ChatMessage>,
     pub input_tokens: u32,
     pub output_tokens: u32,
+    /// Custo estimado em USD, ou `0.0` quando o provider não expõe
+    /// pricing.
     pub cost: f64,
-}
-
-// ── ChatMessage constructors ───────────────────────────────────────────
-
-impl ChatMessage {
-    pub fn system(content: String) -> Self {
-        Self {
-            role: "system".into(),
-            content,
-            tool_calls: None,
-            tool_name: None,
-            tool_call_id: None,
-            images: Vec::new(),
-        }
-    }
-
-    pub fn user(content: String) -> Self {
-        Self {
-            role: "user".into(),
-            content,
-            tool_calls: None,
-            tool_name: None,
-            tool_call_id: None,
-            images: Vec::new(),
-        }
-    }
-
-    /// Mensagem `user` carregando uma ou mais imagens além do texto. O
-    /// `content` pode ser vazio se só as imagens importarem.
-    pub fn user_with_images(content: String, images: Vec<ChatImage>) -> Self {
-        Self {
-            role: "user".into(),
-            content,
-            tool_calls: None,
-            tool_name: None,
-            tool_call_id: None,
-            images,
-        }
-    }
-
-    /// Mensagem `tool` respondendo a uma chamada anterior. `call_id` deve
-    /// espelhar o `ToolCall.id` da chamada correspondente — é isso que
-    /// permite que a mesma tool seja chamada múltiplas vezes e cada
-    /// resposta seja pareada com a chamada certa.
-    pub fn tool(name: String, call_id: String, content: String) -> Self {
-        Self {
-            role: "tool".into(),
-            content,
-            tool_calls: None,
-            tool_name: Some(name),
-            tool_call_id: Some(call_id),
-            images: Vec::new(),
-        }
-    }
-
-    pub fn assistant(content: String) -> Self {
-        Self {
-            role: "assistant".into(),
-            content,
-            tool_calls: None,
-            tool_name: None,
-            tool_call_id: None,
-            images: Vec::new(),
-        }
-    }
-
-    pub fn assistant_tool_calls(content: String, calls: &[ToolCall]) -> Self {
-        Self {
-            role: "assistant".into(),
-            content,
-            tool_calls: Some(calls.to_vec()),
-            tool_name: None,
-            tool_call_id: None,
-            images: Vec::new(),
-        }
-    }
 }

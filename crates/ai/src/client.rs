@@ -8,9 +8,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use serde_json::Value;
 
-use crate::chat::{ChatMessage, ChatResponse};
+use crate::chat::{ChatRequest, ChatResponse};
 use crate::gemini::GeminiClient;
 use crate::ollama::OllamaClient;
 use crate::whisper::WhisperClient;
@@ -114,18 +113,14 @@ impl Client {
         Ok((provider, model))
     }
 
-    /// Chat com tool calls. O `model` deve ser qualificado pelo provider,
-    /// ex.: `"ollama/qwen3:8b"`.
-    pub async fn chat(
-        &self,
-        model: &str,
-        messages: &[ChatMessage],
-        tools: &[Value],
-    ) -> Result<ChatResponse> {
-        let (provider, model) = self.resolve(model)?;
+    /// Chat com tool calls. O `request.model` deve ser qualificado pelo
+    /// provider, ex.: `"ollama/qwen3:8b"`.
+    pub async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse> {
+        let (provider, model) = self.resolve(request.model)?;
+        let request = ChatRequest { model, ..request };
         match provider {
-            Provider::Ollama(c) => c.chat(model, messages, tools).await,
-            Provider::Gemini(c) => c.chat(model, messages, tools).await,
+            Provider::Ollama(c) => c.chat(request).await,
+            Provider::Gemini(c) => c.chat(request).await,
             Provider::Whisper(_) => bail!("provider 'whisper' não suporta chat"),
         }
     }
