@@ -25,6 +25,7 @@ version = "0.1.0"
 dependencies = [
  "ai",
  "anyhow",
+ "base64",
  "chrono",
  "cubos_sql",
  "deadpool-postgres",

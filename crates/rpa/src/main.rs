@@ -37,6 +37,14 @@ enum Command {
         /// CPF (11 dígitos) ou CNPJ (14 dígitos), com ou sem formatação.
         documento: String,
     },
+    /// Consulta o Certificado de MEI (CCMEI) pelo CPF ou CNPJ.
+    Certificado {
+        /// CPF (11 dígitos) ou CNPJ (14 dígitos), com ou sem formatação.
+        documento: String,
+        /// Caminho pra salvar o PDF baixado (opcional).
+        #[arg(long)]
+        pdf_out: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -78,6 +86,24 @@ async fn main() -> anyhow::Result<()> {
         Command::Pgfn { documento } => {
             let result = rpa::pgfn::consultar_divida(&documento).await?;
             println!("{}", serde_json::to_string_pretty(&result)?);
+        }
+        Command::Certificado { documento, pdf_out } => {
+            let result = rpa::mei::consultar_certificado(&documento).await?;
+            match result {
+                None => {
+                    eprintln!("→ sem MEI");
+                    println!("null");
+                }
+                Some(cert) => {
+                    eprintln!("→ MEI encontrado ({} bytes de PDF)", cert.pdf.len());
+                    if let Some(path) = pdf_out {
+                        std::fs::write(&path, &cert.pdf)?;
+                        eprintln!("→ PDF salvo em {path}");
+                    }
+                    // `pdf` é `#[serde(skip)]`, então não aparece aqui.
+                    println!("{}", serde_json::to_string_pretty(&cert)?);
+                }
+            }
         }
     }
 

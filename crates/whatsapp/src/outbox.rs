@@ -96,23 +96,48 @@ async fn process_outbox_batch(pool: &Pool, api: &WhapiClient) -> anyhow::Result<
         let msg_id: uuid::Uuid = msg.id;
         let chat_id: &str = &msg.chat_id;
         let content: &serde_json::Value = &msg.content;
+        let content_type: &str = &msg.content_type;
 
-        // Por enquanto só suporta texto
-        let body = content.get("body").and_then(|v| v.as_str()).unwrap_or("");
+        let send_result = match content_type {
+            "text" => {
+                let body = content.get("body").and_then(|v| v.as_str()).unwrap_or("");
+                if body.is_empty() {
+                    tracing::warn!(%msg_id, "Mensagem de texto do outbox sem body, pulando");
+                    mark_failed(pool, msg_id, "body vazio").await?;
+                    continue;
+                }
+                api.send_text(chat_id, body).await
+            }
+            "document" => {
+                let media = content.get("media").and_then(|v| v.as_str()).unwrap_or("");
+                if media.is_empty() {
+                    tracing::warn!(%msg_id, "Mensagem de documento do outbox sem media, pulando");
+                    mark_failed(pool, msg_id, "media vazio").await?;
+                    continue;
+                }
+                let filename = content.get("filename").and_then(|v| v.as_str());
+                let caption = content.get("caption").and_then(|v| v.as_str());
+                api.send_document(chat_id, media, filename, caption).await
+            }
+            other => {
+                tracing::warn!(%msg_id, %other, "content_type não suportado");
+                mark_failed(
+                    pool,
+                    msg_id,
+                    &format!("content_type não suportado: {other}"),
+                )
+                .await?;
+                continue;
+            }
+        };
 
-        if body.is_empty() {
-            tracing::warn!(%msg_id, "Mensagem do outbox sem body, pulando");
-            mark_failed(pool, msg_id, "body vazio").await?;
-            continue;
-        }
-
-        match api.send_text(chat_id, body).await {
+        match send_result {
             Ok(sent_id) => {
-                tracing::info!(%msg_id, %chat_id, "Mensagem enviada");
+                tracing::info!(%msg_id, %chat_id, content_type, "Mensagem enviada");
                 mark_sent(pool, msg_id, &sent_id).await?;
             }
             Err(e) => {
-                tracing::error!(%msg_id, %chat_id, "Erro enviando mensagem: {e:#}");
+                tracing::error!(%msg_id, %chat_id, content_type, "Erro enviando mensagem: {e:#}");
                 mark_failed(pool, msg_id, &e.to_string()).await?;
             }
         }

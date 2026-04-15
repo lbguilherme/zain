@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use ai::{ChatMessage, ChatRequest};
@@ -8,7 +9,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::dispatch::{
-    ClientRow, Models, WorkflowOutcome, save_client_memory, update_execution_messages,
+    ClientRow, Models, WorkflowOutcome, fetch_client_row, save_client_memory,
+    update_execution_messages,
 };
 use crate::history::ConversationMessage;
 use crate::prompt;
@@ -27,18 +29,24 @@ pub async fn run_workflow(
     exec_id: Uuid,
 ) -> anyhow::Result<WorkflowOutcome> {
     let ctx = ToolContext::new(pool.clone(), ai.clone(), models.clone(), client);
+    // Snapshot do cliente que segue *mutável* pelo turno — tools
+    // consequenciais podem mexer em colunas que afetam `enabled_when`
+    // de outras tools (ex: `abrir_empresa` persistindo `mei_ccmei_pdf`
+    // e destravando `send_ccmei`), então ao fim de cada iteração
+    // refetchamos o ClientRow do banco e recomputamos o set de tools.
+    let mut current_client = client.clone();
+    // Conjunto de tools que já foram chamadas neste turno. Uma tool
+    // que já apareceu no histórico NÃO pode sumir do set mesmo que
+    // o `enabled_when` atual diga que ela deveria estar desabilitada
+    // — se o LLM enxergou a tool no último prompt, o histórico de
+    // `ToolCall` referente a ela precisa continuar casando com uma
+    // definição presente no set, senão o provider rejeita.
+    let mut used_tool_names: HashSet<String> = HashSet::new();
     // Tools com `enabled_when` definido só entram no set do turno
     // quando o predicado bate com o estado atual do cliente. Isso
     // esconde do LLM tools que não fazem sentido no momento (ex:
     // `auth_govbr_otp` só aparece no meio de um fluxo de 2FA).
-    let installed_tools: Vec<Tool> = tools::all_tools()
-        .into_iter()
-        .filter(|t| t.enabled_when.map(|f| f(client)).unwrap_or(true))
-        .collect();
-    let chat_tools: Vec<ai::ChatTool> = installed_tools
-        .iter()
-        .map(|t| t.def.as_chat_tool())
-        .collect();
+    let mut installed_tools = filter_enabled_tools(&current_client, &used_tool_names);
 
     let system_prompt = prompt::build_system_prompt(pool, client).await?;
     let user_msg =
@@ -74,6 +82,13 @@ pub async fn run_workflow(
     let max_iterations = 10;
     for iteration in 0..max_iterations {
         let mut must_reprompt = false;
+        // Rebuild dos `ChatTool` a cada iteração — `chat_tools`
+        // referencia `installed_tools`, que pode ter sido recomputado
+        // no final da iteração anterior após o refetch do cliente.
+        let chat_tools: Vec<ai::ChatTool> = installed_tools
+            .iter()
+            .map(|t| t.def.as_chat_tool())
+            .collect();
         tracing::debug!(
             client_id = %client.id,
             iteration = iteration,
@@ -208,6 +223,12 @@ pub async fn run_workflow(
             // Tools desconhecidas são tratadas como consequenciais por segurança.
             let is_consequential = installed.map(|t| t.def.consequential).unwrap_or(true);
 
+            // Marca a tool como usada neste turno — independente de
+            // ter sido executada com sucesso. O filtro subsequente usa
+            // isso pra nunca remover do set uma tool que já apareceu
+            // no histórico de tool calls.
+            used_tool_names.insert(tool_name.clone());
+
             if is_consequential
                 && !executed_consequential
                 && has_new_messages(pool, &client.chat_id, known_max_ts).await?
@@ -272,11 +293,56 @@ pub async fn run_workflow(
         }
 
         update_execution_messages(pool, exec_id, &messages).await?;
+
+        // Refetch do snapshot do cliente antes da próxima iteração.
+        // As tools que acabaram de rodar podem ter mexido em colunas
+        // que destravam/escondem outras tools (ex: `auth_govbr`
+        // persistindo `mei_ccmei_pdf` e destravando `send_ccmei`).
+        // Tools que já foram usadas neste turno permanecem no set —
+        // ver comentário em `filter_enabled_tools`.
+        match fetch_client_row(pool, client.id, exec_id).await {
+            Ok(Some(refreshed)) => {
+                current_client = refreshed;
+                installed_tools = filter_enabled_tools(&current_client, &used_tool_names);
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    client_id = %client.id,
+                    "refetch do ClientRow devolveu None — mantendo snapshot anterior"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    client_id = %client.id,
+                    error = %e,
+                    "refetch do ClientRow falhou — mantendo snapshot anterior"
+                );
+            }
+        }
     }
 
     save_client_memory(pool, client.id, &memory).await?;
 
     Ok(WorkflowOutcome::Completed { llm_log: messages })
+}
+
+/// Monta o set de tools expostas ao LLM para a iteração corrente.
+/// Regras:
+/// - Tools sem `enabled_when` entram sempre.
+/// - Tools com `enabled_when` entram se o predicado bate com o
+///   snapshot atual do cliente.
+/// - Tools cujo nome já apareceu em `used_tool_names` entram SEMPRE,
+///   mesmo que o predicado diga que deveriam estar escondidas —
+///   remover do set depois que o LLM já emitiu uma `ToolCall` quebra
+///   o histórico da conversa com o provider.
+fn filter_enabled_tools(client: &ClientRow, used_tool_names: &HashSet<String>) -> Vec<Tool> {
+    tools::all_tools()
+        .into_iter()
+        .filter(|t| {
+            used_tool_names.contains(t.def.name)
+                || t.enabled_when.map(|f| f(client)).unwrap_or(true)
+        })
+        .collect()
 }
 
 async fn has_new_messages(

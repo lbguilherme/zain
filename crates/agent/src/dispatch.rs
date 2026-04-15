@@ -61,6 +61,9 @@ pub struct ClientRow {
     pub govbr_nome: Option<String>,
     /// Selo gov.br (bronze/prata/ouro) retornado pelo perfil.
     pub govbr_nivel: Option<Nivel>,
+    /// `true` quando `mei_ccmei_pdf IS NOT NULL` — temos o PDF do
+    /// certificado salvo pra enviar via `send_ccmei`. Derivada.
+    pub has_mei_ccmei_pdf: bool,
     pub memory: Value,
     pub last_whatsapp_message_processed_at: Option<DateTime<Utc>>,
     pub history_starts_at: Option<DateTime<Utc>>,
@@ -156,19 +159,26 @@ pub async fn claim_next_client(pool: &Pool) -> anyhow::Result<Option<ClientRow>>
 /// função em vez de construir o struct manualmente (ex: após `/reset`)
 /// garante que qualquer coluna nova adicionada ao SELECT seja
 /// automaticamente refletida em todos os caminhos.
-async fn load_client_row(
-    tx: &Transaction<'_>,
+/// Versão pool-based do `load_client_row`, usada no workflow pra
+/// refetchar o snapshot do cliente entre iterações (quando tools
+/// consequenciais podem ter mexido em colunas que afetam
+/// `enabled_when` de outras tools). Mantemos a função tx-based viva
+/// pra continuar sendo chamada dentro das transações do claim e do
+/// `/reset`.
+pub(crate) async fn fetch_client_row(
+    pool: &Pool,
     client_id: Uuid,
     exec_id: Uuid,
 ) -> anyhow::Result<Option<ClientRow>> {
     let row = sql!(
-        tx,
+        pool,
         "SELECT c.id, c.chat_id, c.phone, c.name,
                 c.cpf, c.cnpj, c.quer_abrir_mei,
                 c.pagamento_solicitado_em, c.recusa_motivo, c.recusado_em,
                 (c.govbr_session IS NOT NULL) AS govbr_autenticado,
                 (c.govbr_password IS NOT NULL) AS govbr_has_password,
                 c.govbr_nome, c.govbr_nivel,
+                (c.mei_ccmei_pdf IS NOT NULL) AS has_mei_ccmei_pdf,
                 c.memory,
                 c.last_whatsapp_message_processed_at, c.history_starts_at
          FROM zain.clients c
@@ -192,6 +202,52 @@ async fn load_client_row(
         govbr_has_password: r.govbr_has_password,
         govbr_nome: r.govbr_nome,
         govbr_nivel: r.govbr_nivel,
+        has_mei_ccmei_pdf: r.has_mei_ccmei_pdf,
+        memory: r.memory,
+        last_whatsapp_message_processed_at: r.last_whatsapp_message_processed_at,
+        history_starts_at: r.history_starts_at,
+        exec_id,
+    }))
+}
+
+async fn load_client_row(
+    tx: &Transaction<'_>,
+    client_id: Uuid,
+    exec_id: Uuid,
+) -> anyhow::Result<Option<ClientRow>> {
+    let row = sql!(
+        tx,
+        "SELECT c.id, c.chat_id, c.phone, c.name,
+                c.cpf, c.cnpj, c.quer_abrir_mei,
+                c.pagamento_solicitado_em, c.recusa_motivo, c.recusado_em,
+                (c.govbr_session IS NOT NULL) AS govbr_autenticado,
+                (c.govbr_password IS NOT NULL) AS govbr_has_password,
+                c.govbr_nome, c.govbr_nivel,
+                (c.mei_ccmei_pdf IS NOT NULL) AS has_mei_ccmei_pdf,
+                c.memory,
+                c.last_whatsapp_message_processed_at, c.history_starts_at
+         FROM zain.clients c
+         WHERE c.id = $client_id"
+    )
+    .fetch_optional()
+    .await?;
+
+    Ok(row.map(|r| ClientRow {
+        id: r.id,
+        chat_id: r.chat_id,
+        phone: r.phone,
+        name: r.name,
+        cpf: r.cpf,
+        cnpj: r.cnpj,
+        quer_abrir_mei: r.quer_abrir_mei,
+        pagamento_solicitado_em: r.pagamento_solicitado_em,
+        recusa_motivo: r.recusa_motivo,
+        recusado_em: r.recusado_em,
+        govbr_autenticado: r.govbr_autenticado,
+        govbr_has_password: r.govbr_has_password,
+        govbr_nome: r.govbr_nome,
+        govbr_nivel: r.govbr_nivel,
+        has_mei_ccmei_pdf: r.has_mei_ccmei_pdf,
         memory: r.memory,
         last_whatsapp_message_processed_at: r.last_whatsapp_message_processed_at,
         history_starts_at: r.history_starts_at,

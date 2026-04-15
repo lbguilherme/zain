@@ -21,6 +21,7 @@ use deadpool_postgres::Pool;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::certificado::{CertificadoMei, consultar_certificado};
 use crate::govbr::launch;
 use crate::govbr::session::{self, SavedSession};
 
@@ -146,9 +147,32 @@ pub struct Endereco {
     pub logradouro: Option<String>,
 }
 
+/// Resultado da checagem de elegibilidade para abertura de MEI.
+/// Quando `pode_abrir == false`, `motivo` carrega a mensagem exata do
+/// banner de impedimento do portal (ex: "CPF já vinculado a outro
+/// CNPJ"), pra o caller poder repassar ao cliente sem adivinhar.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElegibilidadeMei {
+    pub pode_abrir: bool,
+    pub motivo: Option<String>,
+}
+
+/// Resultado de uma inscrição MEI bem-sucedida: o CNPJ gerado + o
+/// CCMEI consultado logo na sequência. A consulta é `best effort` —
+/// se o portal do CCMEI estiver instável, `ccmei` fica `None` e o
+/// caller lida com isso (tipicamente tentando de novo depois). A
+/// abertura em si foi confirmada pelo CNPJ, então isso não é erro.
+#[derive(Debug, Clone)]
+pub struct InscricaoMeiOutcome {
+    pub cnpj: String,
+    pub ccmei: Option<CertificadoMei>,
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────
 
-/// Executa a inscrição de MEI no Portal do Empreendedor.
+/// Executa a inscrição de MEI no Portal do Empreendedor e, na sequência,
+/// consulta o CCMEI pelo CNPJ recém-gerado pra devolver o certificado
+/// completo.
 ///
 /// Requer uma [`SavedSession`] válida do gov.br — tipicamente obtida via
 /// [`crate::govbr::check_govbr_profile`]. O CPF do titular vem implícito
@@ -165,7 +189,7 @@ pub async fn inscrever_mei(
     ai_model: &str,
     saved: &SavedSession,
     params: InscricaoMei,
-) -> Result<String, InscricaoMeiError> {
+) -> Result<InscricaoMeiOutcome, InscricaoMeiError> {
     // Sanity checks — pegamos aqui pra falhar rápido antes de subir o browser.
     if params.formas_atuacao.is_empty() {
         return Err(anyhow::anyhow!(
@@ -270,15 +294,9 @@ pub async fn inscrever_mei(
         .await?;
         marcar_declaracoes(&page).await?;
 
-        // MODO VALIDAÇÃO MANUAL: form preenchido mas NÃO submetido.
-        // Mantém o browser aberto por 5 horas para conferência manual.
-        tracing::info!("formulário preenchido — aguardando 5h para validação manual");
-        tokio::time::sleep(Duration::from_secs(5 * 60 * 60)).await;
-
-        // Após a janela de validação manual, clica "Continuar" para
-        // submeter o form. O botão fica no `.button-row` ao lado do
-        // "Cancelar" (que é um `<a>` disfarçado de botão) — casamos pelo
-        // `type=submit` pra desambiguar.
+        // Clica "Continuar" para submeter o form. O botão fica no
+        // `.button-row` ao lado do "Cancelar" (que é um `<a>` disfarçado
+        // de botão) — casamos pelo `type=submit` pra desambiguar.
         tracing::info!("clicando em Continuar para submeter a inscrição");
         click_js(&page, ".button-row button[type=submit].br-button.primary").await?;
 
@@ -377,6 +395,95 @@ pub async fn inscrever_mei(
         tracing::info!(%cnpj, "inscrição MEI concluída");
 
         Ok(cnpj)
+    }
+    .await;
+
+    let _ = browser.close().await;
+    let _ = process.wait().await;
+    let cnpj = result?;
+
+    // Após o browser da inscrição estar fechado, sobe um novo pra
+    // consultar o CCMEI pelo CNPJ recém-gerado. Best effort: se o
+    // portal do certificado estiver instável ou o CNPJ ainda não
+    // estiver indexado, guardamos `None` e deixamos o caller tentar
+    // de novo — a abertura em si já deu certo.
+    tracing::info!(%cnpj, "consultando CCMEI após abertura");
+    let ccmei = match consultar_certificado(&cnpj).await {
+        Ok(Some(cert)) => Some(cert),
+        Ok(None) => {
+            tracing::warn!(
+                %cnpj,
+                "CCMEI retornou vazio logo após inscrição — CNPJ pode ainda não estar indexado"
+            );
+            None
+        }
+        Err(e) => {
+            tracing::warn!(
+                %cnpj,
+                error = %e,
+                "falha ao consultar CCMEI após inscrição"
+            );
+            None
+        }
+    };
+
+    Ok(InscricaoMeiOutcome { cnpj, ccmei })
+}
+
+/// Checa se um CPF tem direito a abrir MEI. Abre o form de inscrição
+/// com uma sessão gov.br previamente validada e observa o que acontece:
+///
+/// - Formulário aparece (`app-inscrever input[name=identidade]`) →
+///   `pode_abrir: true`.
+/// - Portal exibe banner `.br-message.danger` com impedimento (ex: CPF
+///   já vinculado a outro CNPJ) → `pode_abrir: false` + `motivo` com o
+///   texto exato do banner.
+/// - Sessão gov.br inválida → [`InscricaoMeiError::SessaoInvalida`], o
+///   caller deve revalidar antes de tentar de novo.
+///
+/// Reusa a mesma navegação + [`wait_for_inscrever_form`] do fluxo de
+/// inscrição — por isso os consentimentos OAuth/LGPD eventuais também
+/// são aceitos aqui, sem efeitos colaterais (o formulário só abre e
+/// depois fechamos o browser sem submeter nada).
+pub async fn checar_pode_abrir_mei(
+    saved: &SavedSession,
+) -> Result<ElegibilidadeMei, InscricaoMeiError> {
+    let opts = launch::options_with_extensions().await?;
+    let (mut process, browser) = chromium_driver::launch(opts).await?;
+
+    let result: Result<ElegibilidadeMei, InscricaoMeiError> = async {
+        let page = browser.create_page("about:blank").await?.attach().await?;
+        page.enable().await?;
+
+        session::restore(&browser, &page, saved).await?;
+
+        page.navigate(INSCRICAO_URL).await?;
+        page.wait_for_load(DEFAULT_TIMEOUT).await.ok();
+
+        let dom = page.dom().await?;
+        dom.wait_for(
+            "app-login-inscricao button.br-button[primary]",
+            DEFAULT_TIMEOUT,
+        )
+        .await?;
+        click_js(&page, "app-login-inscricao button.br-button[primary]").await?;
+
+        // [`wait_for_inscrever_form`] retorna `Impedimento(msg)` quando
+        // o banner de erro terminal aparece — pra nós isso é sucesso da
+        // checagem (sabemos a resposta). Converte em `pode_abrir: false`
+        // com o motivo. Qualquer outro erro (Sessão inválida, CDP, ...)
+        // é propagado.
+        match wait_for_inscrever_form(&page, dom).await {
+            Ok(()) => Ok(ElegibilidadeMei {
+                pode_abrir: true,
+                motivo: None,
+            }),
+            Err(InscricaoMeiError::Impedimento(msg)) => Ok(ElegibilidadeMei {
+                pode_abrir: false,
+                motivo: Some(msg),
+            }),
+            Err(e) => Err(e),
+        }
     }
     .await;
 

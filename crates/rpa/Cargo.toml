@@ -31,3 +31,4 @@ extra_migrations = ["../dados-abertos/sql"]
 
 [package.metadata.cubos_sql.domains]
 "zain.govbr_session" = "::rpa::govbr::session::SavedSession"
+"zain.mei_ccmei" = "::rpa::mei::CertificadoMei"

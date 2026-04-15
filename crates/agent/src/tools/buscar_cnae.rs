@@ -30,7 +30,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "buscar_cnae",
-            description: "Busca ocupações MEI-compatíveis a partir de um código CNAE (ex: '4520-0/01', '4520001') ou de uma descrição livre da atividade (ex: 'doces artesanais', 'conserto celular'). Retorna `pode_ser_mei` (bool) e até 6 matches com `codigo`, `ocupacao` e `descricao`. **OBRIGATÓRIO**: depois que esta tool retornar, você DEVE chamar send_whatsapp_message com uma resposta ao cliente baseada no resultado. Nunca termine o turno sem responder ao cliente.",
+            description: "Busca ocupações MEI-compatíveis a partir de um código CNAE (ex: '4520-0/01', '4520001') ou de uma descrição livre da atividade (ex: 'doces artesanais', 'conserto celular'). Use quando o cliente descrever o que ele faz pra validar se a atividade encaixa como MEI e pra achar o CNAE correto antes de chamar `abrir_empresa`.",
             consequential: false,
             parameters: params_for::<Args>(),
         },
@@ -106,10 +106,11 @@ async fn run_code(pool: &Pool, client_id: Uuid, codigo: &str) -> Result<Value, V
                     })
                 })
                 .collect();
-            Ok(json!({
-                "pode_ser_mei": !matches.is_empty(),
-                "matches": matches,
-            }))
+            if matches.is_empty() {
+                Ok(json!(format!("Nenhum CNAE encontrado para: {}", codigo)))
+            } else {
+                Ok(json!(matches))
+            }
         }
         Err(e) => {
             tracing::warn!(

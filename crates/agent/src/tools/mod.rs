@@ -24,9 +24,9 @@ mod govbr;
 mod iniciar_pagamento;
 mod pgfn;
 mod recusar_lead;
-mod save_cnpj;
 mod save_cpf;
 mod save_quer_abrir_mei;
+mod send_ccmei;
 mod send_whatsapp_message;
 mod wait_client_message;
 
@@ -65,7 +65,7 @@ pub struct ToolOutput {
     /// `Tool::must_use_tool_result`, só que decidido por chamada em
     /// vez de por tool. Útil quando uma tool às vezes devolve sucesso
     /// (pode seguir pro wait_client_message) e às vezes devolve um erro que exige
-    /// reação do LLM (ex: `save_cnpj` quando o CNPJ não é MEI).
+    /// reação do LLM (ex: `save_cpf` quando o PGFN acusa pendência).
     pub is_error: bool,
 }
 
@@ -148,7 +148,6 @@ pub fn all_tools() -> Vec<Tool> {
         wait_client_message::tool(),
         save_cpf::tool(),
         save_quer_abrir_mei::tool(),
-        save_cnpj::tool(),
         govbr::auth_tool(),
         govbr::otp_tool(),
         anotar::tool(),
@@ -156,6 +155,7 @@ pub fn all_tools() -> Vec<Tool> {
         recusar_lead::tool(),
         buscar_cnae::tool(),
         abrir_empresa::tool(),
+        send_ccmei::tool(),
     ]
 }
 

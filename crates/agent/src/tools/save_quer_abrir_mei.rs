@@ -17,7 +17,7 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "save_quer_abrir_mei",
-            description: "Registra se a pessoa tem intenção de abrir um MEI novo. Use `true` quando ela disser que quer abrir/começar um MEI (e ainda não tem CNPJ). Use `false` quando ela desistir. Quando a pessoa diz que já tem MEI e você confirma o CNPJ via `save_cnpj`, não precisa chamar esta tool.",
+            description: "Registra se a pessoa tem intenção de abrir um MEI novo. Use `true` quando ela disser que quer abrir/começar um MEI (e ainda não tem CNPJ). Use `false` quando ela desistir. Quando a pessoa diz que já tem MEI, NÃO chame esta tool — o `auth_govbr` já persiste o CNPJ automaticamente quando encontra um MEI ativo no CPF do cliente.",
             consequential: false,
             parameters: params_for::<Args>(),
         },

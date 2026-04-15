@@ -1,10 +1,15 @@
 //! RPA para consulta de optantes do Simples Nacional / SIMEI.
 
+pub mod certificado;
 pub mod consulta;
 pub mod inscricao;
 
+pub use certificado::{CertificadoMei, EnderecoCertificado, PeriodoMei, consultar_certificado};
 pub use consulta::consultar_optante;
-pub use inscricao::{Endereco, InscricaoMei, inscrever_mei};
+pub use inscricao::{
+    ElegibilidadeMei, Endereco, InscricaoMei, InscricaoMeiOutcome, checar_pode_abrir_mei,
+    inscrever_mei,
+};
 
 use serde::{Deserialize, Serialize};
 

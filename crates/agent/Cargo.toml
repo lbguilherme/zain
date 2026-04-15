@@ -23,6 +23,7 @@ rpa = { path = "../rpa" }
 pgvector = { version = "0.4", features = ["postgres", "halfvec"] }
 half = "2"
 schemars = "1"
+base64 = "0.22"
 
 [package.metadata.cubos_sql.database]
 migrations = "../../migrations"
@@ -33,3 +34,4 @@ extra_migrations = ["../dados-abertos/sql"]
 
 [package.metadata.cubos_sql.domains]
 "zain.govbr_session" = "::rpa::govbr::session::SavedSession"
+"zain.mei_ccmei" = "::rpa::mei::CertificadoMei"

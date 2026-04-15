@@ -116,4 +116,42 @@ impl WhapiClient {
 
         Ok(msg_id)
     }
+
+    /// Envia um documento para um chat. `media` é uma data URL no
+    /// formato `data:{mime};base64,{data}`. `filename` é o nome exibido
+    /// no chat e `caption` vira a legenda opcional. Retorna o ID da
+    /// mensagem enviada.
+    pub async fn send_document(
+        &self,
+        chat_id: &str,
+        media: &str,
+        filename: Option<&str>,
+        caption: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let mut payload = serde_json::json!({
+            "to": chat_id,
+            "media": media,
+        });
+        if let Some(name) = filename {
+            payload["filename"] = serde_json::Value::String(name.to_owned());
+        }
+        if let Some(c) = caption {
+            payload["caption"] = serde_json::Value::String(c.to_owned());
+        }
+
+        let resp = self
+            .http
+            .post(format!("{}/messages/document", self.base_url))
+            .bearer_auth(&self.token)
+            .json(&payload)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<SendMessageResponse>()
+            .await?;
+
+        let msg_id = resp.message.and_then(|m| m.id).unwrap_or_default();
+
+        Ok(msg_id)
+    }
 }

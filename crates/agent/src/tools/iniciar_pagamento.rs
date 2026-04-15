@@ -50,15 +50,16 @@ pub fn tool() -> Tool {
 
             // Qualificação: o lead precisa estar num estado onde faz
             // sentido cadastrar o cartão. Ou já tem CNPJ MEI salvo
-            // (save_cnpj só salva quando SIMEI confirma), ou declarou
-            // intenção de abrir um novo MEI.
+            // (persistido automaticamente pelo `auth_govbr` quando a
+            // consulta CCMEI confirma MEI ativo), ou declarou intenção
+            // de abrir um novo MEI.
             let tem_cnpj = row.cnpj.is_some();
             let quer_abrir = row.quer_abrir_mei == Some(true);
             if !tem_cnpj && !quer_abrir {
                 return ToolOutput::err(
                     json!({
                         "status": "erro",
-                        "mensagem": "Lead não qualificado. Precisa ter CNPJ MEI salvo (save_cnpj) OU declarar intenção de abrir MEI (save_quer_abrir_mei=true)."
+                        "mensagem": "Lead não qualificado. Precisa ter MEI confirmado (o `auth_govbr` persiste o CNPJ automaticamente quando encontra um MEI ativo) OU declarar intenção de abrir MEI (save_quer_abrir_mei=true)."
                     }),
                     memory,
                 );

@@ -2,11 +2,11 @@
 //!
 //! A consulta custa 15-30s por scraping, então cacheamos em
 //! `zain.pgfn_cache` com TTL de 48h. É usada como gate no
-//! `save_cpf` e `save_cnpj`: antes de persistir o documento a
-//! gente confirma que não existe pendência acima do limite — o
-//! objetivo é recusar o lead *antes* de começar a coleta do resto
-//! dos dados, em vez de descobrir lá na frente que ele não vai
-//! virar cliente.
+//! `save_cpf` (antes de persistir o CPF) e dentro do `auth_govbr`
+//! (quando o CCMEI confirma um MEI ativo, o CNPJ descoberto passa
+//! pela mesma verificação antes de seguir). O objetivo é recusar
+//! o lead *antes* de começar a coleta do resto dos dados, em vez
+//! de descobrir lá na frente que ele não vai virar cliente.
 
 use cubos_sql::sql;
 use deadpool_postgres::Pool;

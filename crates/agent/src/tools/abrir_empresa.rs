@@ -10,15 +10,14 @@
 
 use cubos_sql::sql;
 use deadpool_postgres::Pool;
-use rpa::govbr::session::SavedSession;
 use rpa::mei::inscricao::InscricaoMeiError;
-use rpa::mei::{Endereco, InscricaoMei, inscrever_mei};
+use rpa::mei::{Endereco, InscricaoMei, InscricaoMeiOutcome, inscrever_mei};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::{Tool, ToolContext, ToolDef, ToolOutput, params_for, typed_handler};
+use super::{Tool, ToolContext, ToolDef, ToolOutput, govbr, params_for, typed_handler};
 use crate::dispatch::ClientRow;
 
 /// Predicado que decide se `abrir_empresa` está disponível pro lead
@@ -92,8 +91,8 @@ pub fn tool() -> Tool {
     Tool {
         def: ToolDef {
             name: "abrir_empresa",
-            description: "Abre o MEI do cliente e gera o CNPJ. Retorna `status: ok` + `cnpj` quando a abertura foi concluída. Pode demorar vários minutos.\n\n\
-**PRÉ-REQUISITO 1 — autenticação gov.br:** o cliente precisa estar autenticado no gov.br ANTES de chamar esta tool, isto é, `auth_govbr` (e, se for o caso, `auth_govbr_otp`) já retornou `status: ok`.\n\n\
+            description: "Abre o MEI do cliente e gera o CNPJ no Portal do Empreendedor. Pode demorar vários minutos. Chame quando o cliente já está logado no gov.br (via `auth_govbr`) e você já coletou TODOS os dados exigidos pelo cadastro.\n\n\
+**PRÉ-REQUISITO 1 — autenticação gov.br:** o cliente precisa estar autenticado no gov.br ANTES de chamar esta tool, isto é, `auth_govbr` (e, se for o caso, `auth_govbr_otp`) já concluiu com sucesso.\n\n\
 **PRÉ-REQUISITO 2 — TODOS os dados do cadastro coletados.** A tool não lê nada do banco além da sessão gov.br; tudo vai como argumento direto. NÃO chame com campos faltando — colete todos antes, um a um, na conversa natural do WhatsApp, e use `anotar` pra preservar cada dado entre turnos. Dados obrigatórios:\n\n\
 1. **`rg_identidade`** — número do RG (identidade civil) do titular.\n\
 2. **`rg_orgao_emissor`** — órgão emissor do RG (ex: SSP, DETRAN).\n\
@@ -111,27 +110,14 @@ Dados opcionais:\n\n\
             parameters: params_for::<Args>(),
         },
         handler: typed_handler(|ctx: ToolContext, args: Args, memory| async move {
-            let session = match load_session(&ctx.pool, ctx.client_id).await {
-                Ok(Some(s)) => s,
-                Ok(None) => {
-                    return ToolOutput::err(
-                        json!({
-                            "status": "erro",
-                            "mensagem": "Nenhuma sessão gov.br ativa para este cliente. Chame auth_govbr (e auth_govbr_otp se necessário) antes de tentar abrir a empresa."
-                        }),
-                        memory,
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(client_id = %ctx.client_id, error = %e, "abrir_empresa: falha ao ler sessão gov.br");
-                    return ToolOutput::err(
-                        json!({
-                            "status": "erro",
-                            "mensagem": format!("Falha ao ler sessão gov.br: {e}")
-                        }),
-                        memory,
-                    );
-                }
+            // Revalida a sessão gov.br antes de tudo: tenta reusar a
+            // sessão salva e, se falhar, tenta relogar com a senha
+            // salva. Se precisar de OTP, a senha ficar inválida, ou o
+            // gov.br estiver instável, o helper já devolve um payload
+            // pronto com orientação pro LLM — só propagamos.
+            let session = match govbr::ensure_valid_session(&ctx.pool, ctx.client_id).await {
+                Ok(s) => s,
+                Err(payload) => return ToolOutput::err(payload, memory),
             };
 
             let params = InscricaoMei {
@@ -161,20 +147,39 @@ Dados opcionais:\n\n\
             let elapsed_ms = start.elapsed().as_millis() as u64;
 
             match outcome {
-                Ok(cnpj) => {
+                Ok(InscricaoMeiOutcome { cnpj, ccmei }) => {
                     tracing::info!(
                         client_id = %ctx.client_id,
                         elapsed_ms,
                         %cnpj,
+                        ccmei_ok = ccmei.is_some(),
                         "abrir_empresa: inscrição concluída"
                     );
-                    if let Err(e) = save_cnpj(&ctx.pool, ctx.client_id, &cnpj).await {
-                        tracing::warn!(client_id = %ctx.client_id, error = %e, "abrir_empresa: falha ao persistir CNPJ gerado");
+                    // Se o CCMEI veio junto, persiste tudo via save_mei
+                    // (que também grava CNPJ e zera quer_abrir_mei). Se
+                    // não veio (SIMEI instável), pelo menos grava o
+                    // CNPJ pra o lead virar qualificado.
+                    let persist_result = if let Some(cert) = &ccmei {
+                        govbr::save_mei(&ctx.pool, ctx.client_id, cert).await
+                    } else {
+                        save_cnpj(&ctx.pool, ctx.client_id, &cnpj).await
+                    };
+                    if let Err(e) = persist_result {
+                        tracing::warn!(
+                            client_id = %ctx.client_id,
+                            error = %e,
+                            "abrir_empresa: falha ao persistir resultado da abertura"
+                        );
                     }
+                    let mei_value = ccmei
+                        .as_ref()
+                        .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
+                        .unwrap_or(Value::Null);
                     ToolOutput::new(
                         json!({
                             "status": "ok",
                             "cnpj": cnpj,
+                            "mei": mei_value,
                         }),
                         memory,
                     )
@@ -220,16 +225,6 @@ fn map_error(err: &InscricaoMeiError) -> Value {
         "motivo": motivo,
         "mensagem": err.to_string(),
     })
-}
-
-async fn load_session(pool: &Pool, client_id: Uuid) -> anyhow::Result<Option<SavedSession>> {
-    let row = sql!(
-        pool,
-        "SELECT govbr_session FROM zain.clients WHERE id = $client_id"
-    )
-    .fetch_optional()
-    .await?;
-    Ok(row.and_then(|r| r.govbr_session))
 }
 
 async fn save_cnpj(pool: &Pool, client_id: Uuid, cnpj: &str) -> anyhow::Result<()> {
