@@ -20,7 +20,7 @@ pub fn tool() -> Tool {
             parameters: params_for::<Args>(),
         },
         handler: typed_handler(|ctx: ToolContext, args: Args, memory| async move {
-            let motivo: Option<&str> = Some(&args.motivo);
+            let motivo = &args.motivo;
             let client_id = ctx.client_id;
             match sql!(
                 &ctx.pool,

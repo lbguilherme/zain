@@ -246,8 +246,6 @@ async fn save_credentials(
     cpf: &str,
     password: &str,
 ) -> anyhow::Result<()> {
-    let cpf: Option<&str> = Some(cpf);
-    let password: Option<&str> = Some(password);
     sql!(
         pool,
         "UPDATE zain.clients
@@ -466,7 +464,7 @@ async fn load_credentials(pool: &Pool, client_id: Uuid) -> anyhow::Result<Option
 
 async fn save_success(pool: &Pool, client_id: Uuid, outcome: &CheckOutcome) -> anyhow::Result<()> {
     let session: SavedSession = outcome.session.clone();
-    let nome: Option<&str> = Some(&outcome.profile.nome);
+    let nome = &outcome.profile.nome;
     let email = outcome.profile.email.as_deref();
     let telefone = outcome.profile.telefone.as_deref();
     let nivel = outcome.profile.nivel;
@@ -677,15 +675,14 @@ pub(super) async fn save_mei(
     cert: &CertificadoMei,
 ) -> anyhow::Result<()> {
     let cnpj_digits: String = cert.cnpj.chars().filter(|c| c.is_ascii_digit()).collect();
-    let cnpj_opt: Option<String> = Some(cnpj_digits);
-    let quer_abrir_mei_false: Option<bool> = Some(false);
+    let quer_abrir_mei_false = false;
     let mei_ccmei: CertificadoMei = cert.clone();
-    let mei_ccmei_pdf: Option<Vec<u8>> = Some(cert.pdf.clone());
+    let mei_ccmei_pdf = cert.pdf.clone();
 
     sql!(
         pool,
         "UPDATE zain.clients
-         SET cnpj              = $cnpj_opt,
+         SET cnpj              = $cnpj_digits,
              quer_abrir_mei    = $quer_abrir_mei_false,
              mei_ccmei         = $mei_ccmei!,
              mei_ccmei_pdf     = $mei_ccmei_pdf,

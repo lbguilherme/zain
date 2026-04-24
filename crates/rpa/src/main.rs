@@ -155,7 +155,7 @@ async fn save_govbr(
     outcome: &rpa::govbr::CheckOutcome,
 ) -> anyhow::Result<()> {
     let session = outcome.session.clone();
-    let nome: Option<&str> = Some(&outcome.profile.nome);
+    let nome = &outcome.profile.nome;
     let email = outcome.profile.email.as_deref();
     let telefone = outcome.profile.telefone.as_deref();
     let nivel: Option<Nivel> = outcome.profile.nivel;

@@ -104,7 +104,7 @@ async fn validate_pending(pool: &Pool) -> anyhow::Result<()> {
 
 async fn save_success(pool: &Pool, client_id: Uuid, outcome: &CheckOutcome) -> anyhow::Result<()> {
     let session: SavedSession = outcome.session.clone();
-    let nome: Option<&str> = Some(&outcome.profile.nome);
+    let nome = &outcome.profile.nome;
     let email = outcome.profile.email.as_deref();
     let telefone = outcome.profile.telefone.as_deref();
     let nivel = outcome.profile.nivel;

@@ -40,11 +40,10 @@ pub fn tool() -> Tool {
             }
 
             // 2) PGFN ok — persiste o CPF.
-            let cpf: Option<&str> = Some(&cpf_digits);
             let client_id = ctx.client_id;
             match sql!(
                 &ctx.pool,
-                "UPDATE zain.clients SET cpf = $cpf, updated_at = now() WHERE id = $client_id"
+                "UPDATE zain.clients SET cpf = $cpf_digits, updated_at = now() WHERE id = $client_id"
             )
             .execute()
             .await

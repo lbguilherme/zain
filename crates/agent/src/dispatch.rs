@@ -486,7 +486,7 @@ pub async fn update_execution_messages(
     exec_id: Uuid,
     messages: &[ChatMessage],
 ) -> anyhow::Result<()> {
-    let llm_json: Option<Value> = Some(serde_json::to_value(messages)?);
+    let llm_json = serde_json::to_value(messages)?;
 
     sql!(
         pool,
@@ -499,8 +499,6 @@ pub async fn update_execution_messages(
 }
 
 async fn fail_execution(pool: &Pool, exec_id: Uuid, error: &str) -> anyhow::Result<()> {
-    let error = Some(error);
-
     sql!(
         pool,
         "UPDATE zain.executions

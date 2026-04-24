@@ -229,12 +229,11 @@ fn map_error(err: &InscricaoMeiError) -> Value {
 
 async fn save_cnpj(pool: &Pool, client_id: Uuid, cnpj: &str) -> anyhow::Result<()> {
     let cnpj_digits: String = cnpj.chars().filter(|c| c.is_ascii_digit()).collect();
-    let cnpj_opt: Option<&str> = Some(&cnpj_digits);
-    let quer_abrir_mei_false: Option<bool> = Some(false);
+    let quer_abrir_mei_false = false;
     sql!(
         pool,
         "UPDATE zain.clients
-         SET cnpj           = $cnpj_opt,
+         SET cnpj           = $cnpj_digits,
              quer_abrir_mei = $quer_abrir_mei_false,
              updated_at     = now()
          WHERE id = $client_id"
