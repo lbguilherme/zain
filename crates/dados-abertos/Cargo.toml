@@ -3,7 +3,7 @@ name = "dados-abertos"
 version = "0.1.0"
 edition = "2024"
 
-[package.metadata.cubos_sql.database]
+[package.metadata.pgsafe.database]
 migrations = "../../migrations"
 extra_schema_migrations = ["sql"]
 
@@ -14,7 +14,7 @@ bytes = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "env"] }
 csv = "1"
-cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main", default-features = false }
+pgsafe = { git = "ssh://git@github.com/cubos/pgsafe.git", branch = "main", default-features = false }
 encoding_rs = "0.8"
 futures-util = "0.3"
 half = "2"

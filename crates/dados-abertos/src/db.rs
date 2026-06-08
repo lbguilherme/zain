@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use cubos_sql::sql;
+use pgsafe::sql;
 use tokio_postgres::{Client, NoTls, Transaction};
 
 use crate::schema::Table;

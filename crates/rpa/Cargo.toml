@@ -8,7 +8,7 @@ ai = { path = "../ai" }
 chromium-driver = { path = "../chromium-driver" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 zip = { version = "8", default-features = false, features = ["deflate"] }
-cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main" }
+pgsafe = { git = "ssh://git@github.com/cubos/pgsafe.git", branch = "main" }
 deadpool-postgres = "0.14"
 tokio-postgres = "0.7"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
@@ -18,17 +18,13 @@ schemars = "1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-clap = { version = "4", features = ["derive"] }
 anyhow = "1"
-dotenvy = "0.15"
 
-[package.metadata.cubos_sql.database]
+[package.metadata.pgsafe.database]
 migrations = "../../migrations"
 extra_migrations = ["../dados-abertos/sql"]
 
-[package.metadata.cubos_sql.enums]
+[package.metadata.pgsafe.types]
 "zain.govbr_nivel" = "::rpa::govbr::Nivel"
-
-[package.metadata.cubos_sql.domains]
 "zain.govbr_session" = "::rpa::govbr::session::SavedSession"
 "zain.mei_ccmei" = "::rpa::mei::CertificadoMei"

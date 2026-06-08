@@ -1,13 +1,13 @@
 [package]
-name = "agent"
+name = "mcp"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cubos_sql = { git = "ssh://git@github.com/lbguilherme/cubos_sql.git", branch = "main" }
+pgsafe = { git = "ssh://git@github.com/cubos/pgsafe.git", branch = "main" }
 deadpool-postgres = "0.14"
 tokio-postgres = "0.7"
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "signal", "sync"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "signal", "sync", "net"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
@@ -17,7 +17,7 @@ tracing-subscriber = "0.3"
 anyhow = "1"
 ai = { path = "../ai" }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 dotenvy = "0.15"
 rpa = { path = "../rpa" }
 pgvector = { version = "0.4", features = ["postgres", "halfvec"] }
@@ -25,13 +25,20 @@ half = "2"
 schemars = "1"
 base64 = "0.22"
 
-[package.metadata.cubos_sql.database]
+rmcp = { version = "1.6", features = [
+    "server",
+    "transport-streamable-http-server",
+    "macros",
+    "schemars",
+] }
+axum = "0.8"
+tower-service = "0.3"
+
+[package.metadata.pgsafe.database]
 migrations = "../../migrations"
 extra_migrations = ["../dados-abertos/sql"]
 
-[package.metadata.cubos_sql.enums]
+[package.metadata.pgsafe.types]
 "zain.govbr_nivel" = "::rpa::govbr::Nivel"
-
-[package.metadata.cubos_sql.domains]
 "zain.govbr_session" = "::rpa::govbr::session::SavedSession"
 "zain.mei_ccmei" = "::rpa::mei::CertificadoMei"

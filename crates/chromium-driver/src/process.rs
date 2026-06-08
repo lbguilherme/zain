@@ -115,14 +115,14 @@ impl ChromiumProcess {
 
         args.push("--disable-dev-shm-usage".into());
 
-        let temp_user_data_dir = if let Some(ref dir) = opts.user_data_dir {
-            args.push(format!("--user-data-dir={}", dir));
-            None
-        } else {
-            let tmp = PathBuf::from("/tmp").join(format!("chromium-driver-{}", random_hex()));
-            args.push(format!("--user-data-dir={}", tmp.display()));
-            Some(tmp)
+        let (user_data_dir, temp_user_data_dir) = match opts.user_data_dir {
+            Some(ref dir) => (PathBuf::from(dir), None),
+            None => {
+                let tmp = PathBuf::from("/tmp").join(format!("chromium-driver-{}", random_hex()));
+                (tmp.clone(), Some(tmp))
+            }
         };
+        args.push(format!("--user-data-dir={}", user_data_dir.display()));
 
         args.extend(opts.extra_args);
 
@@ -131,11 +131,36 @@ impl ChromiumProcess {
             .args(&args)
             .stderr(Stdio::piped())
             .stdout(Stdio::null())
-            .stdin(Stdio::null());
+            .stdin(Stdio::null())
+            // Ensure the OS process is reaped if `launch` returns early (e.g. a
+            // crash before `ChromiumProcess` is constructed), not just when the
+            // struct's `Drop` runs.
+            .kill_on_drop(true);
 
+        // On Linux, confine everything Chromium writes to the (disposable)
+        // user-data dir so it can be wiped 100% between runs:
+        //
+        // - HOME: Chromium's crashpad handler derives its crash-report database
+        //   path from $HOME, and also writes `.config`/`.cache`/`.pki` (NSS)
+        //   there. Service users frequently have a read-only HOME (here the
+        //   `zain` user's is `/var/empty`), which makes the handler abort with
+        //   `--database is required` during `PreSandboxStartup` — the browser
+        //   dies with SIGTRAP before ever printing `DevTools listening`,
+        //   surfacing as "browser closed unexpectedly".
+        // - TMPDIR: scratch and (with --disable-dev-shm-usage) shared-memory
+        //   files otherwise land loose in /tmp and survive a crash.
+        //
+        // Pointing both at the user-data dir means `cleanup_temp_dir` (which
+        // removes that dir on exit) destroys profile, crash DB and temp files
+        // together. DISPLAY is wired to the Xvfb server.
         #[cfg(target_os = "linux")]
-        if let Some((_, display)) = xvfb_child.as_ref() {
-            command.env("DISPLAY", display);
+        {
+            let _ = std::fs::create_dir_all(&user_data_dir);
+            command.env("HOME", &user_data_dir);
+            command.env("TMPDIR", &user_data_dir);
+            if let Some((_, display)) = xvfb_child.as_ref() {
+                command.env("DISPLAY", display);
+            }
         }
 
         let mut child = command.spawn().map_err(CdpError::ProcessStart)?;
@@ -222,6 +247,10 @@ async fn start_xvfb(window_size: (u32, u32)) -> Result<(Child, String)> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .stdin(Stdio::null())
+        // Reap Xvfb if Chromium crashes on launch: the `xvfb_child` handle is
+        // dropped without `ChromiumProcess` ever being built, so without this
+        // the server would be orphaned (one per failed launch attempt).
+        .kill_on_drop(true)
         .spawn()
         .map_err(CdpError::ProcessStart)?;
 

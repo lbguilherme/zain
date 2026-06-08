@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use chromium_driver::PageSession;
 use chromium_driver::dom::Dom;
-use cubos_sql::sql;
 use deadpool_postgres::Pool;
+use pgsafe::sql;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -1299,7 +1299,7 @@ async fn resolver_cnae(pool: &Pool, cnae: &str) -> Result<OcupacaoResolvida, Ins
     let Some(r) = row else {
         return Err(InscricaoMeiError::CnaeNaoMapeado(normalizado));
     };
-    // `familia` é CHAR(1); cubos_sql devolve como String. Pega o
+    // `familia` é CHAR(1); pgsafe devolve como String. Pega o
     // primeiro char — se vier vazio (não deveria, NOT NULL), devolvemos
     // desconhecida pra sinalizar dado corrompido na tabela.
     let familia = r.familia.trim().chars().next().unwrap_or(' ');

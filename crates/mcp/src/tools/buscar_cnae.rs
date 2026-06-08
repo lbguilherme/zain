@@ -7,72 +7,59 @@
 //! exata por prefixo; caso contrário, passamos pelo pipeline de
 //! embedding + similaridade vetorial.
 
-use cubos_sql::sql;
 use deadpool_postgres::Pool;
+use pgsafe::sql;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::{Tool, ToolContext, ToolDef, ToolOutput, params_for, typed_handler};
+use crate::state::AppState;
 
 #[derive(Deserialize, JsonSchema)]
-struct Args {
+pub struct Args {
     /// Código CNAE ou descrição livre da atividade. Se o texto for
     /// puramente numérico (com pontuação opcional, ex: '4520-0/01' ou
     /// '4520001'), a tool faz busca por prefixo do código. Caso
     /// contrário (ex: 'vendo bolo no pote', 'conserto celular'), faz
     /// busca semântica por similaridade.
-    descricao_ou_codigo: String,
+    pub descricao_ou_codigo: String,
 }
 
-pub fn tool() -> Tool {
-    Tool {
-        def: ToolDef {
-            name: "buscar_cnae",
-            description: "Busca ocupações MEI-compatíveis a partir de um código CNAE (ex: '4520-0/01', '4520001') ou de uma descrição livre da atividade (ex: 'doces artesanais', 'conserto celular'). Use quando o cliente descrever o que ele faz pra validar se a atividade encaixa como MEI e pra achar o CNAE correto antes de chamar `abrir_empresa`.",
-            consequential: false,
-            parameters: params_for::<Args>(),
-        },
-        handler: typed_handler(|ctx: ToolContext, args: Args, memory| async move {
-            let input = args.descricao_ou_codigo.trim();
-            if input.is_empty() {
-                return ToolOutput::err(json!({ "erro": "argumento vazio" }), memory);
-            }
+pub async fn run(state: &AppState, client_id: Uuid, args: Args) -> Value {
+    let input = args.descricao_ou_codigo.trim();
+    if input.is_empty() {
+        return json!({ "erro": "argumento vazio" });
+    }
 
-            // Tira tudo que não é alfanumérico (pontuação típica de CNAE
-            // como '-', '/', '.' e espaços) e verifica se o que sobrou são
-            // até 7 dígitos numéricos (uma subclasse CNAE completa tem 7
-            // dígitos; menos que isso ainda dá pra buscar por prefixo).
-            // Caso contrário, é descrição livre.
-            let stripped: String = input
-                .chars()
-                .filter(|c| c.is_ascii_alphanumeric())
-                .collect();
-            let looks_like_code = !stripped.is_empty()
-                && stripped.len() <= 7
-                && stripped.chars().all(|c| c.is_ascii_digit());
+    // Tira tudo que não é alfanumérico (pontuação típica de CNAE como
+    // '-', '/', '.' e espaços) e verifica se o que sobrou são até 7
+    // dígitos numéricos (uma subclasse CNAE completa tem 7 dígitos;
+    // menos que isso ainda dá pra buscar por prefixo). Caso contrário,
+    // é descrição livre.
+    let stripped: String = input
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect();
+    let looks_like_code =
+        !stripped.is_empty() && stripped.len() <= 7 && stripped.chars().all(|c| c.is_ascii_digit());
 
-            let outcome = if looks_like_code {
-                run_code(&ctx.pool, ctx.client_id, &stripped).await
-            } else {
-                run_semantic(
-                    &ctx.pool,
-                    &ctx.ai,
-                    &ctx.models.embedding,
-                    ctx.client_id,
-                    input,
-                )
-                .await
-            };
+    let outcome = if looks_like_code {
+        run_code(&state.pool, client_id, &stripped).await
+    } else {
+        run_semantic(
+            &state.pool,
+            &state.ai,
+            &state.models.embedding,
+            client_id,
+            input,
+        )
+        .await
+    };
 
-            match outcome {
-                Ok(value) => ToolOutput::new(value, memory),
-                Err(value) => ToolOutput::err(value, memory),
-            }
-        }),
-        must_use_tool_result: false,
-        enabled_when: None,
+    match outcome {
+        Ok(value) => value,
+        Err(value) => value,
     }
 }
 
@@ -114,7 +101,7 @@ async fn run_code(pool: &Pool, client_id: Uuid, codigo: &str) -> Result<Value, V
         }
         Err(e) => {
             tracing::warn!(
-                client_id = %client_id,
+                %client_id,
                 error = %e,
                 "Falha na query de CNAE por código"
             );
@@ -136,7 +123,7 @@ async fn run_semantic(
             pgvector::HalfVector::from(half)
         }
         Err(e) => {
-            tracing::warn!(client_id = %client_id, error = %e, "Falha ao gerar embedding");
+            tracing::warn!(%client_id, error = %e, "Falha ao gerar embedding");
             return Err(json!({ "erro": format!("Falha ao gerar embedding: {}", e) }));
         }
     };
@@ -173,7 +160,7 @@ async fn run_semantic(
         }
         Err(e) => {
             tracing::warn!(
-                client_id = %client_id,
+                %client_id,
                 error = %e,
                 "Falha na busca de CNAE por atividade"
             );

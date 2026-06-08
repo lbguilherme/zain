@@ -8,16 +8,11 @@
 //! o lead *antes* de começar a coleta do resto dos dados, em vez
 //! de descobrir lá na frente que ele não vai virar cliente.
 
-use cubos_sql::sql;
 use deadpool_postgres::Pool;
+use pgsafe::sql;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-/// Limite de dívida ativa que a gente tolera. Acima disso o lead é
-/// recusado sem salvar o documento. O valor foi herdado da versão
-/// anterior (quando PGFN era uma tool separada); continua em aberto
-/// se vale a pena aceitar leads com dívida pequena — por enquanto
-/// mantemos o mesmo corte.
 const LIMITE_DIVIDA_BRL: f64 = 15_000.0;
 
 /// Consulta PGFN (usando cache de 48h) e decide:
