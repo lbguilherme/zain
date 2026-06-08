@@ -1,0 +1,4 @@
+display_name = "Zain MCP"
+# transport = "http"
+url = "http://pc:8088/"
+dynamic_tools = true

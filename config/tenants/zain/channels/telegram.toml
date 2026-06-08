@@ -1,0 +1,4 @@
+type = "telegram"
+agent_slug = "zain"
+user_onboarding_mode = "open"
+# disabled = false
