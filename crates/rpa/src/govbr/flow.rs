@@ -132,12 +132,18 @@ async fn try_reuse_session(
     let result = async {
         let page = browser.create_page("about:blank").await?.attach().await?;
         page.enable().await?;
+        // Lifecycle events power the `wait_for_network_idle` settles below.
+        page.set_lifecycle_events_enabled(true).await.ok();
 
         session::restore(&browser, &page, saved).await?;
 
         page.navigate(&profile_url(cpf)).await?;
         page.wait_for_load(DEFAULT_TIMEOUT).await.ok();
-        tokio::time::sleep(POST_ACTION_SETTLE).await;
+        // Settle once the network goes quiet — the redirect chain to the SSO or
+        // profile is network activity, so this returns with a stable URL as soon
+        // as it finishes, instead of always burning a fixed 2s. Bounded by the
+        // same budget if the page never idles.
+        page.wait_for_network_idle(POST_ACTION_SETTLE).await.ok();
 
         let current = current_url(&page).await?;
         tracing::info!(cpf, url = %current, "Após restore + navigate");
@@ -180,11 +186,17 @@ async fn do_fresh_login(
     let result = async {
         let page = browser.create_page("about:blank").await?.attach().await?;
         page.enable().await?;
+        // Lifecycle events power the `wait_for_network_idle` settles below.
+        page.set_lifecycle_events_enabled(true).await.ok();
 
         // Vai direto pro perfil — o SSO redireciona pro login automaticamente.
         page.navigate(&profile_url(cpf)).await?;
         page.wait_for_load(DEFAULT_TIMEOUT).await.ok();
-        tokio::time::sleep(POST_ACTION_SETTLE).await;
+        // Settle once the network goes quiet — the redirect chain to the SSO or
+        // profile is network activity, so this returns with a stable URL as soon
+        // as it finishes, instead of always burning a fixed 2s. Bounded by the
+        // same budget if the page never idles.
+        page.wait_for_network_idle(POST_ACTION_SETTLE).await.ok();
 
         // ── Passo 1: CPF ─────────────────────────────────────────────────
         let dom = page.dom().await?;

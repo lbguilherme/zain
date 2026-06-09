@@ -1462,11 +1462,11 @@ async fn read_danger_message(page: &PageSession) -> Result<Option<String>, Inscr
         .map(str::to_string))
 }
 
-/// Poll até a modal Bootstrap ficar com a classe `.show`. No timeout, o
-/// `sanity::tick` loga URL/título + `debug_dump` antes de abortar — em vez
-/// de um "timeout aguardando modal" sem contexto.
+/// Espera a modal Bootstrap ficar com a classe `.show` via `wait_for_function`
+/// (poll de condição JS). No timeout, o `sanity::fail` loga URL/título +
+/// `debug_dump` antes de abortar — em vez de um "timeout aguardando modal"
+/// sem contexto.
 async fn wait_for_modal_open(page: &PageSession, id: &str) -> anyhow::Result<()> {
-    let deadline = tokio::time::Instant::now() + DEFAULT_TIMEOUT;
     let id_js = serde_json::to_string(id)?;
     let js = format!(
         r#"(() => {{
@@ -1474,11 +1474,9 @@ async fn wait_for_modal_open(page: &PageSession, id: &str) -> anyhow::Result<()>
             return !!(m && m.classList.contains('show'));
         }})()"#
     );
-    let etapa = format!("inscrição mei: aguardar modal {id}");
-    loop {
-        if page.eval_value(&js).await?.as_bool().unwrap_or(false) {
-            return Ok(());
-        }
-        sanity::tick(page, &etapa, deadline, Duration::from_millis(300)).await?;
+    if page.wait_for_function(&js, DEFAULT_TIMEOUT).await.is_err() {
+        let etapa = format!("inscrição mei: aguardar modal {id}");
+        return Err(sanity::fail(page, &etapa, "modal não abriu no tempo esperado").await);
     }
+    Ok(())
 }

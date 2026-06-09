@@ -113,9 +113,16 @@ pub async fn consultar_divida(documento: &str) -> anyhow::Result<ConsultaDivida>
             });
         }
 
-        // 8. Tem resultado — extrair dados da tabela dentro do virtual scroll
-        //    Aguardar um pouco para o virtual scroll renderizar as rows.
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        // 8. Tem resultado — extrair dados da tabela dentro do virtual scroll.
+        //    Espera o JS do virtual scroll renderizar ao menos uma row (sinal
+        //    real) em vez de um `sleep(1s)` cego. Bounded pelo timeout; se
+        //    estourar, o check de `rows.is_empty()` abaixo aborta com contexto.
+        page.wait_for_function(
+            "document.querySelectorAll('cdk-virtual-scroll-viewport tbody tr').length > 0",
+            timeout,
+        )
+        .await
+        .ok();
         dom.invalidate();
 
         let rows = dom
