@@ -16,6 +16,7 @@ pub mod transport;
 pub mod types;
 
 pub use browser::{Browser, BrowserContext, BrowserEvent, BrowserEventStream};
+pub use cdp::storage::Cookie;
 pub use error::{CdpError, Result};
 pub use frame::{FrameInfo, FrameSession};
 pub use page::{PageEvent, PageEventStream, PageSession};

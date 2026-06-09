@@ -14,6 +14,20 @@ pub enum CdpError {
     #[error("cdp protocol error {code}: {message}")]
     Protocol { code: i64, message: String },
 
+    /// A queried element/frame/resource did not exist (e.g. a selector matched
+    /// nothing). Distinct from a protocol error so callers can match it.
+    #[error("not found: {0}")]
+    NotFound(String),
+
+    /// Failed to decode data returned by the browser (base64, etc.).
+    #[error("decode error: {0}")]
+    Decode(String),
+
+    /// The browser returned a response in an unexpected shape (missing field,
+    /// wrong type, malformed payload) — not a protocol-level error.
+    #[error("unexpected response: {0}")]
+    Unexpected(String),
+
     #[error("connection closed")]
     ConnectionClosed,
 

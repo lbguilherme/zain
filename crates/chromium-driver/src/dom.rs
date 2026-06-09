@@ -181,10 +181,7 @@ impl Dom {
     pub async fn query_selector(&self, selector: &str) -> Result<Element> {
         self.try_query_selector(selector)
             .await?
-            .ok_or_else(|| CdpError::Protocol {
-                code: -1,
-                message: format!("no element matches selector: {selector}"),
-            })
+            .ok_or_else(|| CdpError::NotFound(format!("selector matched nothing: {selector}")))
     }
 
     /// Finds all elements matching a CSS selector.
@@ -309,19 +306,13 @@ impl Dom {
                 .cdp
                 .dom_push_nodes_by_backend_ids_to_frontend(&[backend_id])
                 .await?;
-            let node_id = ret
-                .node_ids
-                .first()
-                .copied()
-                .ok_or_else(|| CdpError::Protocol {
-                    code: -1,
-                    message: "pushNodesByBackendIds returned empty".into(),
-                })?;
+            let node_id = ret.node_ids.first().copied().ok_or_else(|| {
+                CdpError::Unexpected("pushNodesByBackendIds returned empty".into())
+            })?;
             if node_id.0 <= 0 {
-                return Err(CdpError::Protocol {
-                    code: -1,
-                    message: "pushNodesByBackendIds returned invalid node id".into(),
-                });
+                return Err(CdpError::Unexpected(
+                    "pushNodesByBackendIds returned invalid node id".into(),
+                ));
             }
             node_id
         } else {
@@ -383,10 +374,18 @@ impl Element {
         Ok(ret.outer_html)
     }
 
-    /// Returns the visible text content of this element (via outerHTML stripping tags).
+    /// Returns the visible (rendered) text of this element via `innerText`.
+    ///
+    /// Reads the live `innerText` getter instead of stripping tags from
+    /// `outerHTML`, so `<script>`/`<style>` bodies and hidden elements are
+    /// excluded — matching what a user actually sees. (The old tag-stripping
+    /// approach leaked inline script/style source into the result.)
     pub async fn text(&self) -> Result<String> {
-        let html = self.outer_html().await?;
-        Ok(strip_tags(&html))
+        let obj = self.resolve().await?;
+        let val = obj
+            .eval_value("function() { return this.innerText; }")
+            .await?;
+        Ok(val.as_str().unwrap_or_default().to_owned())
     }
 
     /// Returns the value of a specific attribute, or `None` if not present.
@@ -441,10 +440,7 @@ impl Element {
     pub async fn query_selector(&self, selector: &str) -> Result<Element> {
         self.try_query_selector(selector)
             .await?
-            .ok_or_else(|| CdpError::Protocol {
-                code: -1,
-                message: format!("no element matches selector: {selector}"),
-            })
+            .ok_or_else(|| CdpError::NotFound(format!("selector matched nothing: {selector}")))
     }
 
     /// Finds all child elements matching a CSS selector within this element.
@@ -478,9 +474,8 @@ impl Element {
                 ..Default::default()
             })
             .await?;
-        JsObject::new(self.cdp.clone(), ret.object).ok_or_else(|| CdpError::Protocol {
-            code: -1,
-            message: "DOM.resolveNode returned object without objectId".into(),
+        JsObject::new(self.cdp.clone(), ret.object).ok_or_else(|| {
+            CdpError::Unexpected("DOM.resolveNode returned object without objectId".into())
         })
     }
 
@@ -704,10 +699,9 @@ impl Element {
         let bm = self.box_model().await?;
         let q = &bm.content;
         if q.len() < 8 {
-            return Err(CdpError::Protocol {
-                code: -1,
-                message: "invalid box model for screenshot".into(),
-            });
+            return Err(CdpError::Unexpected(
+                "invalid box model for screenshot".into(),
+            ));
         }
 
         let x = q[0];
@@ -732,10 +726,7 @@ impl Element {
 
         let png = base64::engine::general_purpose::STANDARD
             .decode(&ret.data)
-            .map_err(|e| CdpError::Protocol {
-                code: -1,
-                message: format!("base64 decode: {e}"),
-            })?;
+            .map_err(|e| CdpError::Decode(format!("element screenshot base64: {e}")))?;
 
         Ok(png)
     }
@@ -751,10 +742,7 @@ impl Element {
         let bm = self.box_model().await?;
         let q = &bm.content;
         if q.len() < 8 {
-            return Err(CdpError::Protocol {
-                code: -1,
-                message: "invalid box model for swipe".into(),
-            });
+            return Err(CdpError::Unexpected("invalid box model for swipe".into()));
         }
 
         let cx = (q[0] + q[2]) / 2.0 + jitter_offset(CLICK_OFFSET_MAX_PX);
@@ -821,10 +809,7 @@ impl Element {
         let bm = self.box_model().await?;
         let q = &bm.content;
         if q.len() < 8 {
-            return Err(CdpError::Protocol {
-                code: -1,
-                message: "invalid box model for swipe".into(),
-            });
+            return Err(CdpError::Unexpected("invalid box model for swipe".into()));
         }
 
         let cx = (q[0] + q[2]) / 2.0 + jitter_offset(CLICK_OFFSET_MAX_PX);
@@ -891,10 +876,9 @@ impl Element {
         let bm = self.box_model().await?;
         let q = &bm.content;
         if q.len() < 8 {
-            return Err(CdpError::Protocol {
-                code: -1,
-                message: "invalid box model for center_x".into(),
-            });
+            return Err(CdpError::Unexpected(
+                "invalid box model for center_x".into(),
+            ));
         }
         Ok((q[0] + q[2]) / 2.0)
     }
@@ -903,27 +887,12 @@ impl Element {
         let bm = self.box_model().await?;
         let q = &bm.content;
         if q.len() < 8 {
-            return Err(CdpError::Protocol {
-                code: -1,
-                message: "invalid box model for center calculation".into(),
-            });
+            return Err(CdpError::Unexpected(
+                "invalid box model for center calculation".into(),
+            ));
         }
         let cx = (q[0] + q[2]) / 2.0;
         let cy = (q[1] + q[5]) / 2.0;
         Ok((cx, cy))
     }
-}
-
-fn strip_tags(html: &str) -> String {
-    let mut result = String::new();
-    let mut in_tag = false;
-    for ch in html.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => result.push(ch),
-            _ => {}
-        }
-    }
-    result
 }

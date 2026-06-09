@@ -34,7 +34,10 @@ impl CdpEventStream {
                         return Some(evt);
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                    tracing::warn!(skipped, "CDP event stream lagged; events dropped");
+                    continue;
+                }
                 Err(broadcast::error::RecvError::Closed) => return None,
             }
         }
@@ -51,7 +54,10 @@ impl CdpEventStream {
                         return Some(evt);
                     }
                 }
-                Err(broadcast::error::TryRecvError::Lagged(_)) => continue,
+                Err(broadcast::error::TryRecvError::Lagged(skipped)) => {
+                    tracing::warn!(skipped, "CDP event stream lagged; events dropped");
+                    continue;
+                }
                 Err(_) => return None,
             }
         }
@@ -92,6 +98,29 @@ impl CdpSession {
             .send(method, params_value, self.session_id.as_deref())
             .await?;
         Ok(())
+    }
+
+    /// Like [`call`](Self::call) but fails with [`CdpError::Timeout`](crate::CdpError::Timeout)
+    /// if no response arrives within `timeout`. Use for commands that may run
+    /// long (downloads, captcha waits) or that should fail fast.
+    pub async fn call_with_timeout<P: Serialize, R: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: &P,
+        timeout: std::time::Duration,
+    ) -> Result<R> {
+        let params_value = serde_json::to_value(params)?;
+        let result = self
+            .transport
+            .send_with_timeout(method, params_value, self.session_id.as_deref(), timeout)
+            .await?;
+        Ok(serde_json::from_value(result)?)
+    }
+
+    /// Sets the default response timeout for all commands on this connection
+    /// (shared across every [`CdpSession`] over the same transport).
+    pub fn set_default_timeout(&self, timeout: std::time::Duration) {
+        self.transport.set_default_timeout(timeout);
     }
 
     /// Returns a filtered event stream scoped to this session.

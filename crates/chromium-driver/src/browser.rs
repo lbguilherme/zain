@@ -5,6 +5,7 @@ use crate::cdp::browser::{
     GetWindowForTargetParams, PermissionDescriptor, PermissionSetting, ResetPermissionsParams,
     SetDownloadBehaviorParams, SetPermissionParams, SetWindowBoundsParams, WindowId,
 };
+use crate::cdp::storage::{Cookie, CookieScopeParams, SetCookiesParams, StorageCommands};
 use crate::cdp::target::{
     AttachedToTargetEvent, CreateBrowserContextParams, CreateTargetParams, DetachedFromTargetEvent,
     GetTargetInfoParams, GetTargetsParams, TargetCommands, TargetCreatedEvent,
@@ -271,6 +272,36 @@ impl Browser {
     pub async fn reset_permissions(&self) -> Result<()> {
         self.session
             .browser_reset_permissions(&ResetPermissionsParams::default())
+            .await
+    }
+
+    // ── Cookies ───────────────────────────────────────────────────────────
+
+    /// Returns all cookies across every browser context.
+    ///
+    /// Cookies round-trip losslessly back through [`set_cookies`](Self::set_cookies).
+    pub async fn get_cookies(&self) -> Result<Vec<Cookie>> {
+        Ok(self
+            .session
+            .storage_get_cookies(&CookieScopeParams::default())
+            .await?
+            .cookies)
+    }
+
+    /// Sets the given cookies (browser scope).
+    pub async fn set_cookies(&self, cookies: Vec<Cookie>) -> Result<()> {
+        self.session
+            .storage_set_cookies(&SetCookiesParams {
+                cookies,
+                browser_context_id: None,
+            })
+            .await
+    }
+
+    /// Clears all cookies across every browser context.
+    pub async fn clear_cookies(&self) -> Result<()> {
+        self.session
+            .storage_clear_cookies(&CookieScopeParams::default())
             .await
     }
 

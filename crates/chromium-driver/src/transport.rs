@@ -22,10 +22,21 @@ struct SendCommand {
     response_tx: oneshot::Sender<Result<Value>>,
 }
 
+/// Default per-command response timeout, in milliseconds.
+const DEFAULT_TIMEOUT_MS: u64 = 30_000;
+
+/// Capacity of the event broadcast channel. Events are dropped (oldest-first)
+/// for any subscriber that falls this far behind; the drop is logged, not
+/// silent. Sized generously since chatty domains (Network, DOM) can burst.
+const EVENT_CHANNEL_CAPACITY: usize = 1024;
+
 pub(crate) struct Transport {
     cmd_tx: mpsc::Sender<SendCommand>,
     event_tx: broadcast::Sender<CdpEvent>,
     next_id: AtomicU64,
+    /// Default response timeout applied by [`send`](Self::send), in millis.
+    /// Adjustable at runtime via [`set_default_timeout`](Self::set_default_timeout).
+    default_timeout_ms: AtomicU64,
 }
 
 impl Transport {
@@ -34,7 +45,7 @@ impl Transport {
         let (ws_sink, ws_stream) = ws.split();
 
         let (cmd_tx, cmd_rx) = mpsc::channel::<SendCommand>(64);
-        let (event_tx, _) = broadcast::channel::<CdpEvent>(256);
+        let (event_tx, _) = broadcast::channel::<CdpEvent>(EVENT_CHANNEL_CAPACITY);
 
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -51,14 +62,41 @@ impl Transport {
             cmd_tx,
             event_tx,
             next_id: AtomicU64::new(1),
+            default_timeout_ms: AtomicU64::new(DEFAULT_TIMEOUT_MS),
         }))
     }
 
+    /// Sets the default response timeout used by [`send`](Self::send).
+    pub fn set_default_timeout(&self, timeout: std::time::Duration) {
+        self.default_timeout_ms
+            .store(timeout.as_millis() as u64, Ordering::Relaxed);
+    }
+
+    /// Sends a command using the current default timeout.
     pub async fn send(
         &self,
         method: &str,
         params: Value,
         session_id: Option<&str>,
+    ) -> Result<Value> {
+        let ms = self.default_timeout_ms.load(Ordering::Relaxed);
+        self.send_with_timeout(
+            method,
+            params,
+            session_id,
+            std::time::Duration::from_millis(ms),
+        )
+        .await
+    }
+
+    /// Sends a command, failing with [`CdpError::Timeout`] if no response
+    /// arrives within `timeout`.
+    pub async fn send_with_timeout(
+        &self,
+        method: &str,
+        params: Value,
+        session_id: Option<&str>,
+        timeout: std::time::Duration,
     ) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
 
@@ -84,7 +122,6 @@ impl Transport {
             .await
             .map_err(|_| CdpError::ConnectionClosed)?;
 
-        let timeout = tokio::time::Duration::from_secs(30);
         match tokio::time::timeout(timeout, response_rx).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err(CdpError::ConnectionClosed),

@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::cdp::dom::{DomCommands, EnableParams};
-use crate::cdp::emulation::EmulationCommands;
+use crate::cdp::emulation::{EmulationCommands, SetUserAgentOverrideParams};
+use crate::cdp::io::{IoCommands, ReadParams, StreamHandle};
 use crate::cdp::page::{
     CaptureScreenshotParams, DomContentEventFiredEvent, FrameNavigatedEvent,
     GetNavigationHistoryReturn, LifecycleEventEvent, LoadEventFiredEvent, NavigateParams,
@@ -184,6 +185,27 @@ impl PageSession {
         self.session.page_disable().await
     }
 
+    /// Overrides the User-Agent for this page, and optionally the
+    /// `Accept-Language` header (which also drives `navigator.languages`).
+    ///
+    /// Apply before navigating so the override is in effect for the first
+    /// request. Useful when restoring a saved session whose trust token is
+    /// bound to a specific User-Agent.
+    pub async fn set_user_agent(
+        &self,
+        user_agent: &str,
+        accept_language: Option<&str>,
+    ) -> Result<()> {
+        self.session
+            .emulation_set_user_agent_override(&SetUserAgentOverrideParams {
+                user_agent: user_agent.to_owned(),
+                accept_language: accept_language.map(str::to_owned),
+                platform: None,
+                user_agent_metadata: None,
+            })
+            .await
+    }
+
     /// Navigates the page to the given URL.
     ///
     /// Returns the `frame_id` of the main frame and optionally `error_text` if
@@ -273,14 +295,8 @@ impl PageSession {
             .dom
             .get_or_try_init(|| async {
                 self.session.dom_enable(&EnableParams::default()).await?;
-                self.session
-                    .emulation_set_touch_emulation_enabled(
-                        &crate::cdp::emulation::SetTouchEmulationEnabledParams {
-                            enabled: true,
-                            max_touch_points: None,
-                        },
-                    )
-                    .await?;
+                // Touch emulation is enabled eagerly at `PageTarget::attach`, not
+                // here — see the comment there for why (stable maxTouchPoints).
                 Ok(Dom::new(self.session.clone()))
             })
             .await
@@ -308,6 +324,31 @@ impl PageSession {
         runtime::evaluate_value_async(&self.session, expression).await
     }
 
+    /// Evaluates a JS function with arguments passed safely as JSON values,
+    /// returning the result by value.
+    ///
+    /// The function is invoked as `fn.apply(undefined, args)`. Arguments are
+    /// serialized to a JSON array literal, so values containing quotes,
+    /// backslashes or newlines are passed verbatim — no manual escaping, no
+    /// injection. Prefer this over interpolating values into an expression.
+    pub async fn eval_value_with_args(
+        &self,
+        function: &str,
+        args: &[serde_json::Value],
+    ) -> Result<serde_json::Value> {
+        runtime::evaluate_value(&self.session, &apply_expr(function, args)?).await
+    }
+
+    /// Like [`eval_value_with_args`](Self::eval_value_with_args) but awaits a
+    /// returned Promise — for `async` functions or any returning a thenable.
+    pub async fn eval_value_with_args_async(
+        &self,
+        function: &str,
+        args: &[serde_json::Value],
+    ) -> Result<serde_json::Value> {
+        runtime::evaluate_value_async(&self.session, &apply_expr(function, args)?).await
+    }
+
     /// Takes a PNG screenshot of the full visible page and returns raw bytes.
     pub async fn capture_screenshot(&self) -> Result<Vec<u8>> {
         let ret = self
@@ -319,10 +360,7 @@ impl PageSession {
             .await?;
         base64::engine::general_purpose::STANDARD
             .decode(&ret.data)
-            .map_err(|e| crate::error::CdpError::Protocol {
-                code: -1,
-                message: format!("base64 decode screenshot: {e}"),
-            })
+            .map_err(|e| CdpError::Decode(format!("screenshot base64: {e}")))
     }
 
     /// Fetches a `blob:` URL from within the browser and returns raw bytes.
@@ -338,23 +376,30 @@ impl PageSession {
     /// Like [`fetch_blob_url`](Self::fetch_blob_url) but also returns the MIME type
     /// extracted from the data URL (e.g. `"image/webp"`, `"image/jpeg"`).
     pub async fn fetch_blob_url_typed(&self, blob_url: &str) -> Result<(Vec<u8>, String)> {
-        let js = format!(
-            r#"(async()=>{{const r=await fetch("{}");const b=await r.blob();return new Promise((ok,err)=>{{const rd=new FileReader();rd.onloadend=()=>ok(rd.result);rd.onerror=()=>err("read error");rd.readAsDataURL(b);}})}})()"#,
-            blob_url.replace('"', r#"\""#)
-        );
+        let result = self
+            .eval_value_with_args_async(
+                r#"async (url) => {
+                    const r = await fetch(url);
+                    const b = await r.blob();
+                    return await new Promise((ok, err) => {
+                        const rd = new FileReader();
+                        rd.onloadend = () => ok(rd.result);
+                        rd.onerror = () => err("read error");
+                        rd.readAsDataURL(b);
+                    });
+                }"#,
+                &[serde_json::Value::String(blob_url.to_owned())],
+            )
+            .await?;
 
-        let result = self.eval_value_async(&js).await?;
-
-        let data_url = result.as_str().ok_or_else(|| CdpError::Protocol {
-            code: -1,
-            message: format!("blob fetch returned non-string: {result:?}"),
+        let data_url = result.as_str().ok_or_else(|| {
+            CdpError::Unexpected(format!("blob fetch returned non-string: {result:?}"))
         })?;
 
         // "data:image/webp;base64,AAAA..."
-        let (header, base64_part) = data_url.split_once(',').ok_or_else(|| CdpError::Protocol {
-            code: -1,
-            message: "invalid data URL from blob fetch".into(),
-        })?;
+        let (header, base64_part) = data_url
+            .split_once(',')
+            .ok_or_else(|| CdpError::Unexpected("invalid data URL from blob fetch".into()))?;
 
         // header = "data:image/webp;base64"
         let mime = header
@@ -365,10 +410,7 @@ impl PageSession {
 
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(base64_part)
-            .map_err(|e| CdpError::Protocol {
-                code: -1,
-                message: format!("base64 decode blob: {e}"),
-            })?;
+            .map_err(|e| CdpError::Decode(format!("blob base64: {e}")))?;
 
         Ok((bytes, mime))
     }
@@ -376,46 +418,44 @@ impl PageSession {
     /// Reads a blob by UUID via the CDP IO domain.
     ///
     /// The UUID comes from a `blob:` URL (e.g. `blob:https://.../<uuid>`).
-    /// Uses `IO.read` in a loop until EOF, then `IO.close`.
+    /// Reads with `IO.read` in a loop until EOF, then always closes the stream
+    /// with `IO.close` (even on read error) so the browser-side backing storage
+    /// is released.
     pub async fn read_blob(&self, uuid: &str) -> Result<Vec<u8>> {
-        let handle = format!("blob:{uuid}");
-        let mut all_bytes = Vec::new();
+        let handle = StreamHandle(format!("blob:{uuid}"));
+        let result = self.read_stream(&handle).await;
+        // Best-effort close regardless of read outcome.
+        let _ = self.session.io_close(&handle).await;
+        result
+    }
 
+    async fn read_stream(&self, handle: &StreamHandle) -> Result<Vec<u8>> {
+        let mut all_bytes = Vec::new();
         loop {
-            let result: serde_json::Value = self
+            let ret = self
                 .session
-                .call(
-                    "IO.read",
-                    &serde_json::json!({ "handle": handle, "size": 1_000_000 }),
-                )
+                .io_read(&ReadParams {
+                    handle: handle.clone(),
+                    offset: None,
+                    size: Some(1_000_000),
+                })
                 .await?;
 
-            let base64_encoded = result
-                .get("base64Encoded")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let data = result.get("data").and_then(|v| v.as_str()).unwrap_or("");
-            let eof = result.get("eof").and_then(|v| v.as_bool()).unwrap_or(true);
-
-            if !data.is_empty() {
-                if base64_encoded {
+            if !ret.data.is_empty() {
+                if ret.base64_encoded.unwrap_or(false) {
                     let chunk = base64::engine::general_purpose::STANDARD
-                        .decode(data)
-                        .map_err(|e| crate::error::CdpError::Protocol {
-                            code: -1,
-                            message: format!("base64 decode IO.read: {e}"),
-                        })?;
+                        .decode(&ret.data)
+                        .map_err(|e| CdpError::Decode(format!("IO.read base64: {e}")))?;
                     all_bytes.extend_from_slice(&chunk);
                 } else {
-                    all_bytes.extend_from_slice(data.as_bytes());
+                    all_bytes.extend_from_slice(ret.data.as_bytes());
                 }
             }
 
-            if eof {
+            if ret.eof {
                 break;
             }
         }
-
         Ok(all_bytes)
     }
 
@@ -456,33 +496,34 @@ impl PageSession {
 
     // ── Debug ──────────────────────────────────────────────────────────────
 
-    /// Saves a debug dump of the current page to `dumps/{name}.html` and
-    /// `dumps/{name}.png`.
+    /// Saves a debug dump (`{name}.html` + `{name}.png`) under `dumps/` in the
+    /// current working directory.
     ///
     /// The HTML is cleaned up: `<script>`, `<style>` and `<link>` tags are
     /// stripped and the output is indented for readability.
     pub async fn debug_dump(&self, name: &str) -> Result<()> {
-        let dir = std::path::Path::new("dumps");
-        std::fs::create_dir_all(dir).map_err(|e| crate::error::CdpError::Protocol {
-            code: -1,
-            message: format!("create dumps dir: {e}"),
-        })?;
+        self.debug_dump_in(std::path::Path::new("dumps"), name)
+            .await
+    }
+
+    /// Like [`debug_dump`](Self::debug_dump) but writes under `dir` (created if
+    /// absent). Use when the working directory is read-only or dumps should be
+    /// grouped elsewhere.
+    pub async fn debug_dump_in(&self, dir: &std::path::Path, name: &str) -> Result<()> {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| CdpError::Unexpected(format!("create dump dir {}: {e}", dir.display())))?;
 
         let dom = self.dom().await?;
         let html = dom.page_html().await?;
         let clean = beautify_html(&html);
         let html_path = dir.join(format!("{name}.html"));
-        std::fs::write(&html_path, &clean).map_err(|e| crate::error::CdpError::Protocol {
-            code: -1,
-            message: format!("write html dump: {e}"),
-        })?;
+        std::fs::write(&html_path, &clean)
+            .map_err(|e| CdpError::Unexpected(format!("write html dump: {e}")))?;
 
         let png_path = dir.join(format!("{name}.png"));
         let png_bytes = self.capture_screenshot().await?;
-        std::fs::write(&png_path, &png_bytes).map_err(|e| crate::error::CdpError::Protocol {
-            code: -1,
-            message: format!("write png dump: {e}"),
-        })?;
+        std::fs::write(&png_path, &png_bytes)
+            .map_err(|e| CdpError::Unexpected(format!("write png dump: {e}")))?;
 
         tracing::debug!(
             html = %html_path.display(),
@@ -527,6 +568,107 @@ impl PageSession {
             }
         }
     }
+
+    /// Waits for a `Page.lifecycleEvent` with the given milestone `name`
+    /// (e.g. `"DOMContentLoaded"`, `"load"`, `"networkIdle"`,
+    /// `"firstMeaningfulPaint"`).
+    ///
+    /// Requires [`enable`](Self::enable) **and**
+    /// [`set_lifecycle_events_enabled(true)`](Self::set_lifecycle_events_enabled).
+    /// Arm the wait *before* triggering the navigation/action to avoid missing
+    /// the event.
+    pub async fn wait_for_lifecycle(&self, name: &str, timeout: Duration) -> Result<()> {
+        let mut events = self.events();
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            tokio::select! {
+                evt = events.recv() => match evt {
+                    Some(PageEvent::LifecycleEvent(le)) if le.name == name => return Ok(()),
+                    Some(_) => continue,
+                    None => return Err(CdpError::ConnectionClosed),
+                },
+                _ = tokio::time::sleep_until(deadline) => return Err(CdpError::Timeout(timeout)),
+            }
+        }
+    }
+
+    /// Waits until the network is idle (no in-flight requests for ~500ms),
+    /// signalled by the `networkIdle` lifecycle milestone.
+    ///
+    /// Prefer this over `wait_for_load` + a fixed sleep: it tracks actual
+    /// request activity instead of guessing. Same requirements as
+    /// [`wait_for_lifecycle`](Self::wait_for_lifecycle).
+    pub async fn wait_for_network_idle(&self, timeout: Duration) -> Result<()> {
+        self.wait_for_lifecycle("networkIdle", timeout).await
+    }
+
+    /// Polls `location.href` (~200ms interval) until it contains `substring`,
+    /// returning the full URL. Times out otherwise.
+    ///
+    /// Robust for SPA navigations (History API) that never fire a `load`
+    /// event — the situation that forces ad-hoc URL polling in callers.
+    pub async fn wait_for_url(&self, substring: &str, timeout: Duration) -> Result<String> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if let Some(href) = self.eval_value("location.href").await?.as_str()
+                && href.contains(substring)
+            {
+                return Ok(href.to_owned());
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(CdpError::Timeout(timeout));
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    }
+
+    /// Polls a JS `expression` in the page's global scope (~150ms interval)
+    /// until it evaluates to a truthy value (JS semantics: anything but
+    /// `null`/`undefined`/`false`/`0`/`NaN`/`""`), then returns. Times out
+    /// otherwise.
+    ///
+    /// Use to await readiness that is neither a navigation nor a network event
+    /// but *some JS having run* — framework hydration, a global flag, a
+    /// computed property, etc. (e.g. `"!!(window.ng && app.ready)"`). For
+    /// plain element presence prefer the DOM's `wait_for`.
+    ///
+    /// Write the expression defensively (guard against `undefined`): a thrown
+    /// exception propagates as an error rather than counting as "not ready".
+    /// The expression must be synchronous — a returned Promise is itself a
+    /// truthy object and would resolve the wait immediately.
+    pub async fn wait_for_function(&self, expression: &str, timeout: Duration) -> Result<()> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            if js_truthy(&self.eval_value(expression).await?) {
+                return Ok(());
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(CdpError::Timeout(timeout));
+            }
+            tokio::time::sleep(Duration::from_millis(150)).await;
+        }
+    }
+}
+
+/// JS truthiness of a JSON value — mirrors `if (value)` in the browser:
+/// everything is truthy except `null`, `false`, `0`/`NaN`, and `""`.
+/// Arrays and objects (including `{}` / `[]`) are truthy, as in JS.
+fn js_truthy(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::Number(n) => n.as_f64().map(|f| f != 0.0 && !f.is_nan()).unwrap_or(true),
+        serde_json::Value::String(s) => !s.is_empty(),
+        _ => true,
+    }
+}
+
+/// Builds `(<function>).apply(undefined, <json-args>)`. Arguments are emitted
+/// as a JSON array literal — valid JS for data values — so callers never escape
+/// strings by hand and untrusted values can't break out of the expression.
+fn apply_expr(function: &str, args: &[serde_json::Value]) -> Result<String> {
+    let json = serde_json::to_string(args)?;
+    Ok(format!("({function}).apply(undefined,{json})"))
 }
 
 // ── HTML beautifier for debug dumps ─────────────────────────────────────────

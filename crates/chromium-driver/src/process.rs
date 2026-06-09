@@ -98,6 +98,13 @@ impl ChromiumProcess {
                 opts.window_size.0, opts.window_size.1
             ),
             "--disable-blink-features=AutomationControlled".into(),
+            // Present as a Brazilian browser for all intents: `--lang` drives the
+            // UI locale and `navigator.language`; `--accept-lang` drives the
+            // `Accept-Language` header and `navigator.languages`. Set at launch
+            // (browser-wide, before any navigation) so the locale is stable from
+            // the first script every page runs — these automate gov.br.
+            "--lang=pt-BR".into(),
+            "--accept-lang=pt-BR,pt".into(),
             "--no-first-run".into(),
             "--no-default-browser-check".into(),
             "--disable-background-networking".into(),

@@ -6,4 +6,5 @@ pub mod io;
 pub mod page;
 pub mod runtime;
 pub mod schema;
+pub mod storage;
 pub mod target;

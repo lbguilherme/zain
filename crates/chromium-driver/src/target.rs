@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tokio::sync::OnceCell;
 
 use crate::browser::BrowserContextInner;
+use crate::cdp::emulation::{EmulationCommands, SetTouchEmulationEnabledParams};
 use crate::cdp::target::{AttachToTargetParams, GetTargetInfoParams, TargetCommands};
 use crate::dom::Dom;
 use crate::error::Result;
@@ -110,6 +111,32 @@ impl PageTarget {
             .inner
             .browser_session
             .for_session(ret.session_id.clone());
+
+        // Enable touch emulation ONCE, eagerly, right after attaching and before
+        // any navigation. Two reasons:
+        // 1. The input model is touch-based — clicks/swipes dispatch
+        //    `Input.dispatchTouchEvent`, so the page must advertise touch support
+        //    for those events to be honored.
+        // 2. `navigator.maxTouchPoints` is then a stable `1` from the first script
+        //    every page runs, instead of mutating 0→1 the first time `dom()` is
+        //    called mid-session — a transition no real device exhibits (proven in
+        //    tests/fingerprint_probe.rs: two reads on one document gave 0 then 1).
+        session
+            .emulation_set_touch_emulation_enabled(&SetTouchEmulationEnabledParams {
+                enabled: true,
+                max_touch_points: Some(1),
+            })
+            .await?;
+
+        // Present as São Paulo for all intents — `Date`, `getTimezoneOffset()`
+        // and `Intl.DateTimeFormat().resolvedOptions().timeZone` would otherwise
+        // leak the host's real timezone, incoherent with the pt-BR locale and
+        // the Brazilian sites these automate. Set here (before navigation) so it
+        // is stable from the first script.
+        session
+            .emulation_set_timezone_override("America/Sao_Paulo")
+            .await?;
+
         Ok(PageSession::new(
             session,
             ret.session_id,

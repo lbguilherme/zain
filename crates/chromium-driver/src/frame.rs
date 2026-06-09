@@ -48,13 +48,8 @@ impl FrameSession {
             })
             .await?;
 
-        let backend_id =
-            find_frame_document_backend_id(&doc.root, &self.frame_id).ok_or_else(|| {
-                CdpError::Protocol {
-                    code: -1,
-                    message: format!("could not find document for frame {}", self.frame_id.0),
-                }
-            })?;
+        let backend_id = find_frame_document_backend_id(&doc.root, &self.frame_id)
+            .ok_or_else(|| CdpError::NotFound(format!("document for frame {}", self.frame_id.0)))?;
 
         Ok(Dom::for_frame(self.cdp.clone(), backend_id))
     }
