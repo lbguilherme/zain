@@ -101,7 +101,8 @@ async fn cookies_round_trip() {
         .unwrap();
     let got = browser.get_cookies().await.unwrap();
     assert!(
-        got.iter().any(|c| c.name == "zain_probe" && c.value == "42"),
+        got.iter()
+            .any(|c| c.name == "zain_probe" && c.value == "42"),
         "get_cookies should read the cookie, got {got:?}"
     );
 

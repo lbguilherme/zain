@@ -524,7 +524,10 @@ pub trait InputCommands {
     /// Emulates touch event from the mouse event parameters.
     ///
     /// CDP: `Input.emulateTouchFromMouseEvent`
-    async fn input_emulate_touch_from_mouse_event(&self, params: &EmulateTouchFromMouseEventParams) -> Result<()>;
+    async fn input_emulate_touch_from_mouse_event(
+        &self,
+        params: &EmulateTouchFromMouseEventParams,
+    ) -> Result<()>;
 
     /// Ignores input events (useful while auditing page).
     ///
@@ -540,17 +543,24 @@ pub trait InputCommands {
     /// Synthesizes a pinch gesture over a time period by issuing appropriate touch events.
     ///
     /// CDP: `Input.synthesizePinchGesture`
-    async fn input_synthesize_pinch_gesture(&self, params: &SynthesizePinchGestureParams) -> Result<()>;
+    async fn input_synthesize_pinch_gesture(
+        &self,
+        params: &SynthesizePinchGestureParams,
+    ) -> Result<()>;
 
     /// Synthesizes a scroll gesture over a time period by issuing appropriate touch events.
     ///
     /// CDP: `Input.synthesizeScrollGesture`
-    async fn input_synthesize_scroll_gesture(&self, params: &SynthesizeScrollGestureParams) -> Result<()>;
+    async fn input_synthesize_scroll_gesture(
+        &self,
+        params: &SynthesizeScrollGestureParams,
+    ) -> Result<()>;
 
     /// Synthesizes a tap gesture over a time period by issuing appropriate touch events.
     ///
     /// CDP: `Input.synthesizeTapGesture`
-    async fn input_synthesize_tap_gesture(&self, params: &SynthesizeTapGestureParams) -> Result<()>;
+    async fn input_synthesize_tap_gesture(&self, params: &SynthesizeTapGestureParams)
+    -> Result<()>;
 }
 
 // ── Impl ─────────────────────────────────────────────────────────────────────
@@ -575,11 +585,13 @@ struct SetInterceptDragsInternalParams {
 
 impl InputCommands for CdpSession {
     async fn input_dispatch_drag_event(&self, params: &DispatchDragEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchDragEvent", params).await
+        self.call_no_response("Input.dispatchDragEvent", params)
+            .await
     }
 
     async fn input_dispatch_key_event(&self, params: &DispatchKeyEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchKeyEvent", params).await
+        self.call_no_response("Input.dispatchKeyEvent", params)
+            .await
     }
 
     async fn input_insert_text(&self, text: &str) -> Result<()> {
@@ -588,44 +600,66 @@ impl InputCommands for CdpSession {
     }
 
     async fn input_ime_set_composition(&self, params: &ImeSetCompositionParams) -> Result<()> {
-        self.call_no_response("Input.imeSetComposition", params).await
+        self.call_no_response("Input.imeSetComposition", params)
+            .await
     }
 
     async fn input_dispatch_mouse_event(&self, params: &DispatchMouseEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchMouseEvent", params).await
+        self.call_no_response("Input.dispatchMouseEvent", params)
+            .await
     }
 
     async fn input_dispatch_touch_event(&self, params: &DispatchTouchEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchTouchEvent", params).await
+        self.call_no_response("Input.dispatchTouchEvent", params)
+            .await
     }
 
     async fn input_cancel_dragging(&self) -> Result<()> {
-        self.call_no_response("Input.cancelDragging", &serde_json::json!({})).await
+        self.call_no_response("Input.cancelDragging", &serde_json::json!({}))
+            .await
     }
 
-    async fn input_emulate_touch_from_mouse_event(&self, params: &EmulateTouchFromMouseEventParams) -> Result<()> {
-        self.call_no_response("Input.emulateTouchFromMouseEvent", params).await
+    async fn input_emulate_touch_from_mouse_event(
+        &self,
+        params: &EmulateTouchFromMouseEventParams,
+    ) -> Result<()> {
+        self.call_no_response("Input.emulateTouchFromMouseEvent", params)
+            .await
     }
 
     async fn input_set_ignore_input_events(&self, ignore: bool) -> Result<()> {
         let params = SetIgnoreInputEventsInternalParams { ignore };
-        self.call_no_response("Input.setIgnoreInputEvents", &params).await
+        self.call_no_response("Input.setIgnoreInputEvents", &params)
+            .await
     }
 
     async fn input_set_intercept_drags(&self, enabled: bool) -> Result<()> {
         let params = SetInterceptDragsInternalParams { enabled };
-        self.call_no_response("Input.setInterceptDrags", &params).await
+        self.call_no_response("Input.setInterceptDrags", &params)
+            .await
     }
 
-    async fn input_synthesize_pinch_gesture(&self, params: &SynthesizePinchGestureParams) -> Result<()> {
-        self.call_no_response("Input.synthesizePinchGesture", params).await
+    async fn input_synthesize_pinch_gesture(
+        &self,
+        params: &SynthesizePinchGestureParams,
+    ) -> Result<()> {
+        self.call_no_response("Input.synthesizePinchGesture", params)
+            .await
     }
 
-    async fn input_synthesize_scroll_gesture(&self, params: &SynthesizeScrollGestureParams) -> Result<()> {
-        self.call_no_response("Input.synthesizeScrollGesture", params).await
+    async fn input_synthesize_scroll_gesture(
+        &self,
+        params: &SynthesizeScrollGestureParams,
+    ) -> Result<()> {
+        self.call_no_response("Input.synthesizeScrollGesture", params)
+            .await
     }
 
-    async fn input_synthesize_tap_gesture(&self, params: &SynthesizeTapGestureParams) -> Result<()> {
-        self.call_no_response("Input.synthesizeTapGesture", params).await
+    async fn input_synthesize_tap_gesture(
+        &self,
+        params: &SynthesizeTapGestureParams,
+    ) -> Result<()> {
+        self.call_no_response("Input.synthesizeTapGesture", params)
+            .await
     }
 }

@@ -1,4 +1,4 @@
-use chromium_driver::cdp::browser::{SetDownloadBehaviorBehavior, PermissionSetting};
+use chromium_driver::cdp::browser::{PermissionSetting, SetDownloadBehaviorBehavior};
 use chromium_driver::cdp::target::{SetDiscoverTargetsParams, TargetCommands};
 use chromium_driver::page::PageEvent;
 use chromium_driver::{LaunchOptions, launch};

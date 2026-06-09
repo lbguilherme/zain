@@ -498,7 +498,8 @@ pub trait BrowserCommands {
     /// Set the behavior when downloading a file.
     ///
     /// CDP: `Browser.setDownloadBehavior`
-    async fn browser_set_download_behavior(&self, params: &SetDownloadBehaviorParams) -> Result<()>;
+    async fn browser_set_download_behavior(&self, params: &SetDownloadBehaviorParams)
+    -> Result<()>;
 
     /// Cancel a download if in progress.
     ///
@@ -534,22 +535,34 @@ pub trait BrowserCommands {
     /// Get Chrome histograms.
     ///
     /// CDP: `Browser.getHistograms`
-    async fn browser_get_histograms(&self, params: &GetHistogramsParams) -> Result<GetHistogramsReturn>;
+    async fn browser_get_histograms(
+        &self,
+        params: &GetHistogramsParams,
+    ) -> Result<GetHistogramsReturn>;
 
     /// Get a Chrome histogram by name.
     ///
     /// CDP: `Browser.getHistogram`
-    async fn browser_get_histogram(&self, params: &GetHistogramParams) -> Result<GetHistogramReturn>;
+    async fn browser_get_histogram(
+        &self,
+        params: &GetHistogramParams,
+    ) -> Result<GetHistogramReturn>;
 
     /// Get position and size of the browser window.
     ///
     /// CDP: `Browser.getWindowBounds`
-    async fn browser_get_window_bounds(&self, window_id: &WindowId) -> Result<GetWindowBoundsReturn>;
+    async fn browser_get_window_bounds(
+        &self,
+        window_id: &WindowId,
+    ) -> Result<GetWindowBoundsReturn>;
 
     /// Get the browser window that contains the devtools target.
     ///
     /// CDP: `Browser.getWindowForTarget`
-    async fn browser_get_window_for_target(&self, params: &GetWindowForTargetParams) -> Result<GetWindowForTargetReturn>;
+    async fn browser_get_window_for_target(
+        &self,
+        params: &GetWindowForTargetParams,
+    ) -> Result<GetWindowForTargetReturn>;
 
     /// Set position and/or size of the browser window.
     ///
@@ -583,7 +596,10 @@ pub trait BrowserCommands {
     /// configuration for the origin may exist.
     ///
     /// CDP: `Browser.addPrivacySandboxCoordinatorKeyConfig`
-    async fn browser_add_privacy_sandbox_coordinator_key_config(&self, params: &AddPrivacySandboxCoordinatorKeyConfigParams) -> Result<()>;
+    async fn browser_add_privacy_sandbox_coordinator_key_config(
+        &self,
+        params: &AddPrivacySandboxCoordinatorKeyConfigParams,
+    ) -> Result<()>;
 }
 
 // ── Impl ─────────────────────────────────────────────────────────────────────
@@ -619,61 +635,86 @@ impl BrowserCommands for CdpSession {
     }
 
     async fn browser_reset_permissions(&self, params: &ResetPermissionsParams) -> Result<()> {
-        self.call_no_response("Browser.resetPermissions", params).await
+        self.call_no_response("Browser.resetPermissions", params)
+            .await
     }
 
-    async fn browser_set_download_behavior(&self, params: &SetDownloadBehaviorParams) -> Result<()> {
-        self.call_no_response("Browser.setDownloadBehavior", params).await
+    async fn browser_set_download_behavior(
+        &self,
+        params: &SetDownloadBehaviorParams,
+    ) -> Result<()> {
+        self.call_no_response("Browser.setDownloadBehavior", params)
+            .await
     }
 
     async fn browser_cancel_download(&self, params: &CancelDownloadParams) -> Result<()> {
-        self.call_no_response("Browser.cancelDownload", params).await
+        self.call_no_response("Browser.cancelDownload", params)
+            .await
     }
 
     async fn browser_close(&self) -> Result<()> {
-        self.call_no_response("Browser.close", &serde_json::json!({})).await
+        self.call_no_response("Browser.close", &serde_json::json!({}))
+            .await
     }
 
     async fn browser_crash(&self) -> Result<()> {
-        self.call_no_response("Browser.crash", &serde_json::json!({})).await
+        self.call_no_response("Browser.crash", &serde_json::json!({}))
+            .await
     }
 
     async fn browser_crash_gpu_process(&self) -> Result<()> {
-        self.call_no_response("Browser.crashGpuProcess", &serde_json::json!({})).await
+        self.call_no_response("Browser.crashGpuProcess", &serde_json::json!({}))
+            .await
     }
 
     async fn browser_get_version(&self) -> Result<GetVersionReturn> {
-        self.call("Browser.getVersion", &serde_json::json!({})).await
+        self.call("Browser.getVersion", &serde_json::json!({}))
+            .await
     }
 
     async fn browser_get_browser_command_line(&self) -> Result<GetBrowserCommandLineReturn> {
-        self.call("Browser.getBrowserCommandLine", &serde_json::json!({})).await
+        self.call("Browser.getBrowserCommandLine", &serde_json::json!({}))
+            .await
     }
 
-    async fn browser_get_histograms(&self, params: &GetHistogramsParams) -> Result<GetHistogramsReturn> {
+    async fn browser_get_histograms(
+        &self,
+        params: &GetHistogramsParams,
+    ) -> Result<GetHistogramsReturn> {
         self.call("Browser.getHistograms", params).await
     }
 
-    async fn browser_get_histogram(&self, params: &GetHistogramParams) -> Result<GetHistogramReturn> {
+    async fn browser_get_histogram(
+        &self,
+        params: &GetHistogramParams,
+    ) -> Result<GetHistogramReturn> {
         self.call("Browser.getHistogram", params).await
     }
 
-    async fn browser_get_window_bounds(&self, window_id: &WindowId) -> Result<GetWindowBoundsReturn> {
+    async fn browser_get_window_bounds(
+        &self,
+        window_id: &WindowId,
+    ) -> Result<GetWindowBoundsReturn> {
         let params = GetWindowBoundsInternalParams { window_id };
         self.call("Browser.getWindowBounds", &params).await
     }
 
-    async fn browser_get_window_for_target(&self, params: &GetWindowForTargetParams) -> Result<GetWindowForTargetReturn> {
+    async fn browser_get_window_for_target(
+        &self,
+        params: &GetWindowForTargetParams,
+    ) -> Result<GetWindowForTargetReturn> {
         self.call("Browser.getWindowForTarget", params).await
     }
 
     async fn browser_set_window_bounds(&self, window_id: &WindowId, bounds: &Bounds) -> Result<()> {
         let params = SetWindowBoundsInternalParams { window_id, bounds };
-        self.call_no_response("Browser.setWindowBounds", &params).await
+        self.call_no_response("Browser.setWindowBounds", &params)
+            .await
     }
 
     async fn browser_set_contents_size(&self, params: &SetContentsSizeParams) -> Result<()> {
-        self.call_no_response("Browser.setContentsSize", params).await
+        self.call_no_response("Browser.setContentsSize", params)
+            .await
     }
 
     async fn browser_set_dock_tile(&self, params: &SetDockTileParams) -> Result<()> {
@@ -682,15 +723,21 @@ impl BrowserCommands for CdpSession {
 
     async fn browser_execute_browser_command(&self, command_id: &BrowserCommandId) -> Result<()> {
         let params = ExecuteBrowserCommandInternalParams { command_id };
-        self.call_no_response("Browser.executeBrowserCommand", &params).await
+        self.call_no_response("Browser.executeBrowserCommand", &params)
+            .await
     }
 
     async fn browser_add_privacy_sandbox_enrollment_override(&self, url: &str) -> Result<()> {
         let params = AddPrivacySandboxEnrollmentOverrideInternalParams { url };
-        self.call_no_response("Browser.addPrivacySandboxEnrollmentOverride", &params).await
+        self.call_no_response("Browser.addPrivacySandboxEnrollmentOverride", &params)
+            .await
     }
 
-    async fn browser_add_privacy_sandbox_coordinator_key_config(&self, params: &AddPrivacySandboxCoordinatorKeyConfigParams) -> Result<()> {
-        self.call_no_response("Browser.addPrivacySandboxCoordinatorKeyConfig", params).await
+    async fn browser_add_privacy_sandbox_coordinator_key_config(
+        &self,
+        params: &AddPrivacySandboxCoordinatorKeyConfigParams,
+    ) -> Result<()> {
+        self.call_no_response("Browser.addPrivacySandboxCoordinatorKeyConfig", params)
+            .await
     }
 }

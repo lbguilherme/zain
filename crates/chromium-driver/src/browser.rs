@@ -2,11 +2,13 @@ use std::sync::Arc;
 
 use crate::cdp::browser::{
     Bounds, BrowserCommands, CancelDownloadParams, GetVersionReturn, GetWindowForTargetParams,
-    PermissionDescriptor, PermissionSetting, ResetPermissionsParams,
-    SetDownloadBehaviorBehavior, SetDownloadBehaviorParams, SetPermissionParams, WindowId,
+    PermissionDescriptor, PermissionSetting, ResetPermissionsParams, SetDownloadBehaviorBehavior,
+    SetDownloadBehaviorParams, SetPermissionParams, WindowId,
 };
 use crate::cdp::common::{Cookie, CookieParam};
-use crate::cdp::storage::{ClearCookiesParams, GetCookiesParams, SetCookiesParams, StorageCommands};
+use crate::cdp::storage::{
+    ClearCookiesParams, GetCookiesParams, SetCookiesParams, StorageCommands,
+};
 use crate::cdp::target::{
     AttachedToTargetEvent, CreateBrowserContextParams, CreateTargetParams, DetachedFromTargetEvent,
     GetTargetInfoParams, GetTargetsParams, TargetCommands, TargetCreatedEvent,

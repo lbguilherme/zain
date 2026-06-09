@@ -24,6 +24,9 @@ pub struct TargetInfo {
     pub url: String,
     /// Whether the target has an attached client.
     pub attached: bool,
+    /// Id of the parent target, if any. For example, "iframe" target may have a "page" parent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<TargetId>,
     /// Opener target Id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opener_id: Option<TargetId>,
@@ -32,7 +35,8 @@ pub struct TargetInfo {
     /// Frame id of originating window (is only set if target has an opener).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opener_frame_id: Option<FrameId>,
-    /// Id of the parent frame, only present for the "iframe" targets.
+    /// Id of the parent frame, present for "iframe" and "worker" targets. For nested workers,
+    /// this is the "ancestor" frame that created the first worker in the nested chain.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_frame_id: Option<FrameId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -41,6 +45,10 @@ pub struct TargetInfo {
     /// the type of "page", this may be set to "prerender".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subtype: Option<String>,
+    /// Embedder-specific target metadata. This is only set for targets of
+    /// type "tab".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedder_data: Option<serde_json::Value>,
 }
 
 /// A filter used by target query/discovery/auto-attach operations.
@@ -267,8 +275,8 @@ pub struct OpenDevToolsParams {
     /// This can be the page or tab target ID.
     pub target_id: TargetId,
     /// The id of the panel we want DevTools to open initially. Currently
-    /// supported panels are elements, console, network, sources, resources
-    /// and performance.
+    /// supported panels are elements, console, network, sources, resources,
+    /// timeline, chrome-recorder, heap-profiler, lighthouse, and security.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panel_id: Option<String>,
 }
@@ -444,7 +452,10 @@ pub trait TargetCommands {
     /// Attaches to the target with given id.
     ///
     /// CDP: `Target.attachToTarget`
-    async fn target_attach_to_target(&self, params: &AttachToTargetParams) -> Result<AttachToTargetReturn>;
+    async fn target_attach_to_target(
+        &self,
+        params: &AttachToTargetParams,
+    ) -> Result<AttachToTargetReturn>;
 
     /// Attaches to the browser target, only uses flat sessionId mode.
     ///
@@ -458,21 +469,27 @@ pub trait TargetCommands {
 
     /// Inject object to the target's main frame that provides a communication
     /// channel with browser target.
-    /// 
+    ///
     /// Injected object will be available as `window[bindingName]`.
-    /// 
+    ///
     /// The object has the following API:
     /// - `binding.send(json)` - a method to send messages over the remote debugging protocol
     /// - `binding.onmessage = json => handleMessage(json)` - a callback that will be called for the protocol notifications and command responses.
     ///
     /// CDP: `Target.exposeDevToolsProtocol`
-    async fn target_expose_dev_tools_protocol(&self, params: &ExposeDevToolsProtocolParams) -> Result<()>;
+    async fn target_expose_dev_tools_protocol(
+        &self,
+        params: &ExposeDevToolsProtocolParams,
+    ) -> Result<()>;
 
     /// Creates a new empty BrowserContext. Similar to an incognito profile but you can have more than
     /// one.
     ///
     /// CDP: `Target.createBrowserContext`
-    async fn target_create_browser_context(&self, params: &CreateBrowserContextParams) -> Result<CreateBrowserContextReturn>;
+    async fn target_create_browser_context(
+        &self,
+        params: &CreateBrowserContextParams,
+    ) -> Result<CreateBrowserContextReturn>;
 
     /// Returns all browser contexts created with `Target.createBrowserContext` method.
     ///
@@ -482,7 +499,8 @@ pub trait TargetCommands {
     /// Creates a new page.
     ///
     /// CDP: `Target.createTarget`
-    async fn target_create_target(&self, params: &CreateTargetParams) -> Result<CreateTargetReturn>;
+    async fn target_create_target(&self, params: &CreateTargetParams)
+    -> Result<CreateTargetReturn>;
 
     /// Detaches session with given id.
     ///
@@ -493,12 +511,18 @@ pub trait TargetCommands {
     /// beforeunload hooks.
     ///
     /// CDP: `Target.disposeBrowserContext`
-    async fn target_dispose_browser_context(&self, browser_context_id: &BrowserContextId) -> Result<()>;
+    async fn target_dispose_browser_context(
+        &self,
+        browser_context_id: &BrowserContextId,
+    ) -> Result<()>;
 
     /// Returns information about a target.
     ///
     /// CDP: `Target.getTargetInfo`
-    async fn target_get_target_info(&self, params: &GetTargetInfoParams) -> Result<GetTargetInfoReturn>;
+    async fn target_get_target_info(
+        &self,
+        params: &GetTargetInfoParams,
+    ) -> Result<GetTargetInfoReturn>;
 
     /// Retrieves a list of available targets.
     ///
@@ -542,12 +566,18 @@ pub trait TargetCommands {
     /// (if any).
     ///
     /// CDP: `Target.getDevToolsTarget`
-    async fn target_get_dev_tools_target(&self, target_id: &TargetId) -> Result<GetDevToolsTargetReturn>;
+    async fn target_get_dev_tools_target(
+        &self,
+        target_id: &TargetId,
+    ) -> Result<GetDevToolsTargetReturn>;
 
     /// Opens a DevTools window for the target.
     ///
     /// CDP: `Target.openDevTools`
-    async fn target_open_dev_tools(&self, params: &OpenDevToolsParams) -> Result<OpenDevToolsReturn>;
+    async fn target_open_dev_tools(
+        &self,
+        params: &OpenDevToolsParams,
+    ) -> Result<OpenDevToolsReturn>;
 }
 
 // ── Impl ─────────────────────────────────────────────────────────────────────
@@ -585,15 +615,20 @@ struct GetDevToolsTargetInternalParams<'a> {
 impl TargetCommands for CdpSession {
     async fn target_activate_target(&self, target_id: &TargetId) -> Result<()> {
         let params = ActivateTargetInternalParams { target_id };
-        self.call_no_response("Target.activateTarget", &params).await
+        self.call_no_response("Target.activateTarget", &params)
+            .await
     }
 
-    async fn target_attach_to_target(&self, params: &AttachToTargetParams) -> Result<AttachToTargetReturn> {
+    async fn target_attach_to_target(
+        &self,
+        params: &AttachToTargetParams,
+    ) -> Result<AttachToTargetReturn> {
         self.call("Target.attachToTarget", params).await
     }
 
     async fn target_attach_to_browser_target(&self) -> Result<AttachToBrowserTargetReturn> {
-        self.call("Target.attachToBrowserTarget", &serde_json::json!({})).await
+        self.call("Target.attachToBrowserTarget", &serde_json::json!({}))
+            .await
     }
 
     async fn target_close_target(&self, target_id: &TargetId) -> Result<CloseTargetReturn> {
@@ -601,32 +636,51 @@ impl TargetCommands for CdpSession {
         self.call("Target.closeTarget", &params).await
     }
 
-    async fn target_expose_dev_tools_protocol(&self, params: &ExposeDevToolsProtocolParams) -> Result<()> {
-        self.call_no_response("Target.exposeDevToolsProtocol", params).await
+    async fn target_expose_dev_tools_protocol(
+        &self,
+        params: &ExposeDevToolsProtocolParams,
+    ) -> Result<()> {
+        self.call_no_response("Target.exposeDevToolsProtocol", params)
+            .await
     }
 
-    async fn target_create_browser_context(&self, params: &CreateBrowserContextParams) -> Result<CreateBrowserContextReturn> {
+    async fn target_create_browser_context(
+        &self,
+        params: &CreateBrowserContextParams,
+    ) -> Result<CreateBrowserContextReturn> {
         self.call("Target.createBrowserContext", params).await
     }
 
     async fn target_get_browser_contexts(&self) -> Result<GetBrowserContextsReturn> {
-        self.call("Target.getBrowserContexts", &serde_json::json!({})).await
+        self.call("Target.getBrowserContexts", &serde_json::json!({}))
+            .await
     }
 
-    async fn target_create_target(&self, params: &CreateTargetParams) -> Result<CreateTargetReturn> {
+    async fn target_create_target(
+        &self,
+        params: &CreateTargetParams,
+    ) -> Result<CreateTargetReturn> {
         self.call("Target.createTarget", params).await
     }
 
     async fn target_detach_from_target(&self, params: &DetachFromTargetParams) -> Result<()> {
-        self.call_no_response("Target.detachFromTarget", params).await
+        self.call_no_response("Target.detachFromTarget", params)
+            .await
     }
 
-    async fn target_dispose_browser_context(&self, browser_context_id: &BrowserContextId) -> Result<()> {
+    async fn target_dispose_browser_context(
+        &self,
+        browser_context_id: &BrowserContextId,
+    ) -> Result<()> {
         let params = DisposeBrowserContextInternalParams { browser_context_id };
-        self.call_no_response("Target.disposeBrowserContext", &params).await
+        self.call_no_response("Target.disposeBrowserContext", &params)
+            .await
     }
 
-    async fn target_get_target_info(&self, params: &GetTargetInfoParams) -> Result<GetTargetInfoReturn> {
+    async fn target_get_target_info(
+        &self,
+        params: &GetTargetInfoParams,
+    ) -> Result<GetTargetInfoReturn> {
         self.call("Target.getTargetInfo", params).await
     }
 
@@ -639,24 +693,33 @@ impl TargetCommands for CdpSession {
     }
 
     async fn target_auto_attach_related(&self, params: &AutoAttachRelatedParams) -> Result<()> {
-        self.call_no_response("Target.autoAttachRelated", params).await
+        self.call_no_response("Target.autoAttachRelated", params)
+            .await
     }
 
     async fn target_set_discover_targets(&self, params: &SetDiscoverTargetsParams) -> Result<()> {
-        self.call_no_response("Target.setDiscoverTargets", params).await
+        self.call_no_response("Target.setDiscoverTargets", params)
+            .await
     }
 
     async fn target_set_remote_locations(&self, locations: &[RemoteLocation]) -> Result<()> {
         let params = SetRemoteLocationsInternalParams { locations };
-        self.call_no_response("Target.setRemoteLocations", &params).await
+        self.call_no_response("Target.setRemoteLocations", &params)
+            .await
     }
 
-    async fn target_get_dev_tools_target(&self, target_id: &TargetId) -> Result<GetDevToolsTargetReturn> {
+    async fn target_get_dev_tools_target(
+        &self,
+        target_id: &TargetId,
+    ) -> Result<GetDevToolsTargetReturn> {
         let params = GetDevToolsTargetInternalParams { target_id };
         self.call("Target.getDevToolsTarget", &params).await
     }
 
-    async fn target_open_dev_tools(&self, params: &OpenDevToolsParams) -> Result<OpenDevToolsReturn> {
+    async fn target_open_dev_tools(
+        &self,
+        params: &OpenDevToolsParams,
+    ) -> Result<OpenDevToolsReturn> {
         self.call("Target.openDevTools", params).await
     }
 }

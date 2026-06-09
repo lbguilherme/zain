@@ -1,6 +1,7 @@
 //! Codegen for the typed CDP bindings under `src/cdp/`.
 //!
-//! Reads the per-domain `*.json` (split from the DevTools protocol) and emits
+//! Downloads the pinned DevTools protocol (`browser_protocol.json` +
+//! `js_protocol.json` at [`PROTOCOL_TAG`]) into a `target/` cache, then emits
 //! the Rust bindings following `src/cdp/CONVENTIONS.md`. Writes into `src/cdp/`
 //! (build.rs → src, by design) but only:
 //!   - for the domains listed in `MANIFEST` (opt-in, curated coverage),
@@ -10,17 +11,33 @@
 //!     clean tree stays clean and there is no rebuild loop.
 //!
 //! Cross-domain `$ref`s are routed automatically by reachability — no hardcoded
-//! type list: a ref to a manifest/hand-written domain points at that module;
-//! a ref to a domain we don't have points at `common` (transitively closed).
+//! type list: a ref to a manifest domain points at that module; a ref to a
+//! domain we don't generate points at `common` (transitively closed).
 //!
-//! `rerun-if-changed` is emitted for build.rs and every input JSON.
+//! The download is cached under `target/cdp-protocol/<tag>/`; bumping
+//! [`PROTOCOL_TAG`] re-downloads. If the protocol can't be fetched (offline, no
+//! cache) codegen is skipped and the committed bindings are used as-is.
 
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Pinned DevTools protocol release.
+/// <https://github.com/ChromeDevTools/devtools-protocol/tags>
+const PROTOCOL_TAG: &str = "v0.0.1643702";
 
 /// Domains to generate (full: types + commands + events).
-const MANIFEST: &[&str] = &["io", "input", "runtime", "target", "browser", "page", "dom", "emulation", "storage"];
+const MANIFEST: &[&str] = &[
+    "io",
+    "input",
+    "runtime",
+    "target",
+    "browser",
+    "page",
+    "dom",
+    "emulation",
+    "storage",
+];
 
 const HEADER_WIDTH: usize = 80;
 
@@ -29,39 +46,99 @@ fn main() {
     let cdp = Path::new(&manifest_dir).join("src/cdp");
     println!("cargo::rerun-if-changed=build.rs");
 
+    // All protocol domains, keyed by lowercase name. Skip codegen (keep the
+    // committed bindings) if the protocol can't be fetched.
+    let Some(domains) = fetch_protocol() else {
+        println!(
+            "cargo::warning=CDP protocol {PROTOCOL_TAG} unavailable (offline, no cache); using committed bindings"
+        );
+        return;
+    };
+
     let manifest: BTreeSet<String> = MANIFEST.iter().map(|s| s.to_string()).collect();
 
-    // Load manifest domain JSONs.
-    let mut jsons: BTreeMap<String, Value> = BTreeMap::new();
-    for d in MANIFEST {
-        println!("cargo::rerun-if-changed=src/cdp/{d}.json");
-        jsons.insert(d.to_string(), load_json(&cdp, d));
-    }
-
-    // Pre-pass: discover foreign types (owned by domains we don't generate and
-    // that have no hand-written module) reachable from the manifest, closed
-    // transitively, and assign them names in `common`.
-    let common = CommonSet::discover(&cdp, &manifest, &jsons);
-
+    // Pre-pass: discover foreign types (owned by domains we don't generate)
+    // reachable from the manifest, closed transitively, named in `common`.
+    let common = CommonSet::discover(&manifest, &domains);
     let reg = Registry { common: &common };
 
-    // Emit common.rs (foreign types only).
     if !common.order.is_empty() {
-        let code = emit_common(&reg, &common);
+        let code = rustfmt(emit_common(&reg, &common));
         write_if_changed(&cdp.join("common.rs"), &code);
     }
 
-    // Emit each manifest domain.
     for d in MANIFEST {
-        let code = Cx::new(&reg, d, &jsons[*d]).generate();
+        let dom = domains
+            .get(*d)
+            .unwrap_or_else(|| panic!("domain {d} not found in protocol {PROTOCOL_TAG}"));
+        let code = rustfmt(Cx::new(&reg, d, dom).generate());
         write_if_changed(&cdp.join(format!("{d}.rs")), &code);
     }
 }
 
-fn load_json(cdp: &Path, domain: &str) -> Value {
-    let p = cdp.join(format!("{}.json", domain.to_lowercase()));
-    let raw = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()));
-    serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {}: {e}", p.display()))
+/// Downloads (and caches under `target/`) the pinned protocol files, returning
+/// every domain keyed by lowercase name. `None` if the files are neither cached
+/// nor downloadable (offline) — the caller then keeps the committed bindings.
+fn fetch_protocol() -> Option<BTreeMap<String, Value>> {
+    const FILES: [&str; 2] = ["browser_protocol.json", "js_protocol.json"];
+
+    let out = PathBuf::from(std::env::var("OUT_DIR").ok()?);
+    // OUT_DIR = <target>/<profile>/build/<pkg-hash>/out → climb to <target>.
+    let target = out.ancestors().nth(4).unwrap_or(&out);
+    let cache = target.join("cdp-protocol").join(PROTOCOL_TAG);
+    std::fs::create_dir_all(&cache).ok()?;
+
+    let mut domains = BTreeMap::new();
+    for file in FILES {
+        let path = cache.join(file);
+        if !path.exists() {
+            let url = format!(
+                "https://github.com/ChromeDevTools/devtools-protocol/raw/refs/tags/{PROTOCOL_TAG}/json/{file}"
+            );
+            let status = std::process::Command::new("curl")
+                .args(["-sSfL", "--retry", "2", "-o"])
+                .arg(&path)
+                .arg(&url)
+                .status();
+            if !matches!(status, Ok(s) if s.success()) {
+                let _ = std::fs::remove_file(&path);
+                return None;
+            }
+        }
+        let proto: Value = serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
+        for dom in proto["domains"].as_array()? {
+            if let Some(name) = dom["domain"].as_str() {
+                domains.insert(name.to_lowercase(), dom.clone());
+            }
+        }
+    }
+    Some(domains)
+}
+
+/// Formats generated code with `rustfmt` so the output is stable under
+/// `cargo fmt` (no tug-of-war with the formatter). Falls back to the
+/// unformatted source if `rustfmt` isn't available.
+fn rustfmt(src: String) -> String {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut child = match Command::new("rustfmt")
+        .args(["--edition", "2024", "--emit", "stdout"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return src,
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(src.as_bytes());
+    }
+    match child.wait_with_output() {
+        Ok(o) if o.status.success() => String::from_utf8(o.stdout).unwrap_or(src),
+        _ => src,
+    }
 }
 
 fn write_if_changed(path: &Path, content: &str) {
@@ -113,20 +190,21 @@ impl CommonSet {
             .cloned()
     }
 
-    fn discover(cdp: &Path, manifest: &BTreeSet<String>, jsons: &BTreeMap<String, Value>) -> Self {
-        let is_local = |d: &str| manifest.contains(d) || cdp.join(format!("{d}.rs")).exists();
+    fn discover(manifest: &BTreeSet<String>, domains: &BTreeMap<String, Value>) -> Self {
+        let is_local = |d: &str| manifest.contains(d);
 
         // Seed queue with foreign refs from the manifest domains.
         let mut queue: Vec<(String, String)> = Vec::new();
-        for j in jsons.values() {
-            for (owner, id) in refs_of_domain(j) {
-                if !is_local(&owner) {
-                    queue.push((owner, id));
+        for d in manifest {
+            if let Some(j) = domains.get(d) {
+                for (owner, id) in refs_of_domain(j) {
+                    if !is_local(&owner) {
+                        queue.push((owner, id));
+                    }
                 }
             }
         }
 
-        let mut foreign_json_cache: BTreeMap<String, Value> = BTreeMap::new();
         let mut defs: BTreeMap<(String, String), Value> = BTreeMap::new();
         let mut order: Vec<(String, String)> = Vec::new();
         let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
@@ -135,10 +213,7 @@ impl CommonSet {
             if !seen.insert((owner.clone(), id.clone())) {
                 continue;
             }
-            let dj = foreign_json_cache
-                .entry(owner.clone())
-                .or_insert_with(|| load_json(cdp, &owner));
-            let Some(def) = type_def(dj, &id) else {
+            let Some(def) = domains.get(&owner).and_then(|dj| type_def(dj, &id)) else {
                 continue; // ref to something we can't resolve; skip (compile will flag)
             };
             // Follow this type's own refs; foreign ones extend the closure.
@@ -155,7 +230,10 @@ impl CommonSet {
         // Assign names (normalized), prefixing the owner on collisions.
         let mut by_norm: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
         for (o, i) in &order {
-            by_norm.entry(type_name(i)).or_default().push((o.clone(), i.clone()));
+            by_norm
+                .entry(type_name(i))
+                .or_default()
+                .push((o.clone(), i.clone()));
         }
         let mut names = BTreeMap::new();
         for (norm, owners) in by_norm {
@@ -164,7 +242,10 @@ impl CommonSet {
                 names.insert((o.clone(), i.clone()), norm.clone());
             } else {
                 for (o, i) in owners {
-                    names.insert((o.clone(), i.clone()), format!("{}{norm}", pascal_domain(&o)));
+                    names.insert(
+                        (o.clone(), i.clone()),
+                        format!("{}{norm}", pascal_domain(&o)),
+                    );
                 }
             }
         }
@@ -337,7 +418,11 @@ impl<'a> Cx<'a> {
 
         // Enums always derive `Default`; pre-register them so a struct can derive
         // `Default` regardless of whether the enum is declared before or after it.
-        for t in json.get("types").and_then(Value::as_array).unwrap_or(&empty) {
+        for t in json
+            .get("types")
+            .and_then(Value::as_array)
+            .unwrap_or(&empty)
+        {
             if t.get("enum").is_some()
                 && t["type"].as_str() == Some("string")
                 && let Some(id) = t["id"].as_str()
@@ -360,7 +445,12 @@ impl<'a> Cx<'a> {
         let mut internal_params = Vec::new();
         let mut impl_methods = Vec::new();
 
-        for cmd in json.get("commands").and_then(Value::as_array).cloned().unwrap_or_default() {
+        for cmd in json
+            .get("commands")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
             if cmd.get("deprecated").and_then(Value::as_bool) == Some(true) {
                 continue;
             }
@@ -399,7 +489,11 @@ impl<'a> Cx<'a> {
                 None => "Result<()>".into(),
             };
 
-            let doc = doc_block(cmd["description"].as_str(), 4, &format!("CDP: `{cdp_name}`"));
+            let doc = doc_block(
+                cmd["description"].as_str(),
+                4,
+                &format!("CDP: `{cdp_name}`"),
+            );
             let direct = !params.is_empty()
                 && !has_optional
                 && !any_inline_enum
@@ -414,7 +508,9 @@ impl<'a> Cx<'a> {
             } else if direct {
                 self.needs_ser = true;
                 let (sig, fields, ctor, lt) = self.direct_args(&required);
-                trait_methods.push(format!("{doc}    async fn {method}(&self, {sig}) -> {ret_sig};"));
+                trait_methods.push(format!(
+                    "{doc}    async fn {method}(&self, {sig}) -> {ret_sig};"
+                ));
                 let sname = format!("{cmd_pascal}InternalParams");
                 internal_params.push(format!(
                     "#[derive(Serialize)]\n#[serde(rename_all = \"camelCase\")]\nstruct {sname}{lt} {{\n{fields}\n}}"
@@ -434,7 +530,9 @@ impl<'a> Cx<'a> {
                     &cmd_pascal,
                 );
                 param_items.push(item);
-                trait_methods.push(format!("{doc}    async fn {method}(&self, params: &{pname}) -> {ret_sig};"));
+                trait_methods.push(format!(
+                    "{doc}    async fn {method}(&self, params: &{pname}) -> {ret_sig};"
+                ));
                 let cf = call_fn(return_ty.is_some());
                 impl_methods.push(format!(
                     "    async fn {method}(&self, params: &{pname}) -> {ret_sig} {{\n        self.{cf}(\"{cdp_name}\", params).await\n    }}"
@@ -443,7 +541,12 @@ impl<'a> Cx<'a> {
         }
 
         let mut event_items = Vec::new();
-        for ev in json.get("events").and_then(Value::as_array).cloned().unwrap_or_default() {
+        for ev in json
+            .get("events")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
             if ev.get("deprecated").and_then(Value::as_bool) == Some(true) {
                 continue;
             }
@@ -521,17 +624,23 @@ impl<'a> Cx<'a> {
             Some("string") => {
                 self.needs_ser = true;
                 self.needs_de = true;
-                format!("{doc}#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]\npub struct {name}(pub String);")
+                format!(
+                    "{doc}#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]\npub struct {name}(pub String);"
+                )
             }
             Some("integer") => {
                 self.needs_ser = true;
                 self.needs_de = true;
-                format!("{doc}#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]\npub struct {name}(pub i64);")
+                format!(
+                    "{doc}#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]\npub struct {name}(pub i64);"
+                )
             }
             Some("number") => {
                 self.needs_ser = true;
                 self.needs_de = true;
-                format!("{doc}#[derive(Debug, Clone, Copy, Serialize, Deserialize)]\npub struct {name}(pub f64);")
+                format!(
+                    "{doc}#[derive(Debug, Clone, Copy, Serialize, Deserialize)]\npub struct {name}(pub f64);"
+                )
             }
             Some("array") => {
                 // Array-typed protocol types (e.g. DOM.Quad) are transparent
@@ -547,7 +656,9 @@ impl<'a> Cx<'a> {
                 // Untyped type alias (rare): treat as opaque JSON.
                 self.needs_ser = true;
                 self.needs_de = true;
-                format!("{doc}#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct {name}(pub serde_json::Value);")
+                format!(
+                    "{doc}#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct {name}(pub serde_json::Value);"
+                )
             }
             other => panic!("type kind {other:?} not supported (type {name})"),
         }
@@ -592,7 +703,9 @@ impl<'a> Cx<'a> {
             (Mode::Object, true) => "#[derive(Debug, Clone, Default, Serialize, Deserialize)]",
             (Mode::Object, false) => "#[derive(Debug, Clone, Serialize, Deserialize)]",
         };
-        format!("{leading}{derive}\n#[serde(rename_all = \"camelCase\")]\npub struct {name} {{\n{body}}}")
+        format!(
+            "{leading}{derive}\n#[serde(rename_all = \"camelCase\")]\npub struct {name} {{\n{body}}}"
+        )
     }
 
     /// Returns (rendered, type-without-`Option`, optional).
@@ -607,7 +720,11 @@ impl<'a> Cx<'a> {
                 self.needs_ser = true;
                 self.needs_de = true;
                 self.default_types.insert(ename.clone());
-                let e = render_enum(&ename, &doc_lines(f["description"].as_str(), 0), f["enum"].as_array().unwrap());
+                let e = render_enum(
+                    &ename,
+                    &doc_lines(f["description"].as_str(), 0),
+                    f["enum"].as_array().unwrap(),
+                );
                 self.inline_enums.push(e);
             }
             ename
@@ -624,10 +741,11 @@ impl<'a> Cx<'a> {
             // Skip `None` on serialize (CDP rejects explicit `null` for optional
             // params); `default` so deserialize tolerates an absent field.
             match mode {
-                Mode::Param => out.push_str("    #[serde(skip_serializing_if = \"Option::is_none\")]\n"),
-                Mode::Object => out.push_str(
-                    "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n",
-                ),
+                Mode::Param => {
+                    out.push_str("    #[serde(skip_serializing_if = \"Option::is_none\")]\n")
+                }
+                Mode::Object => out
+                    .push_str("    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n"),
                 Mode::Return | Mode::Event => out.push_str("    #[serde(default)]\n"),
             }
             format!("Option<{ty}>")
@@ -650,7 +768,10 @@ impl<'a> Cx<'a> {
                 ("str".to_string(), true)
             } else if matches!(mapped.as_str(), "bool" | "i64" | "f64") {
                 (mapped, false)
-            } else if let Some(inner) = mapped.strip_prefix("Vec<").and_then(|s| s.strip_suffix('>')) {
+            } else if let Some(inner) = mapped
+                .strip_prefix("Vec<")
+                .and_then(|s| s.strip_suffix('>'))
+            {
                 // Borrow arrays as slices (`&[T]`), per clippy.
                 (format!("[{inner}]"), true)
             } else {
@@ -667,7 +788,12 @@ impl<'a> Cx<'a> {
             ctor.push(ident);
         }
         let lifetime = if lt { "<'a>" } else { "" };
-        (sig.join(", "), fields.join("\n"), ctor.join(", "), lifetime.to_string())
+        (
+            sig.join(", "),
+            fields.join("\n"),
+            ctor.join(", "),
+            lifetime.to_string(),
+        )
     }
 
     /// Maps a JSON node to a Rust type, recording cross-module imports and
@@ -704,7 +830,11 @@ impl<'a> Cx<'a> {
 }
 
 fn call_fn(has_return: bool) -> &'static str {
-    if has_return { "call" } else { "call_no_response" }
+    if has_return {
+        "call"
+    } else {
+        "call_no_response"
+    }
 }
 
 /// Normalizes a protocol type id to Rust convention: CDP spells ID types as
@@ -817,12 +947,56 @@ fn field_ident(wire: &str) -> String {
 fn is_rust_keyword(s: &str) -> bool {
     matches!(
         s,
-        "as" | "break" | "const" | "continue" | "crate" | "dyn" | "else" | "enum" | "extern"
-            | "false" | "fn" | "for" | "if" | "impl" | "in" | "let" | "loop" | "match" | "mod"
-            | "move" | "mut" | "pub" | "ref" | "return" | "self" | "static" | "struct" | "super"
-            | "trait" | "true" | "type" | "unsafe" | "use" | "where" | "while" | "async"
-            | "await" | "abstract" | "become" | "box" | "do" | "final" | "macro" | "override"
-            | "priv" | "typeof" | "unsized" | "virtual" | "yield" | "try" | "gen"
+        "as" | "break"
+            | "const"
+            | "continue"
+            | "crate"
+            | "dyn"
+            | "else"
+            | "enum"
+            | "extern"
+            | "false"
+            | "fn"
+            | "for"
+            | "if"
+            | "impl"
+            | "in"
+            | "let"
+            | "loop"
+            | "match"
+            | "mod"
+            | "move"
+            | "mut"
+            | "pub"
+            | "ref"
+            | "return"
+            | "self"
+            | "static"
+            | "struct"
+            | "super"
+            | "trait"
+            | "true"
+            | "type"
+            | "unsafe"
+            | "use"
+            | "where"
+            | "while"
+            | "async"
+            | "await"
+            | "abstract"
+            | "become"
+            | "box"
+            | "do"
+            | "final"
+            | "macro"
+            | "override"
+            | "priv"
+            | "typeof"
+            | "unsized"
+            | "virtual"
+            | "yield"
+            | "try"
+            | "gen"
     )
 }
 

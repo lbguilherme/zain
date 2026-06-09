@@ -2,8 +2,8 @@
 
 Reference implementation: `browser.rs`
 
-> **Codegen.** Every `{domain}.rs` here is **generated** from `{domain}.json` by
-> `build.rs` — do not hand-edit them; edit the JSON (or `build.rs`) and rebuild
+> **Codegen.** Every `{domain}.rs` here is **generated** by `build.rs` from the
+> DevTools protocol it downloads (pinned `PROTOCOL_TAG`, cached under `target/`) — do not hand-edit them; edit the JSON (or `build.rs`) and rebuild
 > (write-if-changed, so a clean tree stays clean). The domains to generate are
 > `build.rs`'s `MANIFEST`. Types owned by domains *not* in the manifest (e.g.
 > `Network`, `Debugger`) are auto-detected by reachability and emitted into
@@ -136,8 +136,11 @@ pub trait FooCommands {
 
 ## Checklist para novo dominio
 
-1. Ler o `{domain}.json` correspondente
-2. Criar `{domain}.rs` seguindo a estrutura acima
-3. Adicionar `pub mod {domain};` em `mod.rs`
-4. Rodar `cargo check -p chromium-driver`
-5. Verificar zero warnings
+1. Adicionar `"{domain}"` ao `MANIFEST` em `build.rs`
+2. Adicionar `pub mod {domain};` em `mod.rs`
+3. `cargo build -p chromium-driver` (gera `{domain}.rs` a partir do protocolo)
+4. Reconciliar os callers de alto nível com os nomes/shapes gerados (sem alias-rename)
+5. `cargo clippy --workspace --tests -- -D warnings` (zero warnings)
+
+Para bumpar a versão do protocolo: trocar `PROTOCOL_TAG` em `build.rs` e rebuildar
+(re-baixa, regenera; o diff dos `{domain}.rs` mostra o que mudou).

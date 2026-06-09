@@ -1119,8 +1119,7 @@ pub struct ExecutionContextDestroyedEvent {
 /// Issued when all executionContexts were cleared in browser.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ExecutionContextsClearedEvent {
-}
+pub struct ExecutionContextsClearedEvent {}
 
 /// Issued when object should be inspected (for example, as a result of inspect() command line API
 /// call).
@@ -1149,18 +1148,27 @@ pub trait RuntimeCommands {
     /// Add handler to promise with given promise object id.
     ///
     /// CDP: `Runtime.awaitPromise`
-    async fn runtime_await_promise(&self, params: &AwaitPromiseParams) -> Result<AwaitPromiseReturn>;
+    async fn runtime_await_promise(
+        &self,
+        params: &AwaitPromiseParams,
+    ) -> Result<AwaitPromiseReturn>;
 
     /// Calls function with given declaration on the given object. Object group of the result is
     /// inherited from the target object.
     ///
     /// CDP: `Runtime.callFunctionOn`
-    async fn runtime_call_function_on(&self, params: &CallFunctionOnParams) -> Result<CallFunctionOnReturn>;
+    async fn runtime_call_function_on(
+        &self,
+        params: &CallFunctionOnParams,
+    ) -> Result<CallFunctionOnReturn>;
 
     /// Compiles expression.
     ///
     /// CDP: `Runtime.compileScript`
-    async fn runtime_compile_script(&self, params: &CompileScriptParams) -> Result<CompileScriptReturn>;
+    async fn runtime_compile_script(
+        &self,
+        params: &CompileScriptParams,
+    ) -> Result<CompileScriptReturn>;
 
     /// Disables reporting of execution contexts creation.
     ///
@@ -1199,16 +1207,25 @@ pub trait RuntimeCommands {
     /// object.
     ///
     /// CDP: `Runtime.getProperties`
-    async fn runtime_get_properties(&self, params: &GetPropertiesParams) -> Result<GetPropertiesReturn>;
+    async fn runtime_get_properties(
+        &self,
+        params: &GetPropertiesParams,
+    ) -> Result<GetPropertiesReturn>;
 
     /// Returns all let, const and class variables from global scope.
     ///
     /// CDP: `Runtime.globalLexicalScopeNames`
-    async fn runtime_global_lexical_scope_names(&self, params: &GlobalLexicalScopeNamesParams) -> Result<GlobalLexicalScopeNamesReturn>;
+    async fn runtime_global_lexical_scope_names(
+        &self,
+        params: &GlobalLexicalScopeNamesParams,
+    ) -> Result<GlobalLexicalScopeNamesReturn>;
 
     ///
     /// CDP: `Runtime.queryObjects`
-    async fn runtime_query_objects(&self, params: &QueryObjectsParams) -> Result<QueryObjectsReturn>;
+    async fn runtime_query_objects(
+        &self,
+        params: &QueryObjectsParams,
+    ) -> Result<QueryObjectsReturn>;
 
     /// Releases remote object with given id.
     ///
@@ -1272,7 +1289,10 @@ pub trait RuntimeCommands {
     /// Error was thrown.
     ///
     /// CDP: `Runtime.getExceptionDetails`
-    async fn runtime_get_exception_details(&self, error_object_id: &RemoteObjectId) -> Result<GetExceptionDetailsReturn>;
+    async fn runtime_get_exception_details(
+        &self,
+        error_object_id: &RemoteObjectId,
+    ) -> Result<GetExceptionDetailsReturn>;
 }
 
 // ── Impl ─────────────────────────────────────────────────────────────────────
@@ -1320,28 +1340,40 @@ struct GetExceptionDetailsInternalParams<'a> {
 }
 
 impl RuntimeCommands for CdpSession {
-    async fn runtime_await_promise(&self, params: &AwaitPromiseParams) -> Result<AwaitPromiseReturn> {
+    async fn runtime_await_promise(
+        &self,
+        params: &AwaitPromiseParams,
+    ) -> Result<AwaitPromiseReturn> {
         self.call("Runtime.awaitPromise", params).await
     }
 
-    async fn runtime_call_function_on(&self, params: &CallFunctionOnParams) -> Result<CallFunctionOnReturn> {
+    async fn runtime_call_function_on(
+        &self,
+        params: &CallFunctionOnParams,
+    ) -> Result<CallFunctionOnReturn> {
         self.call("Runtime.callFunctionOn", params).await
     }
 
-    async fn runtime_compile_script(&self, params: &CompileScriptParams) -> Result<CompileScriptReturn> {
+    async fn runtime_compile_script(
+        &self,
+        params: &CompileScriptParams,
+    ) -> Result<CompileScriptReturn> {
         self.call("Runtime.compileScript", params).await
     }
 
     async fn runtime_disable(&self) -> Result<()> {
-        self.call_no_response("Runtime.disable", &serde_json::json!({})).await
+        self.call_no_response("Runtime.disable", &serde_json::json!({}))
+            .await
     }
 
     async fn runtime_discard_console_entries(&self) -> Result<()> {
-        self.call_no_response("Runtime.discardConsoleEntries", &serde_json::json!({})).await
+        self.call_no_response("Runtime.discardConsoleEntries", &serde_json::json!({}))
+            .await
     }
 
     async fn runtime_enable(&self) -> Result<()> {
-        self.call_no_response("Runtime.enable", &serde_json::json!({})).await
+        self.call_no_response("Runtime.enable", &serde_json::json!({}))
+            .await
     }
 
     async fn runtime_evaluate(&self, params: &EvaluateParams) -> Result<EvaluateReturn> {
@@ -1349,37 +1381,51 @@ impl RuntimeCommands for CdpSession {
     }
 
     async fn runtime_get_isolate_id(&self) -> Result<GetIsolateIdReturn> {
-        self.call("Runtime.getIsolateId", &serde_json::json!({})).await
+        self.call("Runtime.getIsolateId", &serde_json::json!({}))
+            .await
     }
 
     async fn runtime_get_heap_usage(&self) -> Result<GetHeapUsageReturn> {
-        self.call("Runtime.getHeapUsage", &serde_json::json!({})).await
+        self.call("Runtime.getHeapUsage", &serde_json::json!({}))
+            .await
     }
 
-    async fn runtime_get_properties(&self, params: &GetPropertiesParams) -> Result<GetPropertiesReturn> {
+    async fn runtime_get_properties(
+        &self,
+        params: &GetPropertiesParams,
+    ) -> Result<GetPropertiesReturn> {
         self.call("Runtime.getProperties", params).await
     }
 
-    async fn runtime_global_lexical_scope_names(&self, params: &GlobalLexicalScopeNamesParams) -> Result<GlobalLexicalScopeNamesReturn> {
+    async fn runtime_global_lexical_scope_names(
+        &self,
+        params: &GlobalLexicalScopeNamesParams,
+    ) -> Result<GlobalLexicalScopeNamesReturn> {
         self.call("Runtime.globalLexicalScopeNames", params).await
     }
 
-    async fn runtime_query_objects(&self, params: &QueryObjectsParams) -> Result<QueryObjectsReturn> {
+    async fn runtime_query_objects(
+        &self,
+        params: &QueryObjectsParams,
+    ) -> Result<QueryObjectsReturn> {
         self.call("Runtime.queryObjects", params).await
     }
 
     async fn runtime_release_object(&self, object_id: &RemoteObjectId) -> Result<()> {
         let params = ReleaseObjectInternalParams { object_id };
-        self.call_no_response("Runtime.releaseObject", &params).await
+        self.call_no_response("Runtime.releaseObject", &params)
+            .await
     }
 
     async fn runtime_release_object_group(&self, object_group: &str) -> Result<()> {
         let params = ReleaseObjectGroupInternalParams { object_group };
-        self.call_no_response("Runtime.releaseObjectGroup", &params).await
+        self.call_no_response("Runtime.releaseObjectGroup", &params)
+            .await
     }
 
     async fn runtime_run_if_waiting_for_debugger(&self) -> Result<()> {
-        self.call_no_response("Runtime.runIfWaitingForDebugger", &serde_json::json!({})).await
+        self.call_no_response("Runtime.runIfWaitingForDebugger", &serde_json::json!({}))
+            .await
     }
 
     async fn runtime_run_script(&self, params: &RunScriptParams) -> Result<RunScriptReturn> {
@@ -1388,21 +1434,25 @@ impl RuntimeCommands for CdpSession {
 
     async fn runtime_set_async_call_stack_depth(&self, max_depth: i64) -> Result<()> {
         let params = SetAsyncCallStackDepthInternalParams { max_depth };
-        self.call_no_response("Runtime.setAsyncCallStackDepth", &params).await
+        self.call_no_response("Runtime.setAsyncCallStackDepth", &params)
+            .await
     }
 
     async fn runtime_set_custom_object_formatter_enabled(&self, enabled: bool) -> Result<()> {
         let params = SetCustomObjectFormatterEnabledInternalParams { enabled };
-        self.call_no_response("Runtime.setCustomObjectFormatterEnabled", &params).await
+        self.call_no_response("Runtime.setCustomObjectFormatterEnabled", &params)
+            .await
     }
 
     async fn runtime_set_max_call_stack_size_to_capture(&self, size: i64) -> Result<()> {
         let params = SetMaxCallStackSizeToCaptureInternalParams { size };
-        self.call_no_response("Runtime.setMaxCallStackSizeToCapture", &params).await
+        self.call_no_response("Runtime.setMaxCallStackSizeToCapture", &params)
+            .await
     }
 
     async fn runtime_terminate_execution(&self) -> Result<()> {
-        self.call_no_response("Runtime.terminateExecution", &serde_json::json!({})).await
+        self.call_no_response("Runtime.terminateExecution", &serde_json::json!({}))
+            .await
     }
 
     async fn runtime_add_binding(&self, params: &AddBindingParams) -> Result<()> {
@@ -1411,10 +1461,14 @@ impl RuntimeCommands for CdpSession {
 
     async fn runtime_remove_binding(&self, name: &str) -> Result<()> {
         let params = RemoveBindingInternalParams { name };
-        self.call_no_response("Runtime.removeBinding", &params).await
+        self.call_no_response("Runtime.removeBinding", &params)
+            .await
     }
 
-    async fn runtime_get_exception_details(&self, error_object_id: &RemoteObjectId) -> Result<GetExceptionDetailsReturn> {
+    async fn runtime_get_exception_details(
+        &self,
+        error_object_id: &RemoteObjectId,
+    ) -> Result<GetExceptionDetailsReturn> {
         let params = GetExceptionDetailsInternalParams { error_object_id };
         self.call("Runtime.getExceptionDetails", &params).await
     }

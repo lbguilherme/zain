@@ -189,8 +189,6 @@ pub enum PermissionsPolicyFeature {
     ExecutionWhileOutOfViewport,
     #[serde(rename = "execution-while-not-rendered")]
     ExecutionWhileNotRendered,
-    #[serde(rename = "fenced-unpartitioned-storage-read")]
-    FencedUnpartitionedStorageRead,
     #[serde(rename = "focus-without-user-activation")]
     FocusWithoutUserActivation,
     #[serde(rename = "fullscreen")]
@@ -281,6 +279,8 @@ pub enum PermissionsPolicyFeature {
     Summarizer,
     #[serde(rename = "sync-xhr")]
     SyncXhr,
+    #[serde(rename = "tools")]
+    Tools,
     #[serde(rename = "translator")]
     Translator,
     #[serde(rename = "unload")]
@@ -293,6 +293,8 @@ pub enum PermissionsPolicyFeature {
     VerticalScroll,
     #[serde(rename = "web-app-installation")]
     WebAppInstallation,
+    #[serde(rename = "webnn")]
+    Webnn,
     #[serde(rename = "web-printing")]
     WebPrinting,
     #[serde(rename = "web-share")]
@@ -1121,6 +1123,7 @@ pub enum BackForwardCacheNotRestoredReason {
     EmbedderExtensionMessaging,
     EmbedderExtensionMessagingForOpenPort,
     EmbedderExtensionSentMessageToCachedFrame,
+    EmbedderExtensionFrame,
     RequestedByWebViewClient,
     PostMessageByWebViewClient,
     CacheControlNoStoreDeviceBoundSessionTerminated,
@@ -1479,7 +1482,7 @@ pub struct PrintToPDFParams {
     /// - `url`: document location
     /// - `pageNumber`: current page number
     /// - `totalPages`: total pages in the document
-    /// 
+    ///
     /// For example, `<span class=title></span>` would generate span containing the title.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub header_template: Option<String>,
@@ -1893,8 +1896,7 @@ pub struct DocumentOpenedEvent {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FrameResizedEvent {
-}
+pub struct FrameResizedEvent {}
 
 /// Fired when a navigation starts. This event is fired for both
 /// renderer-initiated and browser-initiated navigations. For renderer-initiated
@@ -1952,14 +1954,12 @@ pub struct FrameStoppedLoadingEvent {
 /// Fired when interstitial page was hidden.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InterstitialHiddenEvent {
-}
+pub struct InterstitialHiddenEvent {}
 
 /// Fired when interstitial page was shown.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct InterstitialShownEvent {
-}
+pub struct InterstitialShownEvent {}
 
 /// Fired when a JavaScript initiated dialog (alert, confirm, prompt, or onbeforeunload) has been
 /// closed.
@@ -2100,7 +2100,10 @@ pub trait PageCommands {
     /// Evaluates given script in every frame upon creation (before loading frame's scripts).
     ///
     /// CDP: `Page.addScriptToEvaluateOnNewDocument`
-    async fn page_add_script_to_evaluate_on_new_document(&self, params: &AddScriptToEvaluateOnNewDocumentParams) -> Result<AddScriptToEvaluateOnNewDocumentReturn>;
+    async fn page_add_script_to_evaluate_on_new_document(
+        &self,
+        params: &AddScriptToEvaluateOnNewDocumentParams,
+    ) -> Result<AddScriptToEvaluateOnNewDocumentReturn>;
 
     /// Brings page to front (activates tab).
     ///
@@ -2110,18 +2113,27 @@ pub trait PageCommands {
     /// Capture page screenshot.
     ///
     /// CDP: `Page.captureScreenshot`
-    async fn page_capture_screenshot(&self, params: &CaptureScreenshotParams) -> Result<CaptureScreenshotReturn>;
+    async fn page_capture_screenshot(
+        &self,
+        params: &CaptureScreenshotParams,
+    ) -> Result<CaptureScreenshotReturn>;
 
     /// Returns a snapshot of the page as a string. For MHTML format, the serialization includes
     /// iframes, shadow DOM, external resources, and element-inline styles.
     ///
     /// CDP: `Page.captureSnapshot`
-    async fn page_capture_snapshot(&self, params: &CaptureSnapshotParams) -> Result<CaptureSnapshotReturn>;
+    async fn page_capture_snapshot(
+        &self,
+        params: &CaptureSnapshotParams,
+    ) -> Result<CaptureSnapshotReturn>;
 
     /// Creates an isolated world for the given frame.
     ///
     /// CDP: `Page.createIsolatedWorld`
-    async fn page_create_isolated_world(&self, params: &CreateIsolatedWorldParams) -> Result<CreateIsolatedWorldReturn>;
+    async fn page_create_isolated_world(
+        &self,
+        params: &CreateIsolatedWorldParams,
+    ) -> Result<CreateIsolatedWorldReturn>;
 
     /// Disables page domain notifications.
     ///
@@ -2140,7 +2152,10 @@ pub trait PageCommands {
     ///   If there is not a loaded page, this API errors out immediately.
     ///
     /// CDP: `Page.getAppManifest`
-    async fn page_get_app_manifest(&self, params: &GetAppManifestParams) -> Result<GetAppManifestReturn>;
+    async fn page_get_app_manifest(
+        &self,
+        params: &GetAppManifestParams,
+    ) -> Result<GetAppManifestReturn>;
 
     ///
     /// CDP: `Page.getInstallabilityErrors`
@@ -2154,7 +2169,10 @@ pub trait PageCommands {
 
     ///
     /// CDP: `Page.getAdScriptAncestry`
-    async fn page_get_ad_script_ancestry(&self, frame_id: &FrameId) -> Result<GetAdScriptAncestryReturn>;
+    async fn page_get_ad_script_ancestry(
+        &self,
+        frame_id: &FrameId,
+    ) -> Result<GetAdScriptAncestryReturn>;
 
     /// Returns present frame tree structure.
     ///
@@ -2179,7 +2197,11 @@ pub trait PageCommands {
     /// Returns content of the given resource.
     ///
     /// CDP: `Page.getResourceContent`
-    async fn page_get_resource_content(&self, frame_id: &FrameId, url: &str) -> Result<GetResourceContentReturn>;
+    async fn page_get_resource_content(
+        &self,
+        frame_id: &FrameId,
+        url: &str,
+    ) -> Result<GetResourceContentReturn>;
 
     /// Returns present frame / resource tree structure.
     ///
@@ -2189,7 +2211,10 @@ pub trait PageCommands {
     /// Accepts or dismisses a JavaScript initiated dialog (alert, confirm, prompt, or onbeforeunload).
     ///
     /// CDP: `Page.handleJavaScriptDialog`
-    async fn page_handle_java_script_dialog(&self, params: &HandleJavaScriptDialogParams) -> Result<()>;
+    async fn page_handle_java_script_dialog(
+        &self,
+        params: &HandleJavaScriptDialogParams,
+    ) -> Result<()>;
 
     /// Navigates current page to the given URL.
     ///
@@ -2214,7 +2239,10 @@ pub trait PageCommands {
     /// Removes given script from the list.
     ///
     /// CDP: `Page.removeScriptToEvaluateOnNewDocument`
-    async fn page_remove_script_to_evaluate_on_new_document(&self, identifier: &ScriptIdentifier) -> Result<()>;
+    async fn page_remove_script_to_evaluate_on_new_document(
+        &self,
+        identifier: &ScriptIdentifier,
+    ) -> Result<()>;
 
     /// Acknowledges that a screencast frame has been received by the frontend.
     ///
@@ -2224,7 +2252,10 @@ pub trait PageCommands {
     /// Searches for given string in resource content.
     ///
     /// CDP: `Page.searchInResource`
-    async fn page_search_in_resource(&self, params: &SearchInResourceParams) -> Result<SearchInResourceReturn>;
+    async fn page_search_in_resource(
+        &self,
+        params: &SearchInResourceParams,
+    ) -> Result<SearchInResourceReturn>;
 
     /// Enable Chrome's experimental ad filter on all sites.
     ///
@@ -2239,7 +2270,10 @@ pub trait PageCommands {
     /// Get Permissions Policy state on given frame.
     ///
     /// CDP: `Page.getPermissionsPolicyState`
-    async fn page_get_permissions_policy_state(&self, frame_id: &FrameId) -> Result<GetPermissionsPolicyStateReturn>;
+    async fn page_get_permissions_policy_state(
+        &self,
+        frame_id: &FrameId,
+    ) -> Result<GetPermissionsPolicyStateReturn>;
 
     /// Get Origin Trials on given frame.
     ///
@@ -2291,7 +2325,8 @@ pub trait PageCommands {
     /// https://github.com/WICG/web-lifecycle/.
     ///
     /// CDP: `Page.setWebLifecycleState`
-    async fn page_set_web_lifecycle_state(&self, params: &SetWebLifecycleStateParams) -> Result<()>;
+    async fn page_set_web_lifecycle_state(&self, params: &SetWebLifecycleStateParams)
+    -> Result<()>;
 
     /// Stops sending each frame in the `screencastFrame`.
     ///
@@ -2306,7 +2341,10 @@ pub trait PageCommands {
     /// See also: `Page.compilationCacheProduced`.
     ///
     /// CDP: `Page.produceCompilationCache`
-    async fn page_produce_compilation_cache(&self, scripts: &[CompilationCacheParams]) -> Result<()>;
+    async fn page_produce_compilation_cache(
+        &self,
+        scripts: &[CompilationCacheParams],
+    ) -> Result<()>;
 
     /// Seeds compilation cache for given url. Compilation cache does not survive
     /// cross-process navigation.
@@ -2323,13 +2361,19 @@ pub trait PageCommands {
     /// https://w3c.github.io/secure-payment-confirmation/#sctn-automation-set-spc-transaction-mode.
     ///
     /// CDP: `Page.setSPCTransactionMode`
-    async fn page_set_spc_transaction_mode(&self, params: &SetSPCTransactionModeParams) -> Result<()>;
+    async fn page_set_spc_transaction_mode(
+        &self,
+        params: &SetSPCTransactionModeParams,
+    ) -> Result<()>;
 
     /// Extensions for Custom Handlers API:
     /// https://html.spec.whatwg.org/multipage/system-state.html#rph-automation.
     ///
     /// CDP: `Page.setRPHRegistrationMode`
-    async fn page_set_rph_registration_mode(&self, params: &SetRPHRegistrationModeParams) -> Result<()>;
+    async fn page_set_rph_registration_mode(
+        &self,
+        params: &SetRPHRegistrationModeParams,
+    ) -> Result<()>;
 
     /// Generates a report for testing.
     ///
@@ -2346,14 +2390,17 @@ pub trait PageCommands {
     /// Instead, a protocol event `Page.fileChooserOpened` is emitted.
     ///
     /// CDP: `Page.setInterceptFileChooserDialog`
-    async fn page_set_intercept_file_chooser_dialog(&self, params: &SetInterceptFileChooserDialogParams) -> Result<()>;
+    async fn page_set_intercept_file_chooser_dialog(
+        &self,
+        params: &SetInterceptFileChooserDialogParams,
+    ) -> Result<()>;
 
     /// Enable/disable prerendering manually.
-    /// 
+    ///
     /// This command is a short-term solution for https://crbug.com/1440085.
     /// See https://docs.google.com/document/d/12HVmFxYj5Jc-eJr5OmWsa2bqTJsbgGLKI6ZIyx0_wpA
     /// for more details.
-    /// 
+    ///
     /// TODO(https://crbug.com/1440085): Remove this once Puppeteer supports tab targets.
     ///
     /// CDP: `Page.setPrerenderingAllowed`
@@ -2363,7 +2410,10 @@ pub trait PageCommands {
     /// This is an experimental command that is subject to change.
     ///
     /// CDP: `Page.getAnnotatedPageContent`
-    async fn page_get_annotated_page_content(&self, params: &GetAnnotatedPageContentParams) -> Result<GetAnnotatedPageContentReturn>;
+    async fn page_get_annotated_page_content(
+        &self,
+        params: &GetAnnotatedPageContentParams,
+    ) -> Result<GetAnnotatedPageContentReturn>;
 }
 
 // ── Impl ─────────────────────────────────────────────────────────────────────
@@ -2462,47 +2512,69 @@ struct SetPrerenderingAllowedInternalParams {
 }
 
 impl PageCommands for CdpSession {
-    async fn page_add_script_to_evaluate_on_new_document(&self, params: &AddScriptToEvaluateOnNewDocumentParams) -> Result<AddScriptToEvaluateOnNewDocumentReturn> {
-        self.call("Page.addScriptToEvaluateOnNewDocument", params).await
+    async fn page_add_script_to_evaluate_on_new_document(
+        &self,
+        params: &AddScriptToEvaluateOnNewDocumentParams,
+    ) -> Result<AddScriptToEvaluateOnNewDocumentReturn> {
+        self.call("Page.addScriptToEvaluateOnNewDocument", params)
+            .await
     }
 
     async fn page_bring_to_front(&self) -> Result<()> {
-        self.call_no_response("Page.bringToFront", &serde_json::json!({})).await
+        self.call_no_response("Page.bringToFront", &serde_json::json!({}))
+            .await
     }
 
-    async fn page_capture_screenshot(&self, params: &CaptureScreenshotParams) -> Result<CaptureScreenshotReturn> {
+    async fn page_capture_screenshot(
+        &self,
+        params: &CaptureScreenshotParams,
+    ) -> Result<CaptureScreenshotReturn> {
         self.call("Page.captureScreenshot", params).await
     }
 
-    async fn page_capture_snapshot(&self, params: &CaptureSnapshotParams) -> Result<CaptureSnapshotReturn> {
+    async fn page_capture_snapshot(
+        &self,
+        params: &CaptureSnapshotParams,
+    ) -> Result<CaptureSnapshotReturn> {
         self.call("Page.captureSnapshot", params).await
     }
 
-    async fn page_create_isolated_world(&self, params: &CreateIsolatedWorldParams) -> Result<CreateIsolatedWorldReturn> {
+    async fn page_create_isolated_world(
+        &self,
+        params: &CreateIsolatedWorldParams,
+    ) -> Result<CreateIsolatedWorldReturn> {
         self.call("Page.createIsolatedWorld", params).await
     }
 
     async fn page_disable(&self) -> Result<()> {
-        self.call_no_response("Page.disable", &serde_json::json!({})).await
+        self.call_no_response("Page.disable", &serde_json::json!({}))
+            .await
     }
 
     async fn page_enable(&self, params: &EnableParams) -> Result<()> {
         self.call_no_response("Page.enable", params).await
     }
 
-    async fn page_get_app_manifest(&self, params: &GetAppManifestParams) -> Result<GetAppManifestReturn> {
+    async fn page_get_app_manifest(
+        &self,
+        params: &GetAppManifestParams,
+    ) -> Result<GetAppManifestReturn> {
         self.call("Page.getAppManifest", params).await
     }
 
     async fn page_get_installability_errors(&self) -> Result<GetInstallabilityErrorsReturn> {
-        self.call("Page.getInstallabilityErrors", &serde_json::json!({})).await
+        self.call("Page.getInstallabilityErrors", &serde_json::json!({}))
+            .await
     }
 
     async fn page_get_app_id(&self) -> Result<GetAppIdReturn> {
         self.call("Page.getAppId", &serde_json::json!({})).await
     }
 
-    async fn page_get_ad_script_ancestry(&self, frame_id: &FrameId) -> Result<GetAdScriptAncestryReturn> {
+    async fn page_get_ad_script_ancestry(
+        &self,
+        frame_id: &FrameId,
+    ) -> Result<GetAdScriptAncestryReturn> {
         let params = GetAdScriptAncestryInternalParams { frame_id };
         self.call("Page.getAdScriptAncestry", &params).await
     }
@@ -2512,28 +2584,40 @@ impl PageCommands for CdpSession {
     }
 
     async fn page_get_layout_metrics(&self) -> Result<GetLayoutMetricsReturn> {
-        self.call("Page.getLayoutMetrics", &serde_json::json!({})).await
+        self.call("Page.getLayoutMetrics", &serde_json::json!({}))
+            .await
     }
 
     async fn page_get_navigation_history(&self) -> Result<GetNavigationHistoryReturn> {
-        self.call("Page.getNavigationHistory", &serde_json::json!({})).await
+        self.call("Page.getNavigationHistory", &serde_json::json!({}))
+            .await
     }
 
     async fn page_reset_navigation_history(&self) -> Result<()> {
-        self.call_no_response("Page.resetNavigationHistory", &serde_json::json!({})).await
+        self.call_no_response("Page.resetNavigationHistory", &serde_json::json!({}))
+            .await
     }
 
-    async fn page_get_resource_content(&self, frame_id: &FrameId, url: &str) -> Result<GetResourceContentReturn> {
+    async fn page_get_resource_content(
+        &self,
+        frame_id: &FrameId,
+        url: &str,
+    ) -> Result<GetResourceContentReturn> {
         let params = GetResourceContentInternalParams { frame_id, url };
         self.call("Page.getResourceContent", &params).await
     }
 
     async fn page_get_resource_tree(&self) -> Result<GetResourceTreeReturn> {
-        self.call("Page.getResourceTree", &serde_json::json!({})).await
+        self.call("Page.getResourceTree", &serde_json::json!({}))
+            .await
     }
 
-    async fn page_handle_java_script_dialog(&self, params: &HandleJavaScriptDialogParams) -> Result<()> {
-        self.call_no_response("Page.handleJavaScriptDialog", params).await
+    async fn page_handle_java_script_dialog(
+        &self,
+        params: &HandleJavaScriptDialogParams,
+    ) -> Result<()> {
+        self.call_no_response("Page.handleJavaScriptDialog", params)
+            .await
     }
 
     async fn page_navigate(&self, params: &NavigateParams) -> Result<NavigateReturn> {
@@ -2542,7 +2626,8 @@ impl PageCommands for CdpSession {
 
     async fn page_navigate_to_history_entry(&self, entry_id: i64) -> Result<()> {
         let params = NavigateToHistoryEntryInternalParams { entry_id };
-        self.call_no_response("Page.navigateToHistoryEntry", &params).await
+        self.call_no_response("Page.navigateToHistoryEntry", &params)
+            .await
     }
 
     async fn page_print_to_pdf(&self, params: &PrintToPDFParams) -> Result<PrintToPDFReturn> {
@@ -2553,23 +2638,32 @@ impl PageCommands for CdpSession {
         self.call_no_response("Page.reload", params).await
     }
 
-    async fn page_remove_script_to_evaluate_on_new_document(&self, identifier: &ScriptIdentifier) -> Result<()> {
+    async fn page_remove_script_to_evaluate_on_new_document(
+        &self,
+        identifier: &ScriptIdentifier,
+    ) -> Result<()> {
         let params = RemoveScriptToEvaluateOnNewDocumentInternalParams { identifier };
-        self.call_no_response("Page.removeScriptToEvaluateOnNewDocument", &params).await
+        self.call_no_response("Page.removeScriptToEvaluateOnNewDocument", &params)
+            .await
     }
 
     async fn page_screencast_frame_ack(&self, session_id: i64) -> Result<()> {
         let params = ScreencastFrameAckInternalParams { session_id };
-        self.call_no_response("Page.screencastFrameAck", &params).await
+        self.call_no_response("Page.screencastFrameAck", &params)
+            .await
     }
 
-    async fn page_search_in_resource(&self, params: &SearchInResourceParams) -> Result<SearchInResourceReturn> {
+    async fn page_search_in_resource(
+        &self,
+        params: &SearchInResourceParams,
+    ) -> Result<SearchInResourceReturn> {
         self.call("Page.searchInResource", params).await
     }
 
     async fn page_set_ad_blocking_enabled(&self, enabled: bool) -> Result<()> {
         let params = SetAdBlockingEnabledInternalParams { enabled };
-        self.call_no_response("Page.setAdBlockingEnabled", &params).await
+        self.call_no_response("Page.setAdBlockingEnabled", &params)
+            .await
     }
 
     async fn page_set_bypass_csp(&self, enabled: bool) -> Result<()> {
@@ -2577,7 +2671,10 @@ impl PageCommands for CdpSession {
         self.call_no_response("Page.setBypassCSP", &params).await
     }
 
-    async fn page_get_permissions_policy_state(&self, frame_id: &FrameId) -> Result<GetPermissionsPolicyStateReturn> {
+    async fn page_get_permissions_policy_state(
+        &self,
+        frame_id: &FrameId,
+    ) -> Result<GetPermissionsPolicyStateReturn> {
         let params = GetPermissionsPolicyStateInternalParams { frame_id };
         self.call("Page.getPermissionsPolicyState", &params).await
     }
@@ -2598,12 +2695,14 @@ impl PageCommands for CdpSession {
 
     async fn page_set_document_content(&self, frame_id: &FrameId, html: &str) -> Result<()> {
         let params = SetDocumentContentInternalParams { frame_id, html };
-        self.call_no_response("Page.setDocumentContent", &params).await
+        self.call_no_response("Page.setDocumentContent", &params)
+            .await
     }
 
     async fn page_set_lifecycle_events_enabled(&self, enabled: bool) -> Result<()> {
         let params = SetLifecycleEventsEnabledInternalParams { enabled };
-        self.call_no_response("Page.setLifecycleEventsEnabled", &params).await
+        self.call_no_response("Page.setLifecycleEventsEnabled", &params)
+            .await
     }
 
     async fn page_start_screencast(&self, params: &StartScreencastParams) -> Result<()> {
@@ -2611,65 +2710,97 @@ impl PageCommands for CdpSession {
     }
 
     async fn page_stop_loading(&self) -> Result<()> {
-        self.call_no_response("Page.stopLoading", &serde_json::json!({})).await
+        self.call_no_response("Page.stopLoading", &serde_json::json!({}))
+            .await
     }
 
     async fn page_crash(&self) -> Result<()> {
-        self.call_no_response("Page.crash", &serde_json::json!({})).await
+        self.call_no_response("Page.crash", &serde_json::json!({}))
+            .await
     }
 
     async fn page_close(&self) -> Result<()> {
-        self.call_no_response("Page.close", &serde_json::json!({})).await
+        self.call_no_response("Page.close", &serde_json::json!({}))
+            .await
     }
 
-    async fn page_set_web_lifecycle_state(&self, params: &SetWebLifecycleStateParams) -> Result<()> {
-        self.call_no_response("Page.setWebLifecycleState", params).await
+    async fn page_set_web_lifecycle_state(
+        &self,
+        params: &SetWebLifecycleStateParams,
+    ) -> Result<()> {
+        self.call_no_response("Page.setWebLifecycleState", params)
+            .await
     }
 
     async fn page_stop_screencast(&self) -> Result<()> {
-        self.call_no_response("Page.stopScreencast", &serde_json::json!({})).await
+        self.call_no_response("Page.stopScreencast", &serde_json::json!({}))
+            .await
     }
 
-    async fn page_produce_compilation_cache(&self, scripts: &[CompilationCacheParams]) -> Result<()> {
+    async fn page_produce_compilation_cache(
+        &self,
+        scripts: &[CompilationCacheParams],
+    ) -> Result<()> {
         let params = ProduceCompilationCacheInternalParams { scripts };
-        self.call_no_response("Page.produceCompilationCache", &params).await
+        self.call_no_response("Page.produceCompilationCache", &params)
+            .await
     }
 
     async fn page_add_compilation_cache(&self, url: &str, data: &str) -> Result<()> {
         let params = AddCompilationCacheInternalParams { url, data };
-        self.call_no_response("Page.addCompilationCache", &params).await
+        self.call_no_response("Page.addCompilationCache", &params)
+            .await
     }
 
     async fn page_clear_compilation_cache(&self) -> Result<()> {
-        self.call_no_response("Page.clearCompilationCache", &serde_json::json!({})).await
+        self.call_no_response("Page.clearCompilationCache", &serde_json::json!({}))
+            .await
     }
 
-    async fn page_set_spc_transaction_mode(&self, params: &SetSPCTransactionModeParams) -> Result<()> {
-        self.call_no_response("Page.setSPCTransactionMode", params).await
+    async fn page_set_spc_transaction_mode(
+        &self,
+        params: &SetSPCTransactionModeParams,
+    ) -> Result<()> {
+        self.call_no_response("Page.setSPCTransactionMode", params)
+            .await
     }
 
-    async fn page_set_rph_registration_mode(&self, params: &SetRPHRegistrationModeParams) -> Result<()> {
-        self.call_no_response("Page.setRPHRegistrationMode", params).await
+    async fn page_set_rph_registration_mode(
+        &self,
+        params: &SetRPHRegistrationModeParams,
+    ) -> Result<()> {
+        self.call_no_response("Page.setRPHRegistrationMode", params)
+            .await
     }
 
     async fn page_generate_test_report(&self, params: &GenerateTestReportParams) -> Result<()> {
-        self.call_no_response("Page.generateTestReport", params).await
+        self.call_no_response("Page.generateTestReport", params)
+            .await
     }
 
     async fn page_wait_for_debugger(&self) -> Result<()> {
-        self.call_no_response("Page.waitForDebugger", &serde_json::json!({})).await
+        self.call_no_response("Page.waitForDebugger", &serde_json::json!({}))
+            .await
     }
 
-    async fn page_set_intercept_file_chooser_dialog(&self, params: &SetInterceptFileChooserDialogParams) -> Result<()> {
-        self.call_no_response("Page.setInterceptFileChooserDialog", params).await
+    async fn page_set_intercept_file_chooser_dialog(
+        &self,
+        params: &SetInterceptFileChooserDialogParams,
+    ) -> Result<()> {
+        self.call_no_response("Page.setInterceptFileChooserDialog", params)
+            .await
     }
 
     async fn page_set_prerendering_allowed(&self, is_allowed: bool) -> Result<()> {
         let params = SetPrerenderingAllowedInternalParams { is_allowed };
-        self.call_no_response("Page.setPrerenderingAllowed", &params).await
+        self.call_no_response("Page.setPrerenderingAllowed", &params)
+            .await
     }
 
-    async fn page_get_annotated_page_content(&self, params: &GetAnnotatedPageContentParams) -> Result<GetAnnotatedPageContentReturn> {
+    async fn page_get_annotated_page_content(
+        &self,
+        params: &GetAnnotatedPageContentParams,
+    ) -> Result<GetAnnotatedPageContentReturn> {
         self.call("Page.getAnnotatedPageContent", params).await
     }
 }

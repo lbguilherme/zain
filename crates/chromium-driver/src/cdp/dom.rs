@@ -53,8 +53,8 @@ pub enum PseudoType {
     ExpandIcon,
     #[serde(rename = "picker-icon")]
     PickerIcon,
-    #[serde(rename = "interest-hint")]
-    InterestHint,
+    #[serde(rename = "interest-button")]
+    InterestButton,
     #[serde(rename = "marker")]
     Marker,
     #[serde(rename = "backdrop")]
@@ -121,6 +121,8 @@ pub enum PseudoType {
     PermissionIcon,
     #[serde(rename = "overscroll-area-parent")]
     OverscrollAreaParent,
+    #[serde(rename = "skeleton")]
+    Skeleton,
 }
 
 /// Shadow root type.
@@ -715,6 +717,23 @@ pub struct GetAnchorElementParams {
     pub anchor_specifier: Option<String>,
 }
 
+/// Parameters for [`DomCommands::dom_force_show_popover`].
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForceShowPopoverParams {
+    /// Id of the popover HTMLElement.
+    pub node_id: NodeId,
+    /// If true, opens the popover and keeps it open. If false, closes the
+    /// popover if it was previously force-opened.
+    pub enable: bool,
+    /// Optional ID of the element invoking this popover, used to establish the implicit anchor.
+    /// If not provided, it will fall back to the first invoker in the document, preferring
+    /// elements with a popovertarget attribute over those with a commandfor attribute. Note that
+    /// if there are multiple invokers, this is just an estimate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invoker_node_id: Option<BackendNodeId>,
+}
+
 // ── Return types ─────────────────────────────────────────────────────────────
 
 /// Return type for [`DomCommands::dom_collect_class_names_from_subtree`].
@@ -1067,8 +1086,7 @@ pub struct DistributedNodesUpdatedEvent {
 /// Fired when `Document` has been totally updated. Node ids are no longer valid.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct DocumentUpdatedEvent {
-}
+pub struct DocumentUpdatedEvent {}
 
 /// Fired when `Element`'s inline style is modified via a CSS property modification.
 #[derive(Debug, Clone, Deserialize)]
@@ -1091,8 +1109,7 @@ pub struct PseudoElementAddedEvent {
 /// Called when top layer elements are changed.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TopLayerElementsUpdatedEvent {
-}
+pub struct TopLayerElementsUpdatedEvent {}
 
 /// Fired when a node's scrollability state changes.
 #[derive(Debug, Clone, Deserialize)]
@@ -1183,7 +1200,10 @@ pub trait DomCommands {
     /// Collects class names for the node with given id and all of it's child nodes.
     ///
     /// CDP: `DOM.collectClassNamesFromSubtree`
-    async fn dom_collect_class_names_from_subtree(&self, node_id: &NodeId) -> Result<CollectClassNamesFromSubtreeReturn>;
+    async fn dom_collect_class_names_from_subtree(
+        &self,
+        node_id: &NodeId,
+    ) -> Result<CollectClassNamesFromSubtreeReturn>;
 
     /// Creates a deep copy of the specified node and places it into the target container before the
     /// given anchor.
@@ -1202,7 +1222,10 @@ pub trait DomCommands {
     /// to identify the node.
     ///
     /// CDP: `DOM.scrollIntoViewIfNeeded`
-    async fn dom_scroll_into_view_if_needed(&self, params: &ScrollIntoViewIfNeededParams) -> Result<()>;
+    async fn dom_scroll_into_view_if_needed(
+        &self,
+        params: &ScrollIntoViewIfNeededParams,
+    ) -> Result<()>;
 
     /// Disables DOM agent for the given page.
     ///
@@ -1239,7 +1262,10 @@ pub trait DomCommands {
     /// might return multiple quads for inline nodes.
     ///
     /// CDP: `DOM.getContentQuads`
-    async fn dom_get_content_quads(&self, params: &GetContentQuadsParams) -> Result<GetContentQuadsReturn>;
+    async fn dom_get_content_quads(
+        &self,
+        params: &GetContentQuadsParams,
+    ) -> Result<GetContentQuadsReturn>;
 
     /// Returns the root DOM node (and optionally the subtree) to the caller.
     /// Implicitly enables the DOM domain events for the current target.
@@ -1250,13 +1276,19 @@ pub trait DomCommands {
     /// Finds nodes with a given computed style in a subtree.
     ///
     /// CDP: `DOM.getNodesForSubtreeByStyle`
-    async fn dom_get_nodes_for_subtree_by_style(&self, params: &GetNodesForSubtreeByStyleParams) -> Result<GetNodesForSubtreeByStyleReturn>;
+    async fn dom_get_nodes_for_subtree_by_style(
+        &self,
+        params: &GetNodesForSubtreeByStyleParams,
+    ) -> Result<GetNodesForSubtreeByStyleReturn>;
 
     /// Returns node id at given location. Depending on whether DOM domain is enabled, nodeId is
     /// either returned or not.
     ///
     /// CDP: `DOM.getNodeForLocation`
-    async fn dom_get_node_for_location(&self, params: &GetNodeForLocationParams) -> Result<GetNodeForLocationReturn>;
+    async fn dom_get_node_for_location(
+        &self,
+        params: &GetNodeForLocationParams,
+    ) -> Result<GetNodeForLocationReturn>;
 
     /// Returns node's HTML markup.
     ///
@@ -1266,13 +1298,19 @@ pub trait DomCommands {
     /// Returns the id of the nearest ancestor that is a relayout boundary.
     ///
     /// CDP: `DOM.getRelayoutBoundary`
-    async fn dom_get_relayout_boundary(&self, node_id: &NodeId) -> Result<GetRelayoutBoundaryReturn>;
+    async fn dom_get_relayout_boundary(
+        &self,
+        node_id: &NodeId,
+    ) -> Result<GetRelayoutBoundaryReturn>;
 
     /// Returns search results from given `fromIndex` to given `toIndex` from the search with the given
     /// identifier.
     ///
     /// CDP: `DOM.getSearchResults`
-    async fn dom_get_search_results(&self, params: &GetSearchResultsParams) -> Result<GetSearchResultsReturn>;
+    async fn dom_get_search_results(
+        &self,
+        params: &GetSearchResultsParams,
+    ) -> Result<GetSearchResultsReturn>;
 
     /// Hides any highlight.
     ///
@@ -1303,27 +1341,42 @@ pub trait DomCommands {
     /// `cancelSearch` to end this search session.
     ///
     /// CDP: `DOM.performSearch`
-    async fn dom_perform_search(&self, params: &PerformSearchParams) -> Result<PerformSearchReturn>;
+    async fn dom_perform_search(&self, params: &PerformSearchParams)
+    -> Result<PerformSearchReturn>;
 
     /// Requests that the node is sent to the caller given its path. // FIXME, use XPath.
     ///
     /// CDP: `DOM.pushNodeByPathToFrontend`
-    async fn dom_push_node_by_path_to_frontend(&self, path: &str) -> Result<PushNodeByPathToFrontendReturn>;
+    async fn dom_push_node_by_path_to_frontend(
+        &self,
+        path: &str,
+    ) -> Result<PushNodeByPathToFrontendReturn>;
 
     /// Requests that a batch of nodes is sent to the caller given their backend node ids.
     ///
     /// CDP: `DOM.pushNodesByBackendIdsToFrontend`
-    async fn dom_push_nodes_by_backend_ids_to_frontend(&self, backend_node_ids: &[BackendNodeId]) -> Result<PushNodesByBackendIdsToFrontendReturn>;
+    async fn dom_push_nodes_by_backend_ids_to_frontend(
+        &self,
+        backend_node_ids: &[BackendNodeId],
+    ) -> Result<PushNodesByBackendIdsToFrontendReturn>;
 
     /// Executes `querySelector` on a given node.
     ///
     /// CDP: `DOM.querySelector`
-    async fn dom_query_selector(&self, node_id: &NodeId, selector: &str) -> Result<QuerySelectorReturn>;
+    async fn dom_query_selector(
+        &self,
+        node_id: &NodeId,
+        selector: &str,
+    ) -> Result<QuerySelectorReturn>;
 
     /// Executes `querySelectorAll` on a given node.
     ///
     /// CDP: `DOM.querySelectorAll`
-    async fn dom_query_selector_all(&self, node_id: &NodeId, selector: &str) -> Result<QuerySelectorAllReturn>;
+    async fn dom_query_selector_all(
+        &self,
+        node_id: &NodeId,
+        selector: &str,
+    ) -> Result<QuerySelectorAllReturn>;
 
     /// Returns NodeIds of current top layer elements.
     /// Top layer is rendered closest to the user within a viewport, therefore its elements always
@@ -1335,7 +1388,10 @@ pub trait DomCommands {
     /// Returns the NodeId of the matched element according to certain relations.
     ///
     /// CDP: `DOM.getElementByRelation`
-    async fn dom_get_element_by_relation(&self, params: &GetElementByRelationParams) -> Result<GetElementByRelationReturn>;
+    async fn dom_get_element_by_relation(
+        &self,
+        params: &GetElementByRelationParams,
+    ) -> Result<GetElementByRelationReturn>;
 
     /// Re-does the last undone action.
     ///
@@ -1395,7 +1451,8 @@ pub trait DomCommands {
     /// Gets stack traces associated with a Node. As of now, only provides stack trace for Node creation.
     ///
     /// CDP: `DOM.getNodeStackTraces`
-    async fn dom_get_node_stack_traces(&self, node_id: &NodeId) -> Result<GetNodeStackTracesReturn>;
+    async fn dom_get_node_stack_traces(&self, node_id: &NodeId)
+    -> Result<GetNodeStackTracesReturn>;
 
     /// Returns file information for the given
     /// File wrapper.
@@ -1446,25 +1503,37 @@ pub trait DomCommands {
     /// direct parent or the closest element with a matching container-name.
     ///
     /// CDP: `DOM.getContainerForNode`
-    async fn dom_get_container_for_node(&self, params: &GetContainerForNodeParams) -> Result<GetContainerForNodeReturn>;
+    async fn dom_get_container_for_node(
+        &self,
+        params: &GetContainerForNodeParams,
+    ) -> Result<GetContainerForNodeReturn>;
 
     /// Returns the descendants of a container query container that have
     /// container queries against this container.
     ///
     /// CDP: `DOM.getQueryingDescendantsForContainer`
-    async fn dom_get_querying_descendants_for_container(&self, node_id: &NodeId) -> Result<GetQueryingDescendantsForContainerReturn>;
+    async fn dom_get_querying_descendants_for_container(
+        &self,
+        node_id: &NodeId,
+    ) -> Result<GetQueryingDescendantsForContainerReturn>;
 
     /// Returns the target anchor element of the given anchor query according to
     /// https://www.w3.org/TR/css-anchor-position-1/#target.
     ///
     /// CDP: `DOM.getAnchorElement`
-    async fn dom_get_anchor_element(&self, params: &GetAnchorElementParams) -> Result<GetAnchorElementReturn>;
+    async fn dom_get_anchor_element(
+        &self,
+        params: &GetAnchorElementParams,
+    ) -> Result<GetAnchorElementReturn>;
 
     /// When enabling, this API force-opens the popover identified by nodeId
     /// and keeps it open until disabled.
     ///
     /// CDP: `DOM.forceShowPopover`
-    async fn dom_force_show_popover(&self, node_id: &NodeId, enable: bool) -> Result<ForceShowPopoverReturn>;
+    async fn dom_force_show_popover(
+        &self,
+        params: &ForceShowPopoverParams,
+    ) -> Result<ForceShowPopoverReturn>;
 }
 
 // ── Impl ─────────────────────────────────────────────────────────────────────
@@ -1595,15 +1664,11 @@ struct GetQueryingDescendantsForContainerInternalParams<'a> {
     node_id: &'a NodeId,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ForceShowPopoverInternalParams<'a> {
-    node_id: &'a NodeId,
-    enable: bool,
-}
-
 impl DomCommands for CdpSession {
-    async fn dom_collect_class_names_from_subtree(&self, node_id: &NodeId) -> Result<CollectClassNamesFromSubtreeReturn> {
+    async fn dom_collect_class_names_from_subtree(
+        &self,
+        node_id: &NodeId,
+    ) -> Result<CollectClassNamesFromSubtreeReturn> {
         let params = CollectClassNamesFromSubtreeInternalParams { node_id };
         self.call("DOM.collectClassNamesFromSubtree", &params).await
     }
@@ -1616,17 +1681,23 @@ impl DomCommands for CdpSession {
         self.call("DOM.describeNode", params).await
     }
 
-    async fn dom_scroll_into_view_if_needed(&self, params: &ScrollIntoViewIfNeededParams) -> Result<()> {
-        self.call_no_response("DOM.scrollIntoViewIfNeeded", params).await
+    async fn dom_scroll_into_view_if_needed(
+        &self,
+        params: &ScrollIntoViewIfNeededParams,
+    ) -> Result<()> {
+        self.call_no_response("DOM.scrollIntoViewIfNeeded", params)
+            .await
     }
 
     async fn dom_disable(&self) -> Result<()> {
-        self.call_no_response("DOM.disable", &serde_json::json!({})).await
+        self.call_no_response("DOM.disable", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_discard_search_results(&self, search_id: &str) -> Result<()> {
         let params = DiscardSearchResultsInternalParams { search_id };
-        self.call_no_response("DOM.discardSearchResults", &params).await
+        self.call_no_response("DOM.discardSearchResults", &params)
+            .await
     }
 
     async fn dom_enable(&self, params: &EnableParams) -> Result<()> {
@@ -1646,7 +1717,10 @@ impl DomCommands for CdpSession {
         self.call("DOM.getBoxModel", params).await
     }
 
-    async fn dom_get_content_quads(&self, params: &GetContentQuadsParams) -> Result<GetContentQuadsReturn> {
+    async fn dom_get_content_quads(
+        &self,
+        params: &GetContentQuadsParams,
+    ) -> Result<GetContentQuadsReturn> {
         self.call("DOM.getContentQuads", params).await
     }
 
@@ -1654,11 +1728,17 @@ impl DomCommands for CdpSession {
         self.call("DOM.getDocument", params).await
     }
 
-    async fn dom_get_nodes_for_subtree_by_style(&self, params: &GetNodesForSubtreeByStyleParams) -> Result<GetNodesForSubtreeByStyleReturn> {
+    async fn dom_get_nodes_for_subtree_by_style(
+        &self,
+        params: &GetNodesForSubtreeByStyleParams,
+    ) -> Result<GetNodesForSubtreeByStyleReturn> {
         self.call("DOM.getNodesForSubtreeByStyle", params).await
     }
 
-    async fn dom_get_node_for_location(&self, params: &GetNodeForLocationParams) -> Result<GetNodeForLocationReturn> {
+    async fn dom_get_node_for_location(
+        &self,
+        params: &GetNodeForLocationParams,
+    ) -> Result<GetNodeForLocationReturn> {
         self.call("DOM.getNodeForLocation", params).await
     }
 
@@ -1666,69 +1746,102 @@ impl DomCommands for CdpSession {
         self.call("DOM.getOuterHTML", params).await
     }
 
-    async fn dom_get_relayout_boundary(&self, node_id: &NodeId) -> Result<GetRelayoutBoundaryReturn> {
+    async fn dom_get_relayout_boundary(
+        &self,
+        node_id: &NodeId,
+    ) -> Result<GetRelayoutBoundaryReturn> {
         let params = GetRelayoutBoundaryInternalParams { node_id };
         self.call("DOM.getRelayoutBoundary", &params).await
     }
 
-    async fn dom_get_search_results(&self, params: &GetSearchResultsParams) -> Result<GetSearchResultsReturn> {
+    async fn dom_get_search_results(
+        &self,
+        params: &GetSearchResultsParams,
+    ) -> Result<GetSearchResultsReturn> {
         self.call("DOM.getSearchResults", params).await
     }
 
     async fn dom_hide_highlight(&self) -> Result<()> {
-        self.call_no_response("DOM.hideHighlight", &serde_json::json!({})).await
+        self.call_no_response("DOM.hideHighlight", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_highlight_node(&self) -> Result<()> {
-        self.call_no_response("DOM.highlightNode", &serde_json::json!({})).await
+        self.call_no_response("DOM.highlightNode", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_highlight_rect(&self) -> Result<()> {
-        self.call_no_response("DOM.highlightRect", &serde_json::json!({})).await
+        self.call_no_response("DOM.highlightRect", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_mark_undoable_state(&self) -> Result<()> {
-        self.call_no_response("DOM.markUndoableState", &serde_json::json!({})).await
+        self.call_no_response("DOM.markUndoableState", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_move_to(&self, params: &MoveToParams) -> Result<MoveToReturn> {
         self.call("DOM.moveTo", params).await
     }
 
-    async fn dom_perform_search(&self, params: &PerformSearchParams) -> Result<PerformSearchReturn> {
+    async fn dom_perform_search(
+        &self,
+        params: &PerformSearchParams,
+    ) -> Result<PerformSearchReturn> {
         self.call("DOM.performSearch", params).await
     }
 
-    async fn dom_push_node_by_path_to_frontend(&self, path: &str) -> Result<PushNodeByPathToFrontendReturn> {
+    async fn dom_push_node_by_path_to_frontend(
+        &self,
+        path: &str,
+    ) -> Result<PushNodeByPathToFrontendReturn> {
         let params = PushNodeByPathToFrontendInternalParams { path };
         self.call("DOM.pushNodeByPathToFrontend", &params).await
     }
 
-    async fn dom_push_nodes_by_backend_ids_to_frontend(&self, backend_node_ids: &[BackendNodeId]) -> Result<PushNodesByBackendIdsToFrontendReturn> {
+    async fn dom_push_nodes_by_backend_ids_to_frontend(
+        &self,
+        backend_node_ids: &[BackendNodeId],
+    ) -> Result<PushNodesByBackendIdsToFrontendReturn> {
         let params = PushNodesByBackendIdsToFrontendInternalParams { backend_node_ids };
-        self.call("DOM.pushNodesByBackendIdsToFrontend", &params).await
+        self.call("DOM.pushNodesByBackendIdsToFrontend", &params)
+            .await
     }
 
-    async fn dom_query_selector(&self, node_id: &NodeId, selector: &str) -> Result<QuerySelectorReturn> {
+    async fn dom_query_selector(
+        &self,
+        node_id: &NodeId,
+        selector: &str,
+    ) -> Result<QuerySelectorReturn> {
         let params = QuerySelectorInternalParams { node_id, selector };
         self.call("DOM.querySelector", &params).await
     }
 
-    async fn dom_query_selector_all(&self, node_id: &NodeId, selector: &str) -> Result<QuerySelectorAllReturn> {
+    async fn dom_query_selector_all(
+        &self,
+        node_id: &NodeId,
+        selector: &str,
+    ) -> Result<QuerySelectorAllReturn> {
         let params = QuerySelectorAllInternalParams { node_id, selector };
         self.call("DOM.querySelectorAll", &params).await
     }
 
     async fn dom_get_top_layer_elements(&self) -> Result<GetTopLayerElementsReturn> {
-        self.call("DOM.getTopLayerElements", &serde_json::json!({})).await
+        self.call("DOM.getTopLayerElements", &serde_json::json!({}))
+            .await
     }
 
-    async fn dom_get_element_by_relation(&self, params: &GetElementByRelationParams) -> Result<GetElementByRelationReturn> {
+    async fn dom_get_element_by_relation(
+        &self,
+        params: &GetElementByRelationParams,
+    ) -> Result<GetElementByRelationReturn> {
         self.call("DOM.getElementByRelation", params).await
     }
 
     async fn dom_redo(&self) -> Result<()> {
-        self.call_no_response("DOM.redo", &serde_json::json!({})).await
+        self.call_no_response("DOM.redo", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_remove_attribute(&self, node_id: &NodeId, name: &str) -> Result<()> {
@@ -1759,7 +1872,8 @@ impl DomCommands for CdpSession {
     }
 
     async fn dom_set_attributes_as_text(&self, params: &SetAttributesAsTextParams) -> Result<()> {
-        self.call_no_response("DOM.setAttributesAsText", params).await
+        self.call_no_response("DOM.setAttributesAsText", params)
+            .await
     }
 
     async fn dom_set_file_input_files(&self, params: &SetFileInputFilesParams) -> Result<()> {
@@ -1768,10 +1882,14 @@ impl DomCommands for CdpSession {
 
     async fn dom_set_node_stack_traces_enabled(&self, enable: bool) -> Result<()> {
         let params = SetNodeStackTracesEnabledInternalParams { enable };
-        self.call_no_response("DOM.setNodeStackTracesEnabled", &params).await
+        self.call_no_response("DOM.setNodeStackTracesEnabled", &params)
+            .await
     }
 
-    async fn dom_get_node_stack_traces(&self, node_id: &NodeId) -> Result<GetNodeStackTracesReturn> {
+    async fn dom_get_node_stack_traces(
+        &self,
+        node_id: &NodeId,
+    ) -> Result<GetNodeStackTracesReturn> {
         let params = GetNodeStackTracesInternalParams { node_id };
         self.call("DOM.getNodeStackTraces", &params).await
     }
@@ -1782,7 +1900,8 @@ impl DomCommands for CdpSession {
     }
 
     async fn dom_get_detached_dom_nodes(&self) -> Result<GetDetachedDomNodesReturn> {
-        self.call("DOM.getDetachedDomNodes", &serde_json::json!({})).await
+        self.call("DOM.getDetachedDomNodes", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_set_inspected_node(&self, node_id: &NodeId) -> Result<()> {
@@ -1801,12 +1920,16 @@ impl DomCommands for CdpSession {
     }
 
     async fn dom_set_outer_html(&self, node_id: &NodeId, outer_html: &str) -> Result<()> {
-        let params = SetOuterHTMLInternalParams { node_id, outer_html };
+        let params = SetOuterHTMLInternalParams {
+            node_id,
+            outer_html,
+        };
         self.call_no_response("DOM.setOuterHTML", &params).await
     }
 
     async fn dom_undo(&self) -> Result<()> {
-        self.call_no_response("DOM.undo", &serde_json::json!({})).await
+        self.call_no_response("DOM.undo", &serde_json::json!({}))
+            .await
     }
 
     async fn dom_get_frame_owner(&self, frame_id: &FrameId) -> Result<GetFrameOwnerReturn> {
@@ -1814,21 +1937,33 @@ impl DomCommands for CdpSession {
         self.call("DOM.getFrameOwner", &params).await
     }
 
-    async fn dom_get_container_for_node(&self, params: &GetContainerForNodeParams) -> Result<GetContainerForNodeReturn> {
+    async fn dom_get_container_for_node(
+        &self,
+        params: &GetContainerForNodeParams,
+    ) -> Result<GetContainerForNodeReturn> {
         self.call("DOM.getContainerForNode", params).await
     }
 
-    async fn dom_get_querying_descendants_for_container(&self, node_id: &NodeId) -> Result<GetQueryingDescendantsForContainerReturn> {
+    async fn dom_get_querying_descendants_for_container(
+        &self,
+        node_id: &NodeId,
+    ) -> Result<GetQueryingDescendantsForContainerReturn> {
         let params = GetQueryingDescendantsForContainerInternalParams { node_id };
-        self.call("DOM.getQueryingDescendantsForContainer", &params).await
+        self.call("DOM.getQueryingDescendantsForContainer", &params)
+            .await
     }
 
-    async fn dom_get_anchor_element(&self, params: &GetAnchorElementParams) -> Result<GetAnchorElementReturn> {
+    async fn dom_get_anchor_element(
+        &self,
+        params: &GetAnchorElementParams,
+    ) -> Result<GetAnchorElementReturn> {
         self.call("DOM.getAnchorElement", params).await
     }
 
-    async fn dom_force_show_popover(&self, node_id: &NodeId, enable: bool) -> Result<ForceShowPopoverReturn> {
-        let params = ForceShowPopoverInternalParams { node_id, enable };
-        self.call("DOM.forceShowPopover", &params).await
+    async fn dom_force_show_popover(
+        &self,
+        params: &ForceShowPopoverParams,
+    ) -> Result<ForceShowPopoverReturn> {
+        self.call("DOM.forceShowPopover", params).await
     }
 }
