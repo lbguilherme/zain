@@ -2,6 +2,17 @@
 
 Reference implementation: `browser.rs`
 
+> **Codegen.** Domains listed in `build.rs`'s `MANIFEST` (currently `io`, `input`)
+> are **generated** from their `{domain}.json` by `build.rs` following the rules
+> below — do not hand-edit those `.rs` files; edit the JSON (or `build.rs`) and
+> rebuild. The generator covers newtypes, object structs, string enums (incl.
+> inline enums hoisted from params), events, optional fields, `Default`
+> derivation, the direct-args shortcut, deprecated-command skipping and Rust
+> keyword escaping. Not yet handled (so still hand-written): recursive types
+> (`Box`, e.g. `DOM.Node`) and the cross-domain cluster that homes shared IDs in
+> `crate::types` (`target`/`browser`/`page`/`dom`). The rest of this guide is
+> both the hand-writing spec and the generator's spec.
+
 ## File structure
 
 Each domain lives in its own `{domain}.rs` file (lowercase) and is re-exported in `mod.rs`.

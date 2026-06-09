@@ -26,8 +26,6 @@ pub use session::{CdpEventStream, CdpSession};
 pub use target::PageTarget;
 pub use types::*;
 
-use cdp::schema::SchemaCommands;
-
 /// Limits concurrent browser instances to avoid resource contention.
 /// Set to num_cpus / 2 (minimum 1). The permit is held for the
 /// lifetime of the `ChromiumProcess`.
@@ -103,22 +101,6 @@ async fn launch_once(opts: LaunchOptions) -> Result<(ChromiumProcess, Browser)> 
 
     let transport = transport::Transport::connect(process.ws_url()).await?;
     let session = CdpSession::new(transport);
-
-    // Log available CDP domains.
-    match session.schema_get_domains().await {
-        Ok(ret) => {
-            let domain_list: Vec<_> = ret
-                .domains
-                .iter()
-                .map(|d| format!("{} v{}", d.name, d.version))
-                .collect();
-            tracing::debug!(count = domain_list.len(), domains = ?domain_list, "CDP domains");
-        }
-        Err(e) => {
-            tracing::debug!("Failed to fetch CDP domains: {e:#}");
-        }
-    }
-
     let browser = Browser::new(session);
     Ok((process, browser))
 }

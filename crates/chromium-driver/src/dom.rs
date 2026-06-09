@@ -236,7 +236,7 @@ impl Dom {
 
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchStart,
+                r#type: DispatchTouchEventType::TouchStart,
                 touch_points: vec![TouchPoint {
                     x,
                     y: start_y,
@@ -257,7 +257,7 @@ impl Dom {
             human_sleep(20.0, 8.0).await;
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
-                    event_type: DispatchTouchEventType::TouchMove,
+                    r#type: DispatchTouchEventType::TouchMove,
                     touch_points: vec![TouchPoint {
                         x: x + jitter_offset(1.0),
                         y,
@@ -271,7 +271,7 @@ impl Dom {
         human_sleep(TOUCH_HOLD_MEAN_MS, TOUCH_HOLD_STDDEV_MS).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchEnd,
+                r#type: DispatchTouchEventType::TouchEnd,
                 touch_points: vec![],
                 ..Default::default()
             })
@@ -501,7 +501,7 @@ impl Element {
         // Finger touches screen
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchStart,
+                r#type: DispatchTouchEventType::TouchStart,
                 touch_points: vec![TouchPoint {
                     x,
                     y,
@@ -517,7 +517,7 @@ impl Element {
         // Finger lifts
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchEnd,
+                r#type: DispatchTouchEventType::TouchEnd,
                 touch_points: vec![],
                 ..Default::default()
             })
@@ -589,7 +589,7 @@ impl Element {
     pub async fn press_key(&self, key: &str) -> Result<()> {
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: DispatchKeyEventType::KeyDown,
+                r#type: DispatchKeyEventType::KeyDown,
                 key: Some(key.into()),
                 ..Default::default()
             })
@@ -599,7 +599,7 @@ impl Element {
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: DispatchKeyEventType::KeyUp,
+                r#type: DispatchKeyEventType::KeyUp,
                 key: Some(key.into()),
                 ..Default::default()
             })
@@ -622,7 +622,7 @@ impl Element {
         // rawKeyDown
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: DispatchKeyEventType::RawKeyDown,
+                r#type: DispatchKeyEventType::RawKeyDown,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -635,7 +635,7 @@ impl Element {
         // char (inserts the text)
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: DispatchKeyEventType::Char,
+                r#type: DispatchKeyEventType::Char,
                 text: Some(text.into()),
                 ..Default::default()
             })
@@ -644,7 +644,7 @@ impl Element {
         // keyUp
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: DispatchKeyEventType::KeyUp,
+                r#type: DispatchKeyEventType::KeyUp,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -661,7 +661,7 @@ impl Element {
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: DispatchKeyEventType::RawKeyDown,
+                r#type: DispatchKeyEventType::RawKeyDown,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -673,7 +673,7 @@ impl Element {
 
         self.cdp
             .input_dispatch_key_event(&DispatchKeyEventParams {
-                event_type: DispatchKeyEventType::KeyUp,
+                r#type: DispatchKeyEventType::KeyUp,
                 key: Some(key.into()),
                 code: Some(code.into()),
                 modifiers,
@@ -757,7 +757,7 @@ impl Element {
         // Touch down
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchStart,
+                r#type: DispatchTouchEventType::TouchStart,
                 touch_points: vec![TouchPoint {
                     x: cx,
                     y: start_y,
@@ -777,7 +777,7 @@ impl Element {
             human_sleep(20.0, 8.0).await;
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
-                    event_type: DispatchTouchEventType::TouchMove,
+                    r#type: DispatchTouchEventType::TouchMove,
                     touch_points: vec![TouchPoint {
                         x: cx + jitter_offset(1.0),
                         y,
@@ -792,7 +792,7 @@ impl Element {
         human_sleep(TOUCH_HOLD_MEAN_MS, TOUCH_HOLD_STDDEV_MS).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchEnd,
+                r#type: DispatchTouchEventType::TouchEnd,
                 touch_points: vec![],
                 ..Default::default()
             })
@@ -823,7 +823,7 @@ impl Element {
 
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchStart,
+                r#type: DispatchTouchEventType::TouchStart,
                 touch_points: vec![TouchPoint {
                     x: cx,
                     y: start_y,
@@ -842,7 +842,7 @@ impl Element {
             human_sleep(20.0, 8.0).await;
             self.cdp
                 .input_dispatch_touch_event(&DispatchTouchEventParams {
-                    event_type: DispatchTouchEventType::TouchMove,
+                    r#type: DispatchTouchEventType::TouchMove,
                     touch_points: vec![TouchPoint {
                         x: cx + jitter_offset(1.0),
                         y,
@@ -856,7 +856,7 @@ impl Element {
         human_sleep(TOUCH_HOLD_MEAN_MS, TOUCH_HOLD_STDDEV_MS).await;
         self.cdp
             .input_dispatch_touch_event(&DispatchTouchEventParams {
-                event_type: DispatchTouchEventType::TouchEnd,
+                r#type: DispatchTouchEventType::TouchEnd,
                 touch_points: vec![],
                 ..Default::default()
             })

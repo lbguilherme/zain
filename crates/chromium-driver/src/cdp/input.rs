@@ -3,9 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 use crate::session::CdpSession;
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
-/// A single touch point.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TouchPoint {
@@ -15,47 +14,47 @@ pub struct TouchPoint {
     /// the top of the viewport and Y increases as it proceeds towards the bottom of the viewport.
     pub y: f64,
     /// X radius of the touch area (default: 1.0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub radius_x: Option<f64>,
     /// Y radius of the touch area (default: 1.0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub radius_y: Option<f64>,
     /// Rotation angle (default: 0.0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub rotation_angle: Option<f64>,
     /// Force (default: 1.0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub force: Option<f64>,
     /// The normalized tangential pressure, which has a range of [-1,1] (default: 0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tangential_pressure: Option<f64>,
     /// The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tilt_x: Option<f64>,
     /// The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub tilt_y: Option<f64>,
     /// The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub twist: Option<i64>,
     /// Identifier used to track touch sources between events, must be unique within an event.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub id: Option<f64>,
 }
 
-/// Source of the gesture.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GestureSourceType {
+    #[default]
     Default,
     Touch,
     Mouse,
 }
 
-/// Mouse button.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum MouseButton {
+    #[default]
     None,
     Left,
     Middle,
@@ -64,8 +63,11 @@ pub enum MouseButton {
     Forward,
 }
 
-/// Drag data item.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// UTC time in seconds, counted from January 1, 1970.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TimeSinceEpoch(pub f64);
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DragDataItem {
     /// Mime type of the dragged data.
@@ -74,33 +76,33 @@ pub struct DragDataItem {
     /// text, HTML markup or any other data.
     pub data: String,
     /// Title associated with a link. Only valid when `mimeType` == "text/uri-list".
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub title: Option<String>,
     /// Stores the base URL for the contained markup. Only valid when `mimeType`
     /// == "text/html".
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "baseURL")]
+    #[serde(default)]
     pub base_url: Option<String>,
 }
 
-/// Drag data.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DragData {
     pub items: Vec<DragDataItem>,
-    /// List of filenames that should be included when dropping
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// List of filenames that should be included when dropping.
+    #[serde(default)]
     pub files: Option<Vec<String>>,
-    /// Bit field representing allowed drag operations. Copy = 1, Link = 2, Move = 16
+    /// Bit field representing allowed drag operations. Copy = 1, Link = 2, Move = 16.
     pub drag_operations_mask: i64,
 }
 
-// ── Inline enums ────────────────────────────────────────────────────────────
+// ── Inline enums ─────────────────────────────────────────────────────────────
 
 /// Type of the drag event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DispatchDragEventType {
+    #[default]
     DragEnter,
     DragOver,
     Drop,
@@ -119,24 +121,27 @@ pub enum DispatchKeyEventType {
 }
 
 /// Type of the mouse event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DispatchMouseEventType {
+    #[default]
     MousePressed,
     MouseReleased,
     MouseMoved,
     MouseWheel,
 }
 
-/// Pointer type for mouse events.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Pointer type (default: "mouse").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DispatchMouseEventPointerType {
+    #[default]
     Mouse,
     Pen,
 }
 
-/// Type of the touch event.
+/// Type of the touch event. TouchEnd and TouchCancel must not contain any touch points, while
+/// TouchStart and TouchMove must contains at least one.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DispatchTouchEventType {
@@ -147,26 +152,25 @@ pub enum DispatchTouchEventType {
     TouchCancel,
 }
 
-/// Type of the mouse event for emulate touch from mouse.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Type of the mouse event.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum EmulateTouchFromMouseEventType {
+    #[default]
     MousePressed,
     MouseReleased,
     MouseMoved,
     MouseWheel,
 }
 
-// ── Param types ─────────────────────────────────────────────────────────────
+// ── Param types ──────────────────────────────────────────────────────────────
 
 /// Parameters for [`InputCommands::input_dispatch_drag_event`].
-/// Dispatches a drag event into the page.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DispatchDragEventParams {
     /// Type of the drag event.
-    #[serde(rename = "type")]
-    pub event_type: DispatchDragEventType,
+    pub r#type: DispatchDragEventType,
     /// X coordinate of the event relative to the main frame's viewport in CSS pixels.
     pub x: f64,
     /// Y coordinate of the event relative to the main frame's viewport in CSS pixels. 0 refers to
@@ -180,20 +184,18 @@ pub struct DispatchDragEventParams {
 }
 
 /// Parameters for [`InputCommands::input_dispatch_key_event`].
-/// Dispatches a key event to the page.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DispatchKeyEventParams {
     /// Type of the key event.
-    #[serde(rename = "type")]
-    pub event_type: DispatchKeyEventType,
+    pub r#type: DispatchKeyEventType,
     /// Bit field representing pressed modifier keys. Alt=1, Ctrl=2, Meta/Command=4, Shift=8
     /// (default: 0).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modifiers: Option<i64>,
     /// Time at which the event occurred.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<f64>,
+    pub timestamp: Option<TimeSinceEpoch>,
     /// Text as generated by processing a virtual key code with a keyboard layout. Not needed for
     /// for `keyUp` and `rawKeyDown` events (default: "")
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -233,49 +235,35 @@ pub struct DispatchKeyEventParams {
     pub location: Option<i64>,
     /// Editing commands to send with the key event (e.g., 'selectAll') (default: []).
     /// These are related to but not equal the command names used in `document.execCommand` and NSStandardKeyBindingResponding.
+    /// See https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/editing/commands/editor_command_names.h for valid command names.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commands: Option<Vec<String>>,
 }
 
-/// Parameters for [`InputCommands::input_insert_text`].
-/// This method emulates inserting text that doesn't come from a key press,
-/// for example an emoji keyboard or an IME.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InsertTextParams {
-    /// The text to insert.
-    pub text: String,
-}
-
 /// Parameters for [`InputCommands::input_ime_set_composition`].
-/// This method sets the current candidate text for IME.
-/// Use imeCommitComposition to commit the final text.
-/// Use imeSetComposition with empty string as text to cancel composition.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImeSetCompositionParams {
-    /// The text to insert
+    /// The text to insert.
     pub text: String,
-    /// selection start
+    /// selection start.
     pub selection_start: i64,
-    /// selection end
+    /// selection end.
     pub selection_end: i64,
-    /// replacement start
+    /// replacement start.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replacement_start: Option<i64>,
-    /// replacement end
+    /// replacement end.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub replacement_end: Option<i64>,
 }
 
 /// Parameters for [`InputCommands::input_dispatch_mouse_event`].
-/// Dispatches a mouse event to the page.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DispatchMouseEventParams {
     /// Type of the mouse event.
-    #[serde(rename = "type")]
-    pub event_type: DispatchMouseEventType,
+    pub r#type: DispatchMouseEventType,
     /// X coordinate of the event relative to the main frame's viewport in CSS pixels.
     pub x: f64,
     /// Y coordinate of the event relative to the main frame's viewport in CSS pixels. 0 refers to
@@ -287,7 +275,7 @@ pub struct DispatchMouseEventParams {
     pub modifiers: Option<i64>,
     /// Time at which the event occurred.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<f64>,
+    pub timestamp: Option<TimeSinceEpoch>,
     /// Mouse button (default: "none").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub button: Option<MouseButton>,
@@ -325,14 +313,12 @@ pub struct DispatchMouseEventParams {
 }
 
 /// Parameters for [`InputCommands::input_dispatch_touch_event`].
-/// Dispatches a touch event to the page.
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DispatchTouchEventParams {
     /// Type of the touch event. TouchEnd and TouchCancel must not contain any touch points, while
     /// TouchStart and TouchMove must contains at least one.
-    #[serde(rename = "type")]
-    pub event_type: DispatchTouchEventType,
+    pub r#type: DispatchTouchEventType,
     /// Active touch points on the touch device. One event per any changed point (compared to
     /// previous touch event in a sequence) is generated, emulating pressing/moving/releasing points
     /// one by one.
@@ -343,17 +329,15 @@ pub struct DispatchTouchEventParams {
     pub modifiers: Option<i64>,
     /// Time at which the event occurred.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<f64>,
+    pub timestamp: Option<TimeSinceEpoch>,
 }
 
 /// Parameters for [`InputCommands::input_emulate_touch_from_mouse_event`].
-/// Emulates touch event from the mouse event parameters.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmulateTouchFromMouseEventParams {
     /// Type of the mouse event.
-    #[serde(rename = "type")]
-    pub event_type: EmulateTouchFromMouseEventType,
+    pub r#type: EmulateTouchFromMouseEventType,
     /// X coordinate of the mouse pointer in DIP.
     pub x: i64,
     /// Y coordinate of the mouse pointer in DIP.
@@ -362,7 +346,7 @@ pub struct EmulateTouchFromMouseEventParams {
     pub button: MouseButton,
     /// Time at which the event occurred (default: current time).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<f64>,
+    pub timestamp: Option<TimeSinceEpoch>,
     /// X delta in DIP for mouse wheel event (default: 0).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delta_x: Option<f64>,
@@ -379,8 +363,7 @@ pub struct EmulateTouchFromMouseEventParams {
 }
 
 /// Parameters for [`InputCommands::input_synthesize_pinch_gesture`].
-/// Synthesizes a pinch gesture over a time period by issuing appropriate touch events.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SynthesizePinchGestureParams {
     /// X coordinate of the start of the gesture in CSS pixels.
@@ -399,8 +382,7 @@ pub struct SynthesizePinchGestureParams {
 }
 
 /// Parameters for [`InputCommands::input_synthesize_scroll_gesture`].
-/// Synthesizes a scroll gesture over a time period by issuing appropriate touch events.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SynthesizeScrollGestureParams {
     /// X coordinate of the start of the gesture in CSS pixels.
@@ -443,8 +425,7 @@ pub struct SynthesizeScrollGestureParams {
 }
 
 /// Parameters for [`InputCommands::input_synthesize_tap_gesture`].
-/// Synthesizes a tap gesture over a time period by issuing appropriate touch events.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SynthesizeTapGestureParams {
     /// X coordinate of the start of the gesture in CSS pixels.
@@ -463,7 +444,7 @@ pub struct SynthesizeTapGestureParams {
     pub gesture_source_type: Option<GestureSourceType>,
 }
 
-// ── Events ──────────────────────────────────────────────────────────────────
+// ── Events ───────────────────────────────────────────────────────────────────
 
 /// Emitted only when `Input.setInterceptDrags` is enabled. Use this data with `Input.dispatchDragEvent` to
 /// restore normal drag and drop behavior.
@@ -473,7 +454,7 @@ pub struct DragInterceptedEvent {
     pub data: DragData,
 }
 
-// ── Domain trait ────────────────────────────────────────────────────────────
+// ── Domain trait ─────────────────────────────────────────────────────────────
 
 /// `Input` domain CDP methods.
 ///
@@ -520,10 +501,7 @@ pub trait InputCommands {
     /// Emulates touch event from the mouse event parameters.
     ///
     /// CDP: `Input.emulateTouchFromMouseEvent`
-    async fn input_emulate_touch_from_mouse_event(
-        &self,
-        params: &EmulateTouchFromMouseEventParams,
-    ) -> Result<()>;
+    async fn input_emulate_touch_from_mouse_event(&self, params: &EmulateTouchFromMouseEventParams) -> Result<()>;
 
     /// Ignores input events (useful while auditing page).
     ///
@@ -539,115 +517,92 @@ pub trait InputCommands {
     /// Synthesizes a pinch gesture over a time period by issuing appropriate touch events.
     ///
     /// CDP: `Input.synthesizePinchGesture`
-    async fn input_synthesize_pinch_gesture(
-        &self,
-        params: &SynthesizePinchGestureParams,
-    ) -> Result<()>;
+    async fn input_synthesize_pinch_gesture(&self, params: &SynthesizePinchGestureParams) -> Result<()>;
 
     /// Synthesizes a scroll gesture over a time period by issuing appropriate touch events.
     ///
     /// CDP: `Input.synthesizeScrollGesture`
-    async fn input_synthesize_scroll_gesture(
-        &self,
-        params: &SynthesizeScrollGestureParams,
-    ) -> Result<()>;
+    async fn input_synthesize_scroll_gesture(&self, params: &SynthesizeScrollGestureParams) -> Result<()>;
 
     /// Synthesizes a tap gesture over a time period by issuing appropriate touch events.
     ///
     /// CDP: `Input.synthesizeTapGesture`
-    async fn input_synthesize_tap_gesture(&self, params: &SynthesizeTapGestureParams)
-    -> Result<()>;
+    async fn input_synthesize_tap_gesture(&self, params: &SynthesizeTapGestureParams) -> Result<()>;
 }
 
-// ── Impl ────────────────────────────────────────────────────────────────────
+// ── Impl ─────────────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InsertTextInternalParams<'a> {
+    text: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetIgnoreInputEventsInternalParams {
+    ignore: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetInterceptDragsInternalParams {
+    enabled: bool,
+}
 
 impl InputCommands for CdpSession {
     async fn input_dispatch_drag_event(&self, params: &DispatchDragEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchDragEvent", params)
-            .await
+        self.call_no_response("Input.dispatchDragEvent", params).await
     }
 
     async fn input_dispatch_key_event(&self, params: &DispatchKeyEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchKeyEvent", params)
-            .await
+        self.call_no_response("Input.dispatchKeyEvent", params).await
     }
 
     async fn input_insert_text(&self, text: &str) -> Result<()> {
-        #[derive(Serialize)]
-        struct InternalParams<'a> {
-            text: &'a str,
-        }
-        self.call_no_response("Input.insertText", &InternalParams { text })
-            .await
+        let params = InsertTextInternalParams { text };
+        self.call_no_response("Input.insertText", &params).await
     }
 
     async fn input_ime_set_composition(&self, params: &ImeSetCompositionParams) -> Result<()> {
-        self.call_no_response("Input.imeSetComposition", params)
-            .await
+        self.call_no_response("Input.imeSetComposition", params).await
     }
 
     async fn input_dispatch_mouse_event(&self, params: &DispatchMouseEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchMouseEvent", params)
-            .await
+        self.call_no_response("Input.dispatchMouseEvent", params).await
     }
 
     async fn input_dispatch_touch_event(&self, params: &DispatchTouchEventParams) -> Result<()> {
-        self.call_no_response("Input.dispatchTouchEvent", params)
-            .await
+        self.call_no_response("Input.dispatchTouchEvent", params).await
     }
 
     async fn input_cancel_dragging(&self) -> Result<()> {
-        self.call_no_response("Input.cancelDragging", &serde_json::json!({}))
-            .await
+        self.call_no_response("Input.cancelDragging", &serde_json::json!({})).await
     }
 
-    async fn input_emulate_touch_from_mouse_event(
-        &self,
-        params: &EmulateTouchFromMouseEventParams,
-    ) -> Result<()> {
-        self.call_no_response("Input.emulateTouchFromMouseEvent", params)
-            .await
+    async fn input_emulate_touch_from_mouse_event(&self, params: &EmulateTouchFromMouseEventParams) -> Result<()> {
+        self.call_no_response("Input.emulateTouchFromMouseEvent", params).await
     }
 
     async fn input_set_ignore_input_events(&self, ignore: bool) -> Result<()> {
-        #[derive(Serialize)]
-        struct InternalParams {
-            ignore: bool,
-        }
-        self.call_no_response("Input.setIgnoreInputEvents", &InternalParams { ignore })
-            .await
+        let params = SetIgnoreInputEventsInternalParams { ignore };
+        self.call_no_response("Input.setIgnoreInputEvents", &params).await
     }
 
     async fn input_set_intercept_drags(&self, enabled: bool) -> Result<()> {
-        #[derive(Serialize)]
-        struct InternalParams {
-            enabled: bool,
-        }
-        self.call_no_response("Input.setInterceptDrags", &InternalParams { enabled })
-            .await
+        let params = SetInterceptDragsInternalParams { enabled };
+        self.call_no_response("Input.setInterceptDrags", &params).await
     }
 
-    async fn input_synthesize_pinch_gesture(
-        &self,
-        params: &SynthesizePinchGestureParams,
-    ) -> Result<()> {
-        self.call_no_response("Input.synthesizePinchGesture", params)
-            .await
+    async fn input_synthesize_pinch_gesture(&self, params: &SynthesizePinchGestureParams) -> Result<()> {
+        self.call_no_response("Input.synthesizePinchGesture", params).await
     }
 
-    async fn input_synthesize_scroll_gesture(
-        &self,
-        params: &SynthesizeScrollGestureParams,
-    ) -> Result<()> {
-        self.call_no_response("Input.synthesizeScrollGesture", params)
-            .await
+    async fn input_synthesize_scroll_gesture(&self, params: &SynthesizeScrollGestureParams) -> Result<()> {
+        self.call_no_response("Input.synthesizeScrollGesture", params).await
     }
 
-    async fn input_synthesize_tap_gesture(
-        &self,
-        params: &SynthesizeTapGestureParams,
-    ) -> Result<()> {
-        self.call_no_response("Input.synthesizeTapGesture", params)
-            .await
+    async fn input_synthesize_tap_gesture(&self, params: &SynthesizeTapGestureParams) -> Result<()> {
+        self.call_no_response("Input.synthesizeTapGesture", params).await
     }
 }

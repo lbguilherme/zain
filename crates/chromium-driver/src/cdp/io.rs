@@ -4,14 +4,14 @@ use crate::cdp::runtime::RemoteObjectId;
 use crate::error::Result;
 use crate::session::CdpSession;
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 /// This is either obtained from another method or specified as `blob:<uuid>` where
 /// `<uuid>` is an UUID of a Blob.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct StreamHandle(pub String);
 
-// ── Param types ─────────────────────────────────────────────────────────────
+// ── Param types ──────────────────────────────────────────────────────────────
 
 /// Parameters for [`IoCommands::io_read`].
 #[derive(Debug, Clone, Serialize)]
@@ -28,7 +28,7 @@ pub struct ReadParams {
     pub size: Option<i64>,
 }
 
-// ── Return types ────────────────────────────────────────────────────────────
+// ── Return types ─────────────────────────────────────────────────────────────
 
 /// Return type for [`IoCommands::io_read`].
 #[derive(Debug, Deserialize)]
@@ -75,7 +75,7 @@ pub trait IoCommands {
     async fn io_resolve_blob(&self, object_id: &RemoteObjectId) -> Result<ResolveBlobReturn>;
 }
 
-// ── Impl ────────────────────────────────────────────────────────────────────
+// ── Impl ─────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
