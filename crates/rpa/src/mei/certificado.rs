@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chromium_driver::PageSession;
-use chromium_driver::cdp::browser::DownloadBehavior;
+use chromium_driver::cdp::browser::SetDownloadBehaviorBehavior;
 use chromium_driver::dom::Dom;
 use serde::{Deserialize, Serialize};
 
@@ -126,7 +126,7 @@ pub async fn consultar_certificado(
         // Liga o download antes de qualquer navegação pra garantir que
         // o handler já está armado quando clicarmos no botão de PDF.
         browser
-            .set_download_behavior(DownloadBehavior::Allow, Some(&download_dir_str))
+            .set_download_behavior(SetDownloadBehaviorBehavior::Allow, Some(&download_dir_str))
             .await?;
 
         let page = browser.create_page("about:blank").await?.attach().await?;

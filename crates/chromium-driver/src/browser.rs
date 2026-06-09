@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use crate::cdp::browser::{
-    Bounds, BrowserCommands, CancelDownloadParams, DownloadBehavior, GetVersionReturn,
-    GetWindowForTargetParams, PermissionDescriptor, PermissionSetting, ResetPermissionsParams,
-    SetDownloadBehaviorParams, SetPermissionParams, SetWindowBoundsParams, WindowId,
+    Bounds, BrowserCommands, CancelDownloadParams, GetVersionReturn, GetWindowForTargetParams,
+    PermissionDescriptor, PermissionSetting, ResetPermissionsParams,
+    SetDownloadBehaviorBehavior, SetDownloadBehaviorParams, SetPermissionParams, WindowId,
 };
-use crate::cdp::storage::{Cookie, CookieScopeParams, SetCookiesParams, StorageCommands};
+use crate::cdp::common::{Cookie, CookieParam};
+use crate::cdp::storage::{ClearCookiesParams, GetCookiesParams, SetCookiesParams, StorageCommands};
 use crate::cdp::target::{
     AttachedToTargetEvent, CreateBrowserContextParams, CreateTargetParams, DetachedFromTargetEvent,
     GetTargetInfoParams, GetTargetsParams, TargetCommands, TargetCreatedEvent,
@@ -283,13 +284,35 @@ impl Browser {
     pub async fn get_cookies(&self) -> Result<Vec<Cookie>> {
         Ok(self
             .session
-            .storage_get_cookies(&CookieScopeParams::default())
+            .storage_get_cookies(&GetCookiesParams::default())
             .await?
             .cookies)
     }
 
     /// Sets the given cookies (browser scope).
+    ///
+    /// Accepts [`Cookie`]s as returned by [`get_cookies`](Self::get_cookies);
+    /// they are converted to the `CookieParam` shape CDP expects for setting
+    /// (the derived `size`/`session` fields are dropped).
     pub async fn set_cookies(&self, cookies: Vec<Cookie>) -> Result<()> {
+        let cookies: Vec<CookieParam> = cookies
+            .iter()
+            .map(|c| {
+                let mut v = serde_json::to_value(c)?;
+                if let Some(obj) = v.as_object_mut() {
+                    // Session cookies report `expires = -1`, which `setCookies`
+                    // rejects — drop it so they round-trip as session cookies.
+                    if obj
+                        .get("expires")
+                        .and_then(serde_json::Value::as_f64)
+                        .is_some_and(|e| e <= 0.0)
+                    {
+                        obj.remove("expires");
+                    }
+                }
+                serde_json::from_value(v)
+            })
+            .collect::<std::result::Result<_, _>>()?;
         self.session
             .storage_set_cookies(&SetCookiesParams {
                 cookies,
@@ -301,7 +324,7 @@ impl Browser {
     /// Clears all cookies across every browser context.
     pub async fn clear_cookies(&self) -> Result<()> {
         self.session
-            .storage_clear_cookies(&CookieScopeParams::default())
+            .storage_clear_cookies(&ClearCookiesParams::default())
             .await
     }
 
@@ -313,7 +336,7 @@ impl Browser {
     /// - `download_path`: directory to save files (required for `Allow` / `AllowAndName`).
     pub async fn set_download_behavior(
         &self,
-        behavior: DownloadBehavior,
+        behavior: SetDownloadBehaviorBehavior,
         download_path: Option<&str>,
     ) -> Result<()> {
         self.session
@@ -365,7 +388,7 @@ impl Browser {
     /// Sets position and/or size of a browser window.
     pub async fn set_window_bounds(&self, window_id: WindowId, bounds: Bounds) -> Result<()> {
         self.session
-            .browser_set_window_bounds(&SetWindowBoundsParams { window_id, bounds })
+            .browser_set_window_bounds(&window_id, &bounds)
             .await
     }
 

@@ -20,7 +20,7 @@ impl Drop for JsObjectInner {
         let cdp = self.cdp.clone();
         let object_id = self.object_id.clone();
         tokio::spawn(async move {
-            let _ = cdp.runtime_release_object(&object_id).await;
+            let _ = cdp.runtime_release_object(&RemoteObjectId(object_id)).await;
         });
     }
 }
@@ -168,7 +168,7 @@ impl std::fmt::Debug for JsObject {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("JsObject")
             .field("object_id", &self.inner.object_id)
-            .field("type", &self.remote.object_type)
+            .field("type", &self.remote.r#type)
             .field("subtype", &self.remote.subtype)
             .field("class_name", &self.remote.class_name)
             .field("description", &self.remote.description)
@@ -222,7 +222,7 @@ impl EvalResult {
     pub fn is_null(&self) -> bool {
         match self {
             Self::Value(r) => {
-                r.object_type == RemoteObjectType::Undefined
+                r.r#type == RemoteObjectType::Undefined
                     || r.subtype
                         .as_ref()
                         .is_some_and(|s| *s == crate::cdp::runtime::RemoteObjectSubtype::Null)

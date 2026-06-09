@@ -7,7 +7,7 @@ use rand_distr::{Distribution, Normal};
 
 use crate::cdp::dom::{
     BackendNodeId, BoxModel, DomCommands, EnableParams, GetBoxModelParams, GetDocumentParams,
-    GetOuterHtmlParams, NodeId, ResolveNodeParams,
+    GetOuterHTMLParams, NodeId, ResolveNodeParams,
 };
 use crate::cdp::input::{
     DispatchKeyEventParams, DispatchKeyEventType, DispatchTouchEventParams, DispatchTouchEventType,
@@ -164,7 +164,7 @@ impl Dom {
 
     async fn try_query_selector_inner(&self, selector: &str) -> Result<Option<Element>> {
         let root_id = self.root_id().await?;
-        let qs = self.cdp.dom_query_selector(root_id, selector).await?;
+        let qs = self.cdp.dom_query_selector(&root_id, selector).await?;
         if qs.node_id.0 > 0 {
             Ok(Some(Element {
                 cdp: self.cdp.clone(),
@@ -187,7 +187,7 @@ impl Dom {
     /// Finds all elements matching a CSS selector.
     pub async fn query_selector_all(&self, selector: &str) -> Result<Vec<Element>> {
         let root_id = self.root_id().await?;
-        let qs = self.cdp.dom_query_selector_all(root_id, selector).await?;
+        let qs = self.cdp.dom_query_selector_all(&root_id, selector).await?;
         Ok(qs
             .node_ids
             .into_iter()
@@ -366,7 +366,7 @@ impl Element {
     pub async fn outer_html(&self) -> Result<String> {
         let ret = self
             .cdp
-            .dom_get_outer_html(&GetOuterHtmlParams {
+            .dom_get_outer_html(&GetOuterHTMLParams {
                 node_id: Some(self.node_id),
                 ..Default::default()
             })
@@ -396,7 +396,7 @@ impl Element {
 
     /// Returns all attributes as a name->value map.
     pub async fn attributes(&self) -> Result<HashMap<String, String>> {
-        let ret = self.cdp.dom_get_attributes(self.node_id).await?;
+        let ret = self.cdp.dom_get_attributes(&self.node_id).await?;
 
         let mut map = HashMap::new();
         for pair in ret.attributes.chunks(2) {
@@ -423,7 +423,7 @@ impl Element {
 
     /// Finds the first child element matching a CSS selector within this element.
     pub async fn try_query_selector(&self, selector: &str) -> Result<Option<Element>> {
-        let qs = self.cdp.dom_query_selector(self.node_id, selector).await?;
+        let qs = self.cdp.dom_query_selector(&self.node_id, selector).await?;
         if qs.node_id.0 > 0 {
             Ok(Some(Element {
                 cdp: self.cdp.clone(),
@@ -447,7 +447,7 @@ impl Element {
     pub async fn query_selector_all(&self, selector: &str) -> Result<Vec<Element>> {
         let qs = self
             .cdp
-            .dom_query_selector_all(self.node_id, selector)
+            .dom_query_selector_all(&self.node_id, selector)
             .await?;
         Ok(qs
             .node_ids

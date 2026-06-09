@@ -1,22 +1,58 @@
 use serde::{Deserialize, Serialize};
 
+use crate::cdp::browser::BrowserContextId;
+use crate::cdp::page::FrameId;
 use crate::error::Result;
 use crate::session::CdpSession;
-use crate::types::{BrowserContextId, SessionId, TargetId, TargetInfo};
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TargetId(pub String);
+
+/// Unique identifier of attached debugging session.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SessionId(pub String);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetInfo {
+    pub target_id: TargetId,
+    /// List of types: https://source.chromium.org/chromium/chromium/src/+/main:content/browser/devtools/devtools_agent_host_impl.cc?ss=chromium&q=f:devtools%20-f:out%20%22::kTypeTab%5B%5D%22.
+    pub r#type: String,
+    pub title: String,
+    pub url: String,
+    /// Whether the target has an attached client.
+    pub attached: bool,
+    /// Opener target Id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opener_id: Option<TargetId>,
+    /// Whether the target has access to the originating window.
+    pub can_access_opener: bool,
+    /// Frame id of originating window (is only set if target has an opener).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opener_frame_id: Option<FrameId>,
+    /// Id of the parent frame, only present for the "iframe" targets.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_frame_id: Option<FrameId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_context_id: Option<BrowserContextId>,
+    /// Provides additional details for specific target types. For example, for
+    /// the type of "page", this may be set to "prerender".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtype: Option<String>,
+}
 
 /// A filter used by target query/discovery/auto-attach operations.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FilterEntry {
     /// If set, causes exclusion of matching targets from the list.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude: Option<bool>,
     /// If not present, matches any type.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "type")]
-    pub target_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
 }
 
 /// The entries in TargetFilter are matched sequentially against targets and
@@ -27,8 +63,7 @@ pub struct FilterEntry {
 /// (i.e. include everything but `browser` and `tab`).
 pub type TargetFilter = Vec<FilterEntry>;
 
-/// Remote location for target discovery.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteLocation {
     pub host: String,
@@ -36,22 +71,25 @@ pub struct RemoteLocation {
 }
 
 /// The state of the target window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WindowState {
+    #[default]
+    #[serde(rename = "normal")]
     Normal,
+    #[serde(rename = "minimized")]
     Minimized,
+    #[serde(rename = "maximized")]
     Maximized,
+    #[serde(rename = "fullscreen")]
     Fullscreen,
 }
 
-// ── Param types ─────────────────────────────────────────────────────────────
+// ── Param types ──────────────────────────────────────────────────────────────
 
 /// Parameters for [`TargetCommands::target_attach_to_target`].
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachToTargetParams {
-    /// ID of the target to attach to.
     pub target_id: TargetId,
     /// Enables "flat" access to the session via specifying sessionId attribute in the commands.
     /// We plan to make this the default, deprecate non-flattened mode,
@@ -80,10 +118,10 @@ pub struct CreateBrowserContextParams {
     /// If specified, disposes this context when debugging session disconnects.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dispose_on_detach: Option<bool>,
-    /// Proxy server, similar to the one passed to --proxy-server
+    /// Proxy server, similar to the one passed to --proxy-server.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy_server: Option<String>,
-    /// Proxy bypass list, similar to the one passed to --proxy-bypass-list
+    /// Proxy bypass list, similar to the one passed to --proxy-bypass-list.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proxy_bypass_list: Option<String>,
     /// An optional list of origins to grant unlimited cross-origin access to.
@@ -138,9 +176,25 @@ pub struct CreateTargetParams {
     pub hidden: Option<bool>,
     /// If specified, the option is used to determine if the new target should
     /// be focused or not. By default, the focus behavior depends on the
-    /// value of the background field.
+    /// value of the background field. For example, background=false and focus=false
+    /// will result in the target tab being opened but the browser window remain
+    /// unchanged (if it was in the background, it will remain in the background)
+    /// and background=false with focus=undefined will result in the window being focused.
+    /// Using background: true and focus: true is not supported and will result in an error.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focus: Option<bool>,
+}
+
+/// Parameters for [`TargetCommands::target_detach_from_target`].
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DetachFromTargetParams {
+    /// Session to detach.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<SessionId>,
+    /// Deprecated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<TargetId>,
 }
 
 /// Parameters for [`TargetCommands::target_get_target_info`].
@@ -163,7 +217,7 @@ pub struct GetTargetsParams {
 }
 
 /// Parameters for [`TargetCommands::target_set_auto_attach`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAutoAttachParams {
     /// Whether to auto-attach to related targets.
@@ -195,7 +249,7 @@ pub struct AutoAttachRelatedParams {
 }
 
 /// Parameters for [`TargetCommands::target_set_discover_targets`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetDiscoverTargetsParams {
     /// Whether to discover available targets.
@@ -219,7 +273,7 @@ pub struct OpenDevToolsParams {
     pub panel_id: Option<String>,
 }
 
-// ── Return types ────────────────────────────────────────────────────────────
+// ── Return types ─────────────────────────────────────────────────────────────
 
 /// Return type for [`TargetCommands::target_attach_to_target`].
 #[derive(Debug, Deserialize)]
@@ -242,7 +296,6 @@ pub struct AttachToBrowserTargetReturn {
 #[serde(rename_all = "camelCase")]
 pub struct CloseTargetReturn {
     /// Always set to true. If an error occurs, the response indicates protocol error.
-    #[deprecated]
     pub success: bool,
 }
 
@@ -305,11 +358,9 @@ pub struct OpenDevToolsReturn {
     pub target_id: TargetId,
 }
 
-// ── Events ──────────────────────────────────────────────────────────────────
+// ── Events ───────────────────────────────────────────────────────────────────
 
 /// Issued when attached to target because of auto-attach or `attachToTarget` command.
-///
-/// CDP: `Target.attachedToTarget`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachedToTargetEvent {
@@ -321,30 +372,30 @@ pub struct AttachedToTargetEvent {
 
 /// Issued when detached from target for any reason (including `detachFromTarget` command). Can be
 /// issued multiple times per target if multiple sessions have been attached to it.
-///
-/// CDP: `Target.detachedFromTarget`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DetachedFromTargetEvent {
     /// Detached session identifier.
     pub session_id: SessionId,
+    /// Deprecated.
+    #[serde(default)]
+    pub target_id: Option<TargetId>,
 }
 
 /// Notifies about a new protocol message received from the session (as reported in
 /// `attachedToTarget` event).
-///
-/// CDP: `Target.receivedMessageFromTarget`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReceivedMessageFromTargetEvent {
     /// Identifier of a session which sends a message.
     pub session_id: SessionId,
     pub message: String,
+    /// Deprecated.
+    #[serde(default)]
+    pub target_id: Option<TargetId>,
 }
 
 /// Issued when a possible inspection target is created.
-///
-/// CDP: `Target.targetCreated`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetCreatedEvent {
@@ -352,8 +403,6 @@ pub struct TargetCreatedEvent {
 }
 
 /// Issued when a target is destroyed.
-///
-/// CDP: `Target.targetDestroyed`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetDestroyedEvent {
@@ -361,8 +410,6 @@ pub struct TargetDestroyedEvent {
 }
 
 /// Issued when a target has crashed.
-///
-/// CDP: `Target.targetCrashed`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetCrashedEvent {
@@ -375,8 +422,6 @@ pub struct TargetCrashedEvent {
 
 /// Issued when some information about a target has changed. This only happens between
 /// `targetCreated` and `targetDestroyed`.
-///
-/// CDP: `Target.targetInfoChanged`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetInfoChangedEvent {
@@ -399,10 +444,7 @@ pub trait TargetCommands {
     /// Attaches to the target with given id.
     ///
     /// CDP: `Target.attachToTarget`
-    async fn target_attach_to_target(
-        &self,
-        params: &AttachToTargetParams,
-    ) -> Result<AttachToTargetReturn>;
+    async fn target_attach_to_target(&self, params: &AttachToTargetParams) -> Result<AttachToTargetReturn>;
 
     /// Attaches to the browser target, only uses flat sessionId mode.
     ///
@@ -416,27 +458,21 @@ pub trait TargetCommands {
 
     /// Inject object to the target's main frame that provides a communication
     /// channel with browser target.
-    ///
+    /// 
     /// Injected object will be available as `window[bindingName]`.
-    ///
+    /// 
     /// The object has the following API:
     /// - `binding.send(json)` - a method to send messages over the remote debugging protocol
     /// - `binding.onmessage = json => handleMessage(json)` - a callback that will be called for the protocol notifications and command responses.
     ///
     /// CDP: `Target.exposeDevToolsProtocol`
-    async fn target_expose_dev_tools_protocol(
-        &self,
-        params: &ExposeDevToolsProtocolParams,
-    ) -> Result<()>;
+    async fn target_expose_dev_tools_protocol(&self, params: &ExposeDevToolsProtocolParams) -> Result<()>;
 
     /// Creates a new empty BrowserContext. Similar to an incognito profile but you can have more than
     /// one.
     ///
     /// CDP: `Target.createBrowserContext`
-    async fn target_create_browser_context(
-        &self,
-        params: &CreateBrowserContextParams,
-    ) -> Result<CreateBrowserContextReturn>;
+    async fn target_create_browser_context(&self, params: &CreateBrowserContextParams) -> Result<CreateBrowserContextReturn>;
 
     /// Returns all browser contexts created with `Target.createBrowserContext` method.
     ///
@@ -446,30 +482,23 @@ pub trait TargetCommands {
     /// Creates a new page.
     ///
     /// CDP: `Target.createTarget`
-    async fn target_create_target(&self, params: &CreateTargetParams)
-    -> Result<CreateTargetReturn>;
+    async fn target_create_target(&self, params: &CreateTargetParams) -> Result<CreateTargetReturn>;
 
     /// Detaches session with given id.
     ///
     /// CDP: `Target.detachFromTarget`
-    async fn target_detach_from_target(&self, session_id: &SessionId) -> Result<()>;
+    async fn target_detach_from_target(&self, params: &DetachFromTargetParams) -> Result<()>;
 
     /// Deletes a BrowserContext. All the belonging pages will be closed without calling their
     /// beforeunload hooks.
     ///
     /// CDP: `Target.disposeBrowserContext`
-    async fn target_dispose_browser_context(
-        &self,
-        browser_context_id: &BrowserContextId,
-    ) -> Result<()>;
+    async fn target_dispose_browser_context(&self, browser_context_id: &BrowserContextId) -> Result<()>;
 
     /// Returns information about a target.
     ///
     /// CDP: `Target.getTargetInfo`
-    async fn target_get_target_info(
-        &self,
-        params: &GetTargetInfoParams,
-    ) -> Result<GetTargetInfoReturn>;
+    async fn target_get_target_info(&self, params: &GetTargetInfoParams) -> Result<GetTargetInfoReturn>;
 
     /// Retrieves a list of available targets.
     ///
@@ -513,21 +542,15 @@ pub trait TargetCommands {
     /// (if any).
     ///
     /// CDP: `Target.getDevToolsTarget`
-    async fn target_get_dev_tools_target(
-        &self,
-        target_id: &TargetId,
-    ) -> Result<GetDevToolsTargetReturn>;
+    async fn target_get_dev_tools_target(&self, target_id: &TargetId) -> Result<GetDevToolsTargetReturn>;
 
     /// Opens a DevTools window for the target.
     ///
     /// CDP: `Target.openDevTools`
-    async fn target_open_dev_tools(
-        &self,
-        params: &OpenDevToolsParams,
-    ) -> Result<OpenDevToolsReturn>;
+    async fn target_open_dev_tools(&self, params: &OpenDevToolsParams) -> Result<OpenDevToolsReturn>;
 }
 
-// ── Impl ────────────────────────────────────────────────────────────────────
+// ── Impl ─────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -539,12 +562,6 @@ struct ActivateTargetInternalParams<'a> {
 #[serde(rename_all = "camelCase")]
 struct CloseTargetInternalParams<'a> {
     target_id: &'a TargetId,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DetachFromTargetInternalParams<'a> {
-    session_id: &'a SessionId,
 }
 
 #[derive(Serialize)]
@@ -568,20 +585,15 @@ struct GetDevToolsTargetInternalParams<'a> {
 impl TargetCommands for CdpSession {
     async fn target_activate_target(&self, target_id: &TargetId) -> Result<()> {
         let params = ActivateTargetInternalParams { target_id };
-        self.call_no_response("Target.activateTarget", &params)
-            .await
+        self.call_no_response("Target.activateTarget", &params).await
     }
 
-    async fn target_attach_to_target(
-        &self,
-        params: &AttachToTargetParams,
-    ) -> Result<AttachToTargetReturn> {
+    async fn target_attach_to_target(&self, params: &AttachToTargetParams) -> Result<AttachToTargetReturn> {
         self.call("Target.attachToTarget", params).await
     }
 
     async fn target_attach_to_browser_target(&self) -> Result<AttachToBrowserTargetReturn> {
-        self.call("Target.attachToBrowserTarget", &serde_json::json!({}))
-            .await
+        self.call("Target.attachToBrowserTarget", &serde_json::json!({})).await
     }
 
     async fn target_close_target(&self, target_id: &TargetId) -> Result<CloseTargetReturn> {
@@ -589,52 +601,32 @@ impl TargetCommands for CdpSession {
         self.call("Target.closeTarget", &params).await
     }
 
-    async fn target_expose_dev_tools_protocol(
-        &self,
-        params: &ExposeDevToolsProtocolParams,
-    ) -> Result<()> {
-        self.call_no_response("Target.exposeDevToolsProtocol", params)
-            .await
+    async fn target_expose_dev_tools_protocol(&self, params: &ExposeDevToolsProtocolParams) -> Result<()> {
+        self.call_no_response("Target.exposeDevToolsProtocol", params).await
     }
 
-    async fn target_create_browser_context(
-        &self,
-        params: &CreateBrowserContextParams,
-    ) -> Result<CreateBrowserContextReturn> {
+    async fn target_create_browser_context(&self, params: &CreateBrowserContextParams) -> Result<CreateBrowserContextReturn> {
         self.call("Target.createBrowserContext", params).await
     }
 
     async fn target_get_browser_contexts(&self) -> Result<GetBrowserContextsReturn> {
-        self.call("Target.getBrowserContexts", &serde_json::json!({}))
-            .await
+        self.call("Target.getBrowserContexts", &serde_json::json!({})).await
     }
 
-    async fn target_create_target(
-        &self,
-        params: &CreateTargetParams,
-    ) -> Result<CreateTargetReturn> {
+    async fn target_create_target(&self, params: &CreateTargetParams) -> Result<CreateTargetReturn> {
         self.call("Target.createTarget", params).await
     }
 
-    async fn target_detach_from_target(&self, session_id: &SessionId) -> Result<()> {
-        let params = DetachFromTargetInternalParams { session_id };
-        self.call_no_response("Target.detachFromTarget", &params)
-            .await
+    async fn target_detach_from_target(&self, params: &DetachFromTargetParams) -> Result<()> {
+        self.call_no_response("Target.detachFromTarget", params).await
     }
 
-    async fn target_dispose_browser_context(
-        &self,
-        browser_context_id: &BrowserContextId,
-    ) -> Result<()> {
+    async fn target_dispose_browser_context(&self, browser_context_id: &BrowserContextId) -> Result<()> {
         let params = DisposeBrowserContextInternalParams { browser_context_id };
-        self.call_no_response("Target.disposeBrowserContext", &params)
-            .await
+        self.call_no_response("Target.disposeBrowserContext", &params).await
     }
 
-    async fn target_get_target_info(
-        &self,
-        params: &GetTargetInfoParams,
-    ) -> Result<GetTargetInfoReturn> {
+    async fn target_get_target_info(&self, params: &GetTargetInfoParams) -> Result<GetTargetInfoReturn> {
         self.call("Target.getTargetInfo", params).await
     }
 
@@ -647,33 +639,24 @@ impl TargetCommands for CdpSession {
     }
 
     async fn target_auto_attach_related(&self, params: &AutoAttachRelatedParams) -> Result<()> {
-        self.call_no_response("Target.autoAttachRelated", params)
-            .await
+        self.call_no_response("Target.autoAttachRelated", params).await
     }
 
     async fn target_set_discover_targets(&self, params: &SetDiscoverTargetsParams) -> Result<()> {
-        self.call_no_response("Target.setDiscoverTargets", params)
-            .await
+        self.call_no_response("Target.setDiscoverTargets", params).await
     }
 
     async fn target_set_remote_locations(&self, locations: &[RemoteLocation]) -> Result<()> {
         let params = SetRemoteLocationsInternalParams { locations };
-        self.call_no_response("Target.setRemoteLocations", &params)
-            .await
+        self.call_no_response("Target.setRemoteLocations", &params).await
     }
 
-    async fn target_get_dev_tools_target(
-        &self,
-        target_id: &TargetId,
-    ) -> Result<GetDevToolsTargetReturn> {
+    async fn target_get_dev_tools_target(&self, target_id: &TargetId) -> Result<GetDevToolsTargetReturn> {
         let params = GetDevToolsTargetInternalParams { target_id };
         self.call("Target.getDevToolsTarget", &params).await
     }
 
-    async fn target_open_dev_tools(
-        &self,
-        params: &OpenDevToolsParams,
-    ) -> Result<OpenDevToolsReturn> {
+    async fn target_open_dev_tools(&self, params: &OpenDevToolsParams) -> Result<OpenDevToolsReturn> {
         self.call("Target.openDevTools", params).await
     }
 }

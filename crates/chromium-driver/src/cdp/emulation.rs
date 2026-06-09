@@ -1,74 +1,56 @@
 use serde::{Deserialize, Serialize};
 
+use crate::cdp::common::TimeSinceEpoch;
+use crate::cdp::dom::RGBA;
+use crate::cdp::page::Viewport;
 use crate::error::Result;
 use crate::session::CdpSession;
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
-/// Safe area insets override.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SafeAreaInsets {
     /// Overrides safe-area-inset-top.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top: Option<i64>,
     /// Overrides safe-area-max-inset-top.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top_max: Option<i64>,
     /// Overrides safe-area-inset-left.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<i64>,
     /// Overrides safe-area-max-inset-left.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub left_max: Option<i64>,
     /// Overrides safe-area-inset-bottom.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bottom: Option<i64>,
     /// Overrides safe-area-max-inset-bottom.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bottom_max: Option<i64>,
     /// Overrides safe-area-inset-right.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub right: Option<i64>,
     /// Overrides safe-area-max-inset-right.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub right_max: Option<i64>,
 }
 
-/// Orientation type for ScreenOrientation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ScreenOrientationType {
-    PortraitPrimary,
-    PortraitSecondary,
-    LandscapePrimary,
-    LandscapeSecondary,
-}
-
 /// Screen orientation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenOrientation {
     /// Orientation type.
-    #[serde(rename = "type")]
-    pub orientation_type: ScreenOrientationType,
+    pub r#type: ScreenOrientationType,
     /// Orientation angle.
     pub angle: i64,
 }
 
-/// Orientation of a display feature.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DisplayFeatureOrientation {
-    Vertical,
-    Horizontal,
-}
-
-/// Display feature for multi-segment screens.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayFeature {
-    /// Orientation of a display feature in relation to screen
+    /// Orientation of a display feature in relation to screen.
     pub orientation: DisplayFeatureOrientation,
     /// The offset from the screen origin in either the x (for vertical
     /// orientation) or y (for horizontal orientation) direction.
@@ -79,25 +61,14 @@ pub struct DisplayFeature {
     pub mask_length: i64,
 }
 
-/// Device posture type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DevicePostureType {
-    Continuous,
-    Folded,
-}
-
-/// Device posture.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevicePosture {
-    /// Current posture of the device
-    #[serde(rename = "type")]
-    pub posture_type: DevicePostureType,
+    /// Current posture of the device.
+    pub r#type: DevicePostureType,
 }
 
-/// Media feature for CSS media queries.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaFeature {
     pub name: String,
@@ -108,16 +79,19 @@ pub struct MediaFeature {
 /// allow the next delayed task (if any) to run; pause: The virtual time base may not advance;
 /// pauseIfNetworkFetchesPending: The virtual time base may not advance if there are any pending
 /// resource fetches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VirtualTimePolicy {
+    #[default]
+    #[serde(rename = "advance")]
     Advance,
+    #[serde(rename = "pause")]
     Pause,
+    #[serde(rename = "pauseIfNetworkFetchesPending")]
     PauseIfNetworkFetchesPending,
 }
 
-/// Used to specify User Agent Client Hints to emulate. See https://wicg.github.io/ua-client-hints
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Used to specify User Agent Client Hints to emulate. See https://wicg.github.io/ua-client-hints.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserAgentBrandVersion {
     pub brand: String,
@@ -126,39 +100,37 @@ pub struct UserAgentBrandVersion {
 
 /// Used to specify User Agent Client Hints to emulate. See https://wicg.github.io/ua-client-hints
 /// Missing optional values will be filled in by the target with what it would normally use.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserAgentMetadata {
     /// Brands appearing in Sec-CH-UA.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brands: Option<Vec<UserAgentBrandVersion>>,
     /// Brands appearing in Sec-CH-UA-Full-Version-List.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub full_version_list: Option<Vec<UserAgentBrandVersion>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub full_version: Option<String>,
     pub platform: String,
     pub platform_version: String,
     pub architecture: String,
     pub model: String,
     pub mobile: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bitness: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wow64: Option<bool>,
     /// Used to specify User Agent form-factor values.
-    /// See https://wicg.github.io/ua-client-hints/#sec-ch-ua-form-factors
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    /// See https://wicg.github.io/ua-client-hints/#sec-ch-ua-form-factors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub form_factors: Option<Vec<String>>,
 }
 
 /// Used to specify sensor types to emulate.
 /// See https://w3c.github.io/sensors/#automation for more information.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SensorType {
+    #[default]
     #[serde(rename = "absolute-orientation")]
     AbsoluteOrientation,
     #[serde(rename = "accelerometer")]
@@ -177,30 +149,24 @@ pub enum SensorType {
     RelativeOrientation,
 }
 
-/// Sensor metadata.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SensorMetadata {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub available: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub minimum_frequency: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub maximum_frequency: Option<f64>,
 }
 
-/// Sensor reading with a single value.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SensorReadingSingle {
     pub value: f64,
 }
 
-/// Sensor reading with XYZ values.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SensorReadingXYZ {
     pub x: f64,
@@ -208,8 +174,7 @@ pub struct SensorReadingXYZ {
     pub z: f64,
 }
 
-/// Sensor reading with quaternion values.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SensorReadingQuaternion {
     pub x: f64,
@@ -218,70 +183,61 @@ pub struct SensorReadingQuaternion {
     pub w: f64,
 }
 
-/// Sensor reading.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SensorReading {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub single: Option<SensorReadingSingle>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xyz: Option<SensorReadingXYZ>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quaternion: Option<SensorReadingQuaternion>,
 }
 
-/// Pressure source type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PressureSource {
+    #[default]
+    #[serde(rename = "cpu")]
     Cpu,
 }
 
-/// Pressure state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PressureState {
+    #[default]
+    #[serde(rename = "nominal")]
     Nominal,
+    #[serde(rename = "fair")]
     Fair,
+    #[serde(rename = "serious")]
     Serious,
+    #[serde(rename = "critical")]
     Critical,
 }
 
-/// Pressure metadata.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PressureMetadata {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub available: Option<bool>,
 }
 
-/// Work area insets.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkAreaInsets {
-    /// Work area top inset in pixels. Default is 0;
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    /// Work area top inset in pixels. Default is 0;.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top: Option<i64>,
-    /// Work area left inset in pixels. Default is 0;
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    /// Work area left inset in pixels. Default is 0;.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<i64>,
-    /// Work area bottom inset in pixels. Default is 0;
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    /// Work area bottom inset in pixels. Default is 0;.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bottom: Option<i64>,
-    /// Work area right inset in pixels. Default is 0;
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
+    /// Work area right inset in pixels. Default is 0;.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub right: Option<i64>,
 }
 
-/// Screen identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ScreenId(pub String);
 
@@ -325,86 +281,118 @@ pub struct ScreenInfo {
 }
 
 /// Enum of image types that can be disabled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DisabledImageType {
+    #[default]
+    #[serde(rename = "avif")]
     Avif,
+    #[serde(rename = "jxl")]
     Jxl,
+    #[serde(rename = "webp")]
     Webp,
 }
 
-/// A structure holding an RGBA color (inline from DOM.RGBA).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Rgba {
-    /// The red component, in the [0-255] range.
-    pub r: i64,
-    /// The green component, in the [0-255] range.
-    pub g: i64,
-    /// The blue component, in the [0-255] range.
-    pub b: i64,
-    /// The alpha component, in the [0-1] range (default: 1).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub a: Option<f64>,
+// ── Inline enums ─────────────────────────────────────────────────────────────
+
+/// Orientation type.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScreenOrientationType {
+    #[default]
+    #[serde(rename = "portraitPrimary")]
+    PortraitPrimary,
+    #[serde(rename = "portraitSecondary")]
+    PortraitSecondary,
+    #[serde(rename = "landscapePrimary")]
+    LandscapePrimary,
+    #[serde(rename = "landscapeSecondary")]
+    LandscapeSecondary,
 }
 
-/// Viewport for page (inline from Page.Viewport).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Viewport {
-    /// X offset in device independent pixels (dip).
-    pub x: f64,
-    /// Y offset in device independent pixels (dip).
-    pub y: f64,
-    /// Rectangle width in device independent pixels (dip).
-    pub width: f64,
-    /// Rectangle height in device independent pixels (dip).
-    pub height: f64,
-    /// Page scale factor.
-    pub scale: f64,
+/// Orientation of a display feature in relation to screen.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DisplayFeatureOrientation {
+    #[default]
+    #[serde(rename = "vertical")]
+    Vertical,
+    #[serde(rename = "horizontal")]
+    Horizontal,
 }
 
-/// Scrollbar type for setDeviceMetricsOverride.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ScrollbarType {
+/// Current posture of the device.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DevicePostureType {
+    #[default]
+    #[serde(rename = "continuous")]
+    Continuous,
+    #[serde(rename = "folded")]
+    Folded,
+}
+
+/// Scrollbar type. Default: `default`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SetDeviceMetricsOverrideScrollbarType {
+    #[default]
+    #[serde(rename = "overlay")]
     Overlay,
+    #[serde(rename = "default")]
     Default,
 }
 
-/// Vision deficiency type for setEmulatedVisionDeficiency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum VisionDeficiency {
-    None,
-    BlurredVision,
-    ReducedContrast,
-    Achromatopsia,
-    Deuteranopia,
-    Protanopia,
-    Tritanopia,
-}
-
-/// Touch/gesture events configuration for setEmitTouchEventsForMouse.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum TouchEventsConfiguration {
+/// Touch/gesture events configuration. Default: current platform.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SetEmitTouchEventsForMouseConfiguration {
+    #[default]
+    #[serde(rename = "mobile")]
     Mobile,
+    #[serde(rename = "desktop")]
     Desktop,
 }
 
-// ── Param types ─────────────────────────────────────────────────────────────
+/// Vision deficiency to emulate. Order: best-effort emulations come first, followed by any
+/// physiologically accurate emulations for medically recognized color vision deficiencies.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SetEmulatedVisionDeficiencyType {
+    #[default]
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "blurredVision")]
+    BlurredVision,
+    #[serde(rename = "reducedContrast")]
+    ReducedContrast,
+    #[serde(rename = "achromatopsia")]
+    Achromatopsia,
+    #[serde(rename = "deuteranopia")]
+    Deuteranopia,
+    #[serde(rename = "protanopia")]
+    Protanopia,
+    #[serde(rename = "tritanopia")]
+    Tritanopia,
+}
 
-/// Parameters for [`EmulationCommands::emulation_set_safe_area_insets_override`].
-#[derive(Debug, Clone, Serialize)]
+// ── Param types ──────────────────────────────────────────────────────────────
+
+/// Parameters for [`EmulationCommands::emulation_set_auto_dark_mode_override`].
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SetSafeAreaInsetsOverrideParams {
-    pub insets: SafeAreaInsets,
+pub struct SetAutoDarkModeOverrideParams {
+    /// Whether to enable or disable automatic dark mode.
+    /// If not specified, any existing override will be cleared.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+/// Parameters for [`EmulationCommands::emulation_set_default_background_color_override`].
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetDefaultBackgroundColorOverrideParams {
+    /// RGBA of the default background color. If not specified, any existing override will be
+    /// cleared.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<RGBA>,
 }
 
 /// Parameters for [`EmulationCommands::emulation_set_device_metrics_override`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetDeviceMetricsOverrideParams {
     /// Overriding width value in pixels (minimum 0, maximum 10000000). 0 disables the override.
@@ -441,30 +429,37 @@ pub struct SetDeviceMetricsOverrideParams {
     /// change is not observed by the page, e.g. viewport-relative elements do not change positions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub viewport: Option<Viewport>,
+    /// If set, the display feature of a multi-segment screen. If not set, multi-segment support
+    /// is turned-off.
+    /// Deprecated, use Emulation.setDisplayFeaturesOverride.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_feature: Option<DisplayFeature>,
+    /// If set, the posture of a foldable device. If not set the posture is set
+    /// to continuous.
+    /// Deprecated, use Emulation.setDevicePostureOverride.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device_posture: Option<DevicePosture>,
     /// Scrollbar type. Default: `default`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scrollbar_type: Option<ScrollbarType>,
-    /// If set to true, enables screen orientation lock emulation.
+    pub scrollbar_type: Option<SetDeviceMetricsOverrideScrollbarType>,
+    /// If set to true, enables screen orientation lock emulation, which
+    /// intercepts screen.orientation.lock() calls from the page and reports
+    /// orientation changes via screenOrientationLockChanged events. This is
+    /// useful for emulating mobile device orientation lock behavior in
+    /// responsive design mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub screen_orientation_lock_emulation: Option<bool>,
 }
 
-/// Parameters for [`EmulationCommands::emulation_set_display_features_override`].
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetDisplayFeaturesOverrideParams {
-    pub features: Vec<DisplayFeature>,
-}
-
 /// Parameters for [`EmulationCommands::emulation_set_emit_touch_events_for_mouse`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetEmitTouchEventsForMouseParams {
     /// Whether touch emulation based on mouse input should be enabled.
     pub enabled: bool,
     /// Touch/gesture events configuration. Default: current platform.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub configuration: Option<TouchEventsConfiguration>,
+    pub configuration: Option<SetEmitTouchEventsForMouseConfiguration>,
 }
 
 /// Parameters for [`EmulationCommands::emulation_set_emulated_media`].
@@ -479,55 +474,62 @@ pub struct SetEmulatedMediaParams {
     pub features: Option<Vec<MediaFeature>>,
 }
 
+/// Parameters for [`EmulationCommands::emulation_set_emulated_vision_deficiency`].
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetEmulatedVisionDeficiencyParams {
+    /// Vision deficiency to emulate. Order: best-effort emulations come first, followed by any
+    /// physiologically accurate emulations for medically recognized color vision deficiencies.
+    pub r#type: SetEmulatedVisionDeficiencyType,
+}
+
+/// Parameters for [`EmulationCommands::emulation_set_emulated_os_text_scale`].
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetEmulatedOSTextScaleParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+}
+
 /// Parameters for [`EmulationCommands::emulation_set_geolocation_override`].
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetGeolocationOverrideParams {
-    /// Mock latitude
+    /// Mock latitude.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub latitude: Option<f64>,
-    /// Mock longitude
+    /// Mock longitude.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub longitude: Option<f64>,
-    /// Mock accuracy
+    /// Mock accuracy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accuracy: Option<f64>,
-    /// Mock altitude
+    /// Mock altitude.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub altitude: Option<f64>,
-    /// Mock altitudeAccuracy
+    /// Mock altitudeAccuracy.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub altitude_accuracy: Option<f64>,
-    /// Mock heading
+    /// Mock heading.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heading: Option<f64>,
-    /// Mock speed
+    /// Mock speed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<f64>,
 }
 
 /// Parameters for [`EmulationCommands::emulation_set_sensor_override_enabled`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetSensorOverrideEnabledParams {
     pub enabled: bool,
-    #[serde(rename = "type")]
-    pub sensor_type: SensorType,
+    pub r#type: SensorType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<SensorMetadata>,
 }
 
-/// Parameters for [`EmulationCommands::emulation_set_sensor_override_readings`].
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetSensorOverrideReadingsParams {
-    #[serde(rename = "type")]
-    pub sensor_type: SensorType,
-    pub reading: SensorReading,
-}
-
 /// Parameters for [`EmulationCommands::emulation_set_pressure_source_override_enabled`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetPressureSourceOverrideEnabledParams {
     pub enabled: bool,
@@ -536,16 +538,8 @@ pub struct SetPressureSourceOverrideEnabledParams {
     pub metadata: Option<PressureMetadata>,
 }
 
-/// Parameters for [`EmulationCommands::emulation_set_pressure_state_override`].
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetPressureStateOverrideParams {
-    pub source: PressureSource,
-    pub state: PressureState,
-}
-
 /// Parameters for [`EmulationCommands::emulation_set_pressure_data_override`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetPressureDataOverrideParams {
     pub source: PressureSource,
@@ -555,7 +549,7 @@ pub struct SetPressureDataOverrideParams {
 }
 
 /// Parameters for [`EmulationCommands::emulation_set_touch_emulation_enabled`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetTouchEmulationEnabledParams {
     /// Whether the touch event emulation should be enabled.
@@ -566,7 +560,7 @@ pub struct SetTouchEmulationEnabledParams {
 }
 
 /// Parameters for [`EmulationCommands::emulation_set_virtual_time_policy`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetVirtualTimePolicyParams {
     pub policy: VirtualTimePolicy,
@@ -580,52 +574,7 @@ pub struct SetVirtualTimePolicyParams {
     pub max_virtual_time_task_starvation_count: Option<i64>,
     /// If set, base::Time::Now will be overridden to initially return this value.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub initial_virtual_time: Option<f64>,
-}
-
-/// Parameters for [`EmulationCommands::emulation_set_user_agent_override`].
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetUserAgentOverrideParams {
-    /// User agent to use.
-    pub user_agent: String,
-    /// Browser language to emulate.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub accept_language: Option<String>,
-    /// The platform navigator.platform should return.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub platform: Option<String>,
-    /// To be sent in Sec-CH-UA-* headers and returned in navigator.userAgentData
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user_agent_metadata: Option<UserAgentMetadata>,
-}
-
-/// Parameters for [`EmulationCommands::emulation_set_default_background_color_override`].
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetDefaultBackgroundColorOverrideParams {
-    /// RGBA of the default background color. If not specified, any existing override will be
-    /// cleared.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<Rgba>,
-}
-
-/// Parameters for [`EmulationCommands::emulation_set_auto_dark_mode_override`].
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetAutoDarkModeOverrideParams {
-    /// Whether to enable or disable automatic dark mode.
-    /// If not specified, any existing override will be cleared.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub enabled: Option<bool>,
-}
-
-/// Parameters for [`EmulationCommands::emulation_set_emulated_os_text_scale`].
-#[derive(Debug, Clone, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetEmulatedOsTextScaleParams {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scale: Option<f64>,
+    pub initial_virtual_time: Option<TimeSinceEpoch>,
 }
 
 /// Parameters for [`EmulationCommands::emulation_set_locale_override`].
@@ -647,8 +596,25 @@ pub struct SetDataSaverOverrideParams {
     pub data_saver_enabled: Option<bool>,
 }
 
+/// Parameters for [`EmulationCommands::emulation_set_user_agent_override`].
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetUserAgentOverrideParams {
+    /// User agent to use.
+    pub user_agent: String,
+    /// Browser language to emulate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accept_language: Option<String>,
+    /// The platform navigator.platform should return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    /// To be sent in Sec-CH-UA-* headers and returned in navigator.userAgentData.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_agent_metadata: Option<UserAgentMetadata>,
+}
+
 /// Parameters for [`EmulationCommands::emulation_add_screen`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddScreenParams {
     /// Offset of the left edge of the screen in pixels.
@@ -717,7 +683,7 @@ pub struct UpdateScreenParams {
     pub is_internal: Option<bool>,
 }
 
-// ── Return types ────────────────────────────────────────────────────────────
+// ── Return types ─────────────────────────────────────────────────────────────
 
 /// Return type for [`EmulationCommands::emulation_get_overridden_sensor_information`].
 #[derive(Debug, Deserialize)]
@@ -755,20 +721,17 @@ pub struct UpdateScreenReturn {
     pub screen_info: ScreenInfo,
 }
 
-// ── Events ──────────────────────────────────────────────────────────────────
+// ── Events ───────────────────────────────────────────────────────────────────
 
 /// Notification sent after the virtual time budget for the current VirtualTimePolicy has run out.
-///
-/// CDP: `Emulation.virtualTimeBudgetExpired`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct VirtualTimeBudgetExpiredEvent {}
+pub struct VirtualTimeBudgetExpiredEvent {
+}
 
 /// Fired when a page calls screen.orientation.lock() or screen.orientation.unlock()
 /// while device emulation is enabled. This allows the DevTools frontend to update the
 /// emulated device orientation accordingly.
-///
-/// CDP: `Emulation.screenOrientationLockChanged`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenOrientationLockChangedEvent {
@@ -810,10 +773,7 @@ pub trait EmulationCommands {
     /// Automatically render all web contents using a dark theme.
     ///
     /// CDP: `Emulation.setAutoDarkModeOverride`
-    async fn emulation_set_auto_dark_mode_override(
-        &self,
-        params: &SetAutoDarkModeOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_auto_dark_mode_override(&self, params: &SetAutoDarkModeOverrideParams) -> Result<()>;
 
     /// Enables CPU throttling to emulate slow CPUs.
     ///
@@ -824,29 +784,20 @@ pub trait EmulationCommands {
     /// if the content does not specify one.
     ///
     /// CDP: `Emulation.setDefaultBackgroundColorOverride`
-    async fn emulation_set_default_background_color_override(
-        &self,
-        params: &SetDefaultBackgroundColorOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_default_background_color_override(&self, params: &SetDefaultBackgroundColorOverrideParams) -> Result<()>;
 
     /// Overrides the values for env(safe-area-inset-*) and env(safe-area-max-inset-*). Unset values will cause the
     /// respective variables to be undefined, even if previously overridden.
     ///
     /// CDP: `Emulation.setSafeAreaInsetsOverride`
-    async fn emulation_set_safe_area_insets_override(
-        &self,
-        params: &SetSafeAreaInsetsOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_safe_area_insets_override(&self, insets: &SafeAreaInsets) -> Result<()>;
 
     /// Overrides the values of device screen dimensions (window.screen.width, window.screen.height,
     /// window.innerWidth, window.innerHeight, and "device-width"/"device-height"-related CSS media
     /// query results).
     ///
     /// CDP: `Emulation.setDeviceMetricsOverride`
-    async fn emulation_set_device_metrics_override(
-        &self,
-        params: &SetDeviceMetricsOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_device_metrics_override(&self, params: &SetDeviceMetricsOverrideParams) -> Result<()>;
 
     /// Start reporting the given posture value to the Device Posture API.
     /// This override can also be set in setDeviceMetricsOverride().
@@ -866,10 +817,7 @@ pub trait EmulationCommands {
     /// This override can also be set in setDeviceMetricsOverride().
     ///
     /// CDP: `Emulation.setDisplayFeaturesOverride`
-    async fn emulation_set_display_features_override(
-        &self,
-        params: &SetDisplayFeaturesOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_display_features_override(&self, features: &[DisplayFeature]) -> Result<()>;
 
     /// Clears the display features override set with either setDeviceMetricsOverride()
     /// or setDisplayFeaturesOverride() and starts using display features from the
@@ -879,17 +827,17 @@ pub trait EmulationCommands {
     /// CDP: `Emulation.clearDisplayFeaturesOverride`
     async fn emulation_clear_display_features_override(&self) -> Result<()>;
 
+    ///
     /// CDP: `Emulation.setScrollbarsHidden`
     async fn emulation_set_scrollbars_hidden(&self, hidden: bool) -> Result<()>;
 
+    ///
     /// CDP: `Emulation.setDocumentCookieDisabled`
     async fn emulation_set_document_cookie_disabled(&self, disabled: bool) -> Result<()>;
 
+    ///
     /// CDP: `Emulation.setEmitTouchEventsForMouse`
-    async fn emulation_set_emit_touch_events_for_mouse(
-        &self,
-        params: &SetEmitTouchEventsForMouseParams,
-    ) -> Result<()>;
+    async fn emulation_set_emit_touch_events_for_mouse(&self, params: &SetEmitTouchEventsForMouseParams) -> Result<()>;
 
     /// Emulates the given media type or media feature for CSS media queries.
     ///
@@ -899,33 +847,22 @@ pub trait EmulationCommands {
     /// Emulates the given vision deficiency.
     ///
     /// CDP: `Emulation.setEmulatedVisionDeficiency`
-    async fn emulation_set_emulated_vision_deficiency(
-        &self,
-        vision_type: VisionDeficiency,
-    ) -> Result<()>;
+    async fn emulation_set_emulated_vision_deficiency(&self, params: &SetEmulatedVisionDeficiencyParams) -> Result<()>;
 
     /// Emulates the given OS text scale.
     ///
     /// CDP: `Emulation.setEmulatedOSTextScale`
-    async fn emulation_set_emulated_os_text_scale(
-        &self,
-        params: &SetEmulatedOsTextScaleParams,
-    ) -> Result<()>;
+    async fn emulation_set_emulated_os_text_scale(&self, params: &SetEmulatedOSTextScaleParams) -> Result<()>;
 
     /// Overrides the Geolocation Position or Error. Omitting latitude, longitude or
     /// accuracy emulates position unavailable.
     ///
     /// CDP: `Emulation.setGeolocationOverride`
-    async fn emulation_set_geolocation_override(
-        &self,
-        params: &SetGeolocationOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_geolocation_override(&self, params: &SetGeolocationOverrideParams) -> Result<()>;
 
+    ///
     /// CDP: `Emulation.getOverriddenSensorInformation`
-    async fn emulation_get_overridden_sensor_information(
-        &self,
-        sensor_type: SensorType,
-    ) -> Result<GetOverriddenSensorInformationReturn>;
+    async fn emulation_get_overridden_sensor_information(&self, r#type: &SensorType) -> Result<GetOverriddenSensorInformationReturn>;
 
     /// Overrides a platform sensor of a given type. If |enabled| is true, calls to
     /// Sensor.start() will use a virtual sensor as backend rather than fetching
@@ -934,19 +871,13 @@ pub trait EmulationCommands {
     /// Sensor.start() will attempt to use a real sensor instead.
     ///
     /// CDP: `Emulation.setSensorOverrideEnabled`
-    async fn emulation_set_sensor_override_enabled(
-        &self,
-        params: &SetSensorOverrideEnabledParams,
-    ) -> Result<()>;
+    async fn emulation_set_sensor_override_enabled(&self, params: &SetSensorOverrideEnabledParams) -> Result<()>;
 
     /// Updates the sensor readings reported by a sensor type previously overridden
     /// by setSensorOverrideEnabled.
     ///
     /// CDP: `Emulation.setSensorOverrideReadings`
-    async fn emulation_set_sensor_override_readings(
-        &self,
-        params: &SetSensorOverrideReadingsParams,
-    ) -> Result<()>;
+    async fn emulation_set_sensor_override_readings(&self, r#type: &SensorType, reading: &SensorReading) -> Result<()>;
 
     /// Overrides a pressure source of a given type, as used by the Compute
     /// Pressure API, so that updates to PressureObserver.observe() are provided
@@ -954,10 +885,7 @@ pub trait EmulationCommands {
     /// platform-provided telemetry data.
     ///
     /// CDP: `Emulation.setPressureSourceOverrideEnabled`
-    async fn emulation_set_pressure_source_override_enabled(
-        &self,
-        params: &SetPressureSourceOverrideEnabledParams,
-    ) -> Result<()>;
+    async fn emulation_set_pressure_source_override_enabled(&self, params: &SetPressureSourceOverrideEnabledParams) -> Result<()>;
 
     /// TODO: OBSOLETE: To remove when setPressureDataOverride is merged.
     /// Provides a given pressure state that will be processed and eventually be
@@ -965,29 +893,19 @@ pub trait EmulationCommands {
     /// overridden by setPressureSourceOverrideEnabled.
     ///
     /// CDP: `Emulation.setPressureStateOverride`
-    async fn emulation_set_pressure_state_override(
-        &self,
-        params: &SetPressureStateOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_pressure_state_override(&self, source: &PressureSource, state: &PressureState) -> Result<()>;
 
     /// Provides a given pressure data set that will be processed and eventually be
     /// delivered to PressureObserver users. |source| must have been previously
     /// overridden by setPressureSourceOverrideEnabled.
     ///
     /// CDP: `Emulation.setPressureDataOverride`
-    async fn emulation_set_pressure_data_override(
-        &self,
-        params: &SetPressureDataOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_pressure_data_override(&self, params: &SetPressureDataOverrideParams) -> Result<()>;
 
     /// Overrides the Idle state.
     ///
     /// CDP: `Emulation.setIdleOverride`
-    async fn emulation_set_idle_override(
-        &self,
-        is_user_active: bool,
-        is_screen_unlocked: bool,
-    ) -> Result<()>;
+    async fn emulation_set_idle_override(&self, is_user_active: bool, is_screen_unlocked: bool) -> Result<()>;
 
     /// Clears Idle state overrides.
     ///
@@ -1007,19 +925,13 @@ pub trait EmulationCommands {
     /// Enables touch on platforms which do not support them.
     ///
     /// CDP: `Emulation.setTouchEmulationEnabled`
-    async fn emulation_set_touch_emulation_enabled(
-        &self,
-        params: &SetTouchEmulationEnabledParams,
-    ) -> Result<()>;
+    async fn emulation_set_touch_emulation_enabled(&self, params: &SetTouchEmulationEnabledParams) -> Result<()>;
 
     /// Turns on virtual time for all frames (replacing real-time with a synthetic time source) and sets
     /// the current virtual time policy.  Note this supersedes any previous time budget.
     ///
     /// CDP: `Emulation.setVirtualTimePolicy`
-    async fn emulation_set_virtual_time_policy(
-        &self,
-        params: &SetVirtualTimePolicyParams,
-    ) -> Result<SetVirtualTimePolicyReturn>;
+    async fn emulation_set_virtual_time_policy(&self, params: &SetVirtualTimePolicyParams) -> Result<SetVirtualTimePolicyReturn>;
 
     /// Overrides default host system locale with the specified one.
     ///
@@ -1031,34 +943,24 @@ pub trait EmulationCommands {
     /// CDP: `Emulation.setTimezoneOverride`
     async fn emulation_set_timezone_override(&self, timezone_id: &str) -> Result<()>;
 
+    ///
     /// CDP: `Emulation.setDisabledImageTypes`
-    async fn emulation_set_disabled_image_types(
-        &self,
-        image_types: &[DisabledImageType],
-    ) -> Result<()>;
+    async fn emulation_set_disabled_image_types(&self, image_types: &[DisabledImageType]) -> Result<()>;
 
-    /// Override the value of navigator.connection.saveData
+    /// Override the value of navigator.connection.saveData.
     ///
     /// CDP: `Emulation.setDataSaverOverride`
-    async fn emulation_set_data_saver_override(
-        &self,
-        params: &SetDataSaverOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_data_saver_override(&self, params: &SetDataSaverOverrideParams) -> Result<()>;
 
+    ///
     /// CDP: `Emulation.setHardwareConcurrencyOverride`
-    async fn emulation_set_hardware_concurrency_override(
-        &self,
-        hardware_concurrency: i64,
-    ) -> Result<()>;
+    async fn emulation_set_hardware_concurrency_override(&self, hardware_concurrency: i64) -> Result<()>;
 
     /// Allows overriding user agent with the given string.
     /// `userAgentMetadata` must be set for Client Hint headers to be sent.
     ///
     /// CDP: `Emulation.setUserAgentOverride`
-    async fn emulation_set_user_agent_override(
-        &self,
-        params: &SetUserAgentOverrideParams,
-    ) -> Result<()>;
+    async fn emulation_set_user_agent_override(&self, params: &SetUserAgentOverrideParams) -> Result<()>;
 
     /// Allows overriding the automation flag.
     ///
@@ -1069,10 +971,7 @@ pub trait EmulationCommands {
     /// value of the `svh` and `lvh` unit, respectively. Only supported for top-level frames.
     ///
     /// CDP: `Emulation.setSmallViewportHeightDifferenceOverride`
-    async fn emulation_set_small_viewport_height_difference_override(
-        &self,
-        difference: i64,
-    ) -> Result<()>;
+    async fn emulation_set_small_viewport_height_difference_override(&self, difference: i64) -> Result<()>;
 
     /// Returns device's screen configuration. In headful mode, the physical screens configuration is returned,
     /// whereas in headless mode, a virtual headless screen configuration is provided instead.
@@ -1088,10 +987,7 @@ pub trait EmulationCommands {
     /// Updates specified screen parameters. Only supported in headless mode.
     ///
     /// CDP: `Emulation.updateScreen`
-    async fn emulation_update_screen(
-        &self,
-        params: &UpdateScreenParams,
-    ) -> Result<UpdateScreenReturn>;
+    async fn emulation_update_screen(&self, params: &UpdateScreenParams) -> Result<UpdateScreenReturn>;
 
     /// Remove screen from the device. Only supported in headless mode.
     ///
@@ -1107,7 +1003,7 @@ pub trait EmulationCommands {
     async fn emulation_set_primary_screen(&self, screen_id: &ScreenId) -> Result<()>;
 }
 
-// ── Impl ────────────────────────────────────────────────────────────────────
+// ── Impl ─────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1117,14 +1013,26 @@ struct SetFocusEmulationEnabledInternalParams {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SetCpuThrottlingRateInternalParams {
+struct SetCPUThrottlingRateInternalParams {
     rate: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetSafeAreaInsetsOverrideInternalParams<'a> {
+    insets: &'a SafeAreaInsets,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SetDevicePostureOverrideInternalParams<'a> {
     posture: &'a DevicePosture,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetDisplayFeaturesOverrideInternalParams<'a> {
+    features: &'a [DisplayFeature],
 }
 
 #[derive(Serialize)]
@@ -1141,16 +1049,22 @@ struct SetDocumentCookieDisabledInternalParams {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct SetEmulatedVisionDeficiencyInternalParams {
-    #[serde(rename = "type")]
-    vision_type: VisionDeficiency,
+struct GetOverriddenSensorInformationInternalParams<'a> {
+    r#type: &'a SensorType,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GetOverriddenSensorInformationInternalParams {
-    #[serde(rename = "type")]
-    sensor_type: SensorType,
+struct SetSensorOverrideReadingsInternalParams<'a> {
+    r#type: &'a SensorType,
+    reading: &'a SensorReading,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SetPressureStateOverrideInternalParams<'a> {
+    source: &'a PressureSource,
+    state: &'a PressureState,
 }
 
 #[derive(Serialize)]
@@ -1216,331 +1130,202 @@ struct SetPrimaryScreenInternalParams<'a> {
 
 impl EmulationCommands for CdpSession {
     async fn emulation_clear_device_metrics_override(&self) -> Result<()> {
-        self.call_no_response(
-            "Emulation.clearDeviceMetricsOverride",
-            &serde_json::json!({}),
-        )
-        .await
+        self.call_no_response("Emulation.clearDeviceMetricsOverride", &serde_json::json!({})).await
     }
 
     async fn emulation_clear_geolocation_override(&self) -> Result<()> {
-        self.call_no_response("Emulation.clearGeolocationOverride", &serde_json::json!({}))
-            .await
+        self.call_no_response("Emulation.clearGeolocationOverride", &serde_json::json!({})).await
     }
 
     async fn emulation_reset_page_scale_factor(&self) -> Result<()> {
-        self.call_no_response("Emulation.resetPageScaleFactor", &serde_json::json!({}))
-            .await
+        self.call_no_response("Emulation.resetPageScaleFactor", &serde_json::json!({})).await
     }
 
     async fn emulation_set_focus_emulation_enabled(&self, enabled: bool) -> Result<()> {
         let params = SetFocusEmulationEnabledInternalParams { enabled };
-        self.call_no_response("Emulation.setFocusEmulationEnabled", &params)
-            .await
+        self.call_no_response("Emulation.setFocusEmulationEnabled", &params).await
     }
 
-    async fn emulation_set_auto_dark_mode_override(
-        &self,
-        params: &SetAutoDarkModeOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setAutoDarkModeOverride", params)
-            .await
+    async fn emulation_set_auto_dark_mode_override(&self, params: &SetAutoDarkModeOverrideParams) -> Result<()> {
+        self.call_no_response("Emulation.setAutoDarkModeOverride", params).await
     }
 
     async fn emulation_set_cpu_throttling_rate(&self, rate: f64) -> Result<()> {
-        let params = SetCpuThrottlingRateInternalParams { rate };
-        self.call_no_response("Emulation.setCPUThrottlingRate", &params)
-            .await
+        let params = SetCPUThrottlingRateInternalParams { rate };
+        self.call_no_response("Emulation.setCPUThrottlingRate", &params).await
     }
 
-    async fn emulation_set_default_background_color_override(
-        &self,
-        params: &SetDefaultBackgroundColorOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setDefaultBackgroundColorOverride", params)
-            .await
+    async fn emulation_set_default_background_color_override(&self, params: &SetDefaultBackgroundColorOverrideParams) -> Result<()> {
+        self.call_no_response("Emulation.setDefaultBackgroundColorOverride", params).await
     }
 
-    async fn emulation_set_safe_area_insets_override(
-        &self,
-        params: &SetSafeAreaInsetsOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setSafeAreaInsetsOverride", params)
-            .await
+    async fn emulation_set_safe_area_insets_override(&self, insets: &SafeAreaInsets) -> Result<()> {
+        let params = SetSafeAreaInsetsOverrideInternalParams { insets };
+        self.call_no_response("Emulation.setSafeAreaInsetsOverride", &params).await
     }
 
-    async fn emulation_set_device_metrics_override(
-        &self,
-        params: &SetDeviceMetricsOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setDeviceMetricsOverride", params)
-            .await
+    async fn emulation_set_device_metrics_override(&self, params: &SetDeviceMetricsOverrideParams) -> Result<()> {
+        self.call_no_response("Emulation.setDeviceMetricsOverride", params).await
     }
 
     async fn emulation_set_device_posture_override(&self, posture: &DevicePosture) -> Result<()> {
         let params = SetDevicePostureOverrideInternalParams { posture };
-        self.call_no_response("Emulation.setDevicePostureOverride", &params)
-            .await
+        self.call_no_response("Emulation.setDevicePostureOverride", &params).await
     }
 
     async fn emulation_clear_device_posture_override(&self) -> Result<()> {
-        self.call_no_response(
-            "Emulation.clearDevicePostureOverride",
-            &serde_json::json!({}),
-        )
-        .await
+        self.call_no_response("Emulation.clearDevicePostureOverride", &serde_json::json!({})).await
     }
 
-    async fn emulation_set_display_features_override(
-        &self,
-        params: &SetDisplayFeaturesOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setDisplayFeaturesOverride", params)
-            .await
+    async fn emulation_set_display_features_override(&self, features: &[DisplayFeature]) -> Result<()> {
+        let params = SetDisplayFeaturesOverrideInternalParams { features };
+        self.call_no_response("Emulation.setDisplayFeaturesOverride", &params).await
     }
 
     async fn emulation_clear_display_features_override(&self) -> Result<()> {
-        self.call_no_response(
-            "Emulation.clearDisplayFeaturesOverride",
-            &serde_json::json!({}),
-        )
-        .await
+        self.call_no_response("Emulation.clearDisplayFeaturesOverride", &serde_json::json!({})).await
     }
 
     async fn emulation_set_scrollbars_hidden(&self, hidden: bool) -> Result<()> {
         let params = SetScrollbarsHiddenInternalParams { hidden };
-        self.call_no_response("Emulation.setScrollbarsHidden", &params)
-            .await
+        self.call_no_response("Emulation.setScrollbarsHidden", &params).await
     }
 
     async fn emulation_set_document_cookie_disabled(&self, disabled: bool) -> Result<()> {
         let params = SetDocumentCookieDisabledInternalParams { disabled };
-        self.call_no_response("Emulation.setDocumentCookieDisabled", &params)
-            .await
+        self.call_no_response("Emulation.setDocumentCookieDisabled", &params).await
     }
 
-    async fn emulation_set_emit_touch_events_for_mouse(
-        &self,
-        params: &SetEmitTouchEventsForMouseParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setEmitTouchEventsForMouse", params)
-            .await
+    async fn emulation_set_emit_touch_events_for_mouse(&self, params: &SetEmitTouchEventsForMouseParams) -> Result<()> {
+        self.call_no_response("Emulation.setEmitTouchEventsForMouse", params).await
     }
 
     async fn emulation_set_emulated_media(&self, params: &SetEmulatedMediaParams) -> Result<()> {
-        self.call_no_response("Emulation.setEmulatedMedia", params)
-            .await
+        self.call_no_response("Emulation.setEmulatedMedia", params).await
     }
 
-    async fn emulation_set_emulated_vision_deficiency(
-        &self,
-        vision_type: VisionDeficiency,
-    ) -> Result<()> {
-        let params = SetEmulatedVisionDeficiencyInternalParams { vision_type };
-        self.call_no_response("Emulation.setEmulatedVisionDeficiency", &params)
-            .await
+    async fn emulation_set_emulated_vision_deficiency(&self, params: &SetEmulatedVisionDeficiencyParams) -> Result<()> {
+        self.call_no_response("Emulation.setEmulatedVisionDeficiency", params).await
     }
 
-    async fn emulation_set_emulated_os_text_scale(
-        &self,
-        params: &SetEmulatedOsTextScaleParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setEmulatedOSTextScale", params)
-            .await
+    async fn emulation_set_emulated_os_text_scale(&self, params: &SetEmulatedOSTextScaleParams) -> Result<()> {
+        self.call_no_response("Emulation.setEmulatedOSTextScale", params).await
     }
 
-    async fn emulation_set_geolocation_override(
-        &self,
-        params: &SetGeolocationOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setGeolocationOverride", params)
-            .await
+    async fn emulation_set_geolocation_override(&self, params: &SetGeolocationOverrideParams) -> Result<()> {
+        self.call_no_response("Emulation.setGeolocationOverride", params).await
     }
 
-    async fn emulation_get_overridden_sensor_information(
-        &self,
-        sensor_type: SensorType,
-    ) -> Result<GetOverriddenSensorInformationReturn> {
-        let params = GetOverriddenSensorInformationInternalParams { sensor_type };
-        self.call("Emulation.getOverriddenSensorInformation", &params)
-            .await
+    async fn emulation_get_overridden_sensor_information(&self, r#type: &SensorType) -> Result<GetOverriddenSensorInformationReturn> {
+        let params = GetOverriddenSensorInformationInternalParams { r#type };
+        self.call("Emulation.getOverriddenSensorInformation", &params).await
     }
 
-    async fn emulation_set_sensor_override_enabled(
-        &self,
-        params: &SetSensorOverrideEnabledParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setSensorOverrideEnabled", params)
-            .await
+    async fn emulation_set_sensor_override_enabled(&self, params: &SetSensorOverrideEnabledParams) -> Result<()> {
+        self.call_no_response("Emulation.setSensorOverrideEnabled", params).await
     }
 
-    async fn emulation_set_sensor_override_readings(
-        &self,
-        params: &SetSensorOverrideReadingsParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setSensorOverrideReadings", params)
-            .await
+    async fn emulation_set_sensor_override_readings(&self, r#type: &SensorType, reading: &SensorReading) -> Result<()> {
+        let params = SetSensorOverrideReadingsInternalParams { r#type, reading };
+        self.call_no_response("Emulation.setSensorOverrideReadings", &params).await
     }
 
-    async fn emulation_set_pressure_source_override_enabled(
-        &self,
-        params: &SetPressureSourceOverrideEnabledParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setPressureSourceOverrideEnabled", params)
-            .await
+    async fn emulation_set_pressure_source_override_enabled(&self, params: &SetPressureSourceOverrideEnabledParams) -> Result<()> {
+        self.call_no_response("Emulation.setPressureSourceOverrideEnabled", params).await
     }
 
-    async fn emulation_set_pressure_state_override(
-        &self,
-        params: &SetPressureStateOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setPressureStateOverride", params)
-            .await
+    async fn emulation_set_pressure_state_override(&self, source: &PressureSource, state: &PressureState) -> Result<()> {
+        let params = SetPressureStateOverrideInternalParams { source, state };
+        self.call_no_response("Emulation.setPressureStateOverride", &params).await
     }
 
-    async fn emulation_set_pressure_data_override(
-        &self,
-        params: &SetPressureDataOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setPressureDataOverride", params)
-            .await
+    async fn emulation_set_pressure_data_override(&self, params: &SetPressureDataOverrideParams) -> Result<()> {
+        self.call_no_response("Emulation.setPressureDataOverride", params).await
     }
 
-    async fn emulation_set_idle_override(
-        &self,
-        is_user_active: bool,
-        is_screen_unlocked: bool,
-    ) -> Result<()> {
-        let params = SetIdleOverrideInternalParams {
-            is_user_active,
-            is_screen_unlocked,
-        };
-        self.call_no_response("Emulation.setIdleOverride", &params)
-            .await
+    async fn emulation_set_idle_override(&self, is_user_active: bool, is_screen_unlocked: bool) -> Result<()> {
+        let params = SetIdleOverrideInternalParams { is_user_active, is_screen_unlocked };
+        self.call_no_response("Emulation.setIdleOverride", &params).await
     }
 
     async fn emulation_clear_idle_override(&self) -> Result<()> {
-        self.call_no_response("Emulation.clearIdleOverride", &serde_json::json!({}))
-            .await
+        self.call_no_response("Emulation.clearIdleOverride", &serde_json::json!({})).await
     }
 
     async fn emulation_set_page_scale_factor(&self, page_scale_factor: f64) -> Result<()> {
         let params = SetPageScaleFactorInternalParams { page_scale_factor };
-        self.call_no_response("Emulation.setPageScaleFactor", &params)
-            .await
+        self.call_no_response("Emulation.setPageScaleFactor", &params).await
     }
 
     async fn emulation_set_script_execution_disabled(&self, value: bool) -> Result<()> {
         let params = SetScriptExecutionDisabledInternalParams { value };
-        self.call_no_response("Emulation.setScriptExecutionDisabled", &params)
-            .await
+        self.call_no_response("Emulation.setScriptExecutionDisabled", &params).await
     }
 
-    async fn emulation_set_touch_emulation_enabled(
-        &self,
-        params: &SetTouchEmulationEnabledParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setTouchEmulationEnabled", params)
-            .await
+    async fn emulation_set_touch_emulation_enabled(&self, params: &SetTouchEmulationEnabledParams) -> Result<()> {
+        self.call_no_response("Emulation.setTouchEmulationEnabled", params).await
     }
 
-    async fn emulation_set_virtual_time_policy(
-        &self,
-        params: &SetVirtualTimePolicyParams,
-    ) -> Result<SetVirtualTimePolicyReturn> {
+    async fn emulation_set_virtual_time_policy(&self, params: &SetVirtualTimePolicyParams) -> Result<SetVirtualTimePolicyReturn> {
         self.call("Emulation.setVirtualTimePolicy", params).await
     }
 
     async fn emulation_set_locale_override(&self, params: &SetLocaleOverrideParams) -> Result<()> {
-        self.call_no_response("Emulation.setLocaleOverride", params)
-            .await
+        self.call_no_response("Emulation.setLocaleOverride", params).await
     }
 
     async fn emulation_set_timezone_override(&self, timezone_id: &str) -> Result<()> {
         let params = SetTimezoneOverrideInternalParams { timezone_id };
-        self.call_no_response("Emulation.setTimezoneOverride", &params)
-            .await
+        self.call_no_response("Emulation.setTimezoneOverride", &params).await
     }
 
-    async fn emulation_set_disabled_image_types(
-        &self,
-        image_types: &[DisabledImageType],
-    ) -> Result<()> {
+    async fn emulation_set_disabled_image_types(&self, image_types: &[DisabledImageType]) -> Result<()> {
         let params = SetDisabledImageTypesInternalParams { image_types };
-        self.call_no_response("Emulation.setDisabledImageTypes", &params)
-            .await
+        self.call_no_response("Emulation.setDisabledImageTypes", &params).await
     }
 
-    async fn emulation_set_data_saver_override(
-        &self,
-        params: &SetDataSaverOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setDataSaverOverride", params)
-            .await
+    async fn emulation_set_data_saver_override(&self, params: &SetDataSaverOverrideParams) -> Result<()> {
+        self.call_no_response("Emulation.setDataSaverOverride", params).await
     }
 
-    async fn emulation_set_hardware_concurrency_override(
-        &self,
-        hardware_concurrency: i64,
-    ) -> Result<()> {
-        let params = SetHardwareConcurrencyOverrideInternalParams {
-            hardware_concurrency,
-        };
-        self.call_no_response("Emulation.setHardwareConcurrencyOverride", &params)
-            .await
+    async fn emulation_set_hardware_concurrency_override(&self, hardware_concurrency: i64) -> Result<()> {
+        let params = SetHardwareConcurrencyOverrideInternalParams { hardware_concurrency };
+        self.call_no_response("Emulation.setHardwareConcurrencyOverride", &params).await
     }
 
-    async fn emulation_set_user_agent_override(
-        &self,
-        params: &SetUserAgentOverrideParams,
-    ) -> Result<()> {
-        self.call_no_response("Emulation.setUserAgentOverride", params)
-            .await
+    async fn emulation_set_user_agent_override(&self, params: &SetUserAgentOverrideParams) -> Result<()> {
+        self.call_no_response("Emulation.setUserAgentOverride", params).await
     }
 
     async fn emulation_set_automation_override(&self, enabled: bool) -> Result<()> {
         let params = SetAutomationOverrideInternalParams { enabled };
-        self.call_no_response("Emulation.setAutomationOverride", &params)
-            .await
+        self.call_no_response("Emulation.setAutomationOverride", &params).await
     }
 
-    async fn emulation_set_small_viewport_height_difference_override(
-        &self,
-        difference: i64,
-    ) -> Result<()> {
+    async fn emulation_set_small_viewport_height_difference_override(&self, difference: i64) -> Result<()> {
         let params = SetSmallViewportHeightDifferenceOverrideInternalParams { difference };
-        self.call_no_response(
-            "Emulation.setSmallViewportHeightDifferenceOverride",
-            &params,
-        )
-        .await
+        self.call_no_response("Emulation.setSmallViewportHeightDifferenceOverride", &params).await
     }
 
     async fn emulation_get_screen_infos(&self) -> Result<GetScreenInfosReturn> {
-        self.call("Emulation.getScreenInfos", &serde_json::json!({}))
-            .await
+        self.call("Emulation.getScreenInfos", &serde_json::json!({})).await
     }
 
     async fn emulation_add_screen(&self, params: &AddScreenParams) -> Result<AddScreenReturn> {
         self.call("Emulation.addScreen", params).await
     }
 
-    async fn emulation_update_screen(
-        &self,
-        params: &UpdateScreenParams,
-    ) -> Result<UpdateScreenReturn> {
+    async fn emulation_update_screen(&self, params: &UpdateScreenParams) -> Result<UpdateScreenReturn> {
         self.call("Emulation.updateScreen", params).await
     }
 
     async fn emulation_remove_screen(&self, screen_id: &ScreenId) -> Result<()> {
         let params = RemoveScreenInternalParams { screen_id };
-        self.call_no_response("Emulation.removeScreen", &params)
-            .await
+        self.call_no_response("Emulation.removeScreen", &params).await
     }
 
     async fn emulation_set_primary_screen(&self, screen_id: &ScreenId) -> Result<()> {
         let params = SetPrimaryScreenInternalParams { screen_id };
-        self.call_no_response("Emulation.setPrimaryScreen", &params)
-            .await
+        self.call_no_response("Emulation.setPrimaryScreen", &params).await
     }
 }

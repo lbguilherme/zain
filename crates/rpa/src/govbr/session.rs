@@ -28,12 +28,7 @@ pub async fn capture(browser: &Browser) -> anyhow::Result<SavedSession> {
         .get_cookies()
         .await?
         .into_iter()
-        .filter(|c| {
-            c.domain
-                .as_deref()
-                .map(|d| d.trim_start_matches('.').ends_with("gov.br"))
-                .unwrap_or(false)
-        })
+        .filter(|c| c.domain.trim_start_matches('.').ends_with("gov.br"))
         .collect();
 
     tracing::info!(count = cookies.len(), "Cookies gov.br capturados");

@@ -116,8 +116,8 @@ fn collect_frames(tree: &FrameTree, out: &mut Vec<FrameInfo>) {
         id: tree.frame.id.clone(),
         parent_id: tree.frame.parent_id.clone(),
         url: tree.frame.url.clone(),
-        security_origin: tree.frame.security_origin.clone(),
-        mime_type: tree.frame.mime_type.clone(),
+        security_origin: Some(tree.frame.security_origin.clone()),
+        mime_type: Some(tree.frame.mime_type.clone()),
     });
     if let Some(children) = &tree.child_frames {
         for child in children {
@@ -140,6 +140,6 @@ pub(crate) async fn enter_frame(cdp: &CdpSession, frame_id: &FrameId) -> Result<
     Ok(FrameSession {
         cdp: cdp.clone(),
         frame_id: frame_id.clone(),
-        context_id: ExecutionContextId(ret.execution_context_id),
+        context_id: ret.execution_context_id,
     })
 }

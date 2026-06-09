@@ -74,7 +74,7 @@ async fn create_blob_and_read_via_io() {
     cdp.io_close(&handle).await.unwrap();
 
     // Release the JS object.
-    cdp.runtime_release_object(&blob_object_id.0).await.unwrap();
+    cdp.runtime_release_object(&blob_object_id).await.unwrap();
 
     browser.close().await.unwrap();
     process.wait().await.unwrap();

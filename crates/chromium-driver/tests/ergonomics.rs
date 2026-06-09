@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use chromium_driver::{Cookie, LaunchOptions, launch};
+use chromium_driver::{LaunchOptions, launch};
 
 /// `Element::text()` must return rendered text only — never the body of inline
 /// `<script>`/`<style>` (the old strip-tags approach leaked it).
@@ -79,26 +79,40 @@ async fn eval_value_with_args_is_injection_safe() {
     process.wait().await.unwrap();
 }
 
-/// Typed cookies round-trip through `set_cookies` / `get_cookies`.
+/// Typed cookies: `get_cookies` deserializes real cookies, and `set_cookies`
+/// round-trips them back (with valid, browser-produced data).
 #[tokio::test]
 #[ignore]
 async fn cookies_round_trip() {
     let (mut process, browser) = launch(LaunchOptions::default()).await.unwrap();
+    let page = browser
+        .create_page("https://example.com")
+        .await
+        .unwrap()
+        .attach()
+        .await
+        .unwrap();
+    page.enable().await.unwrap();
+    page.wait_for_load(Duration::from_secs(30)).await.ok();
 
-    let cookie = Cookie {
-        name: "zain_probe".into(),
-        value: "42".into(),
-        domain: Some(".example.com".into()),
-        path: Some("/".into()),
-        extra: Default::default(),
-    };
-    browser.set_cookies(vec![cookie]).await.unwrap();
-
+    // Set a cookie via the page, then read it back through the typed API.
+    page.eval_value("document.cookie = 'zain_probe=42;path=/'")
+        .await
+        .unwrap();
     let got = browser.get_cookies().await.unwrap();
-    let found = got.iter().find(|c| c.name == "zain_probe");
     assert!(
-        found.is_some_and(|c| c.value == "42"),
-        "cookie should round-trip, got {got:?}"
+        got.iter().any(|c| c.name == "zain_probe" && c.value == "42"),
+        "get_cookies should read the cookie, got {got:?}"
+    );
+
+    // Round-trip the captured cookies (valid data) back through set_cookies.
+    let captured: Vec<_> = got.into_iter().filter(|c| c.name == "zain_probe").collect();
+    browser.clear_cookies().await.unwrap();
+    browser.set_cookies(captured).await.unwrap();
+    let after = browser.get_cookies().await.unwrap();
+    assert!(
+        after.iter().any(|c| c.name == "zain_probe"),
+        "set_cookies should restore the cookie"
     );
 
     browser.close().await.unwrap();

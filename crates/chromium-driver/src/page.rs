@@ -10,7 +10,7 @@ use crate::cdp::page::{
     GetNavigationHistoryReturn, LifecycleEventEvent, LoadEventFiredEvent, NavigateParams,
     NavigateReturn, PageCommands, ReloadParams,
 };
-use crate::cdp::target::TargetCommands;
+use crate::cdp::target::{DetachFromTargetParams, TargetCommands};
 use crate::dom::Dom;
 use crate::error::{CdpError, Result};
 use crate::frame::{self, FrameInfo, FrameSession};
@@ -24,6 +24,9 @@ use base64::Engine;
 ///
 /// Variants cover the stable Page domain events. Any event that doesn't match
 /// a known variant is delivered as [`Other`](Self::Other) with the raw payload.
+// Variants wrap generated CDP event structs of differing sizes; not worth
+// boxing for the event-stream ergonomics.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum PageEvent {
     /// The page's `load` event fired.
@@ -765,7 +768,10 @@ impl Drop for PageSession {
         tokio::spawn(async move {
             let _ = target
                 .browser_session
-                .target_detach_from_target(&session_id)
+                .target_detach_from_target(&DetachFromTargetParams {
+                    session_id: Some(session_id),
+                    ..Default::default()
+                })
                 .await;
         });
     }

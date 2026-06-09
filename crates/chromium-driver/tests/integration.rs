@@ -1,4 +1,4 @@
-use chromium_driver::cdp::browser::{DownloadBehavior, PermissionSetting};
+use chromium_driver::cdp::browser::{SetDownloadBehaviorBehavior, PermissionSetting};
 use chromium_driver::cdp::target::{SetDiscoverTargetsParams, TargetCommands};
 use chromium_driver::page::PageEvent;
 use chromium_driver::{LaunchOptions, launch};
@@ -114,7 +114,7 @@ async fn multiple_targets() {
         .unwrap();
 
     let targets = browser.get_targets().await.unwrap();
-    let page_targets: Vec<_> = targets.iter().filter(|t| t.target_type == "page").collect();
+    let page_targets: Vec<_> = targets.iter().filter(|t| t.r#type == "page").collect();
     assert!(
         page_targets.len() >= 2,
         "expected >= 2 page targets, got {}",
@@ -435,17 +435,17 @@ async fn set_download_behavior_fluent() {
     let (mut process, browser) = launch(opts()).await.unwrap();
 
     browser
-        .set_download_behavior(DownloadBehavior::Deny, None)
+        .set_download_behavior(SetDownloadBehaviorBehavior::Deny, None)
         .await
         .unwrap();
 
     browser
-        .set_download_behavior(DownloadBehavior::Allow, Some("/tmp"))
+        .set_download_behavior(SetDownloadBehaviorBehavior::Allow, Some("/tmp"))
         .await
         .unwrap();
 
     browser
-        .set_download_behavior(DownloadBehavior::Default, None)
+        .set_download_behavior(SetDownloadBehaviorBehavior::Default, None)
         .await
         .unwrap();
 
@@ -465,7 +465,7 @@ async fn get_target_info_from_browser() {
 
     let info = browser.get_target_info(target.id()).await.unwrap();
     assert_eq!(info.target_id, *target.id());
-    assert_eq!(info.target_type, "page");
+    assert_eq!(info.r#type, "page");
 
     browser.close().await.unwrap();
     process.wait().await.unwrap();
@@ -482,7 +482,7 @@ async fn page_target_info() {
         .unwrap();
 
     let info = target.info().await.unwrap();
-    assert_eq!(info.target_type, "page");
+    assert_eq!(info.r#type, "page");
     assert!(info.url.contains("target-info"));
 
     browser.close().await.unwrap();
@@ -535,7 +535,7 @@ async fn browser_context_create_and_use() {
 
     let info = page_target.info().await.unwrap();
     assert_eq!(info.browser_context_id.as_ref(), Some(ctx.id()));
-    assert_eq!(info.target_type, "page");
+    assert_eq!(info.r#type, "page");
 
     browser.close().await.unwrap();
     process.wait().await.unwrap();
@@ -591,7 +591,7 @@ async fn browser_context_isolation() {
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     let info2_after = p2.info().await.unwrap();
-    assert_eq!(info2_after.target_type, "page");
+    assert_eq!(info2_after.r#type, "page");
 
     browser.close().await.unwrap();
     process.wait().await.unwrap();
@@ -618,7 +618,7 @@ async fn browser_context_kept_alive_by_page() {
 
     // Page should still be alive because it keeps the context alive
     let info = page_target.info().await.unwrap();
-    assert_eq!(info.target_type, "page");
+    assert_eq!(info.r#type, "page");
     assert!(info.url.contains("survive"));
 
     // Attach and use the page — proves it's fully functional

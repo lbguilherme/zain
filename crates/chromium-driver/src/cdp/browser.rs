@@ -1,22 +1,29 @@
 use serde::{Deserialize, Serialize};
 
+use crate::cdp::page::FrameId;
+use crate::cdp::target::TargetId;
 use crate::error::Result;
 use crate::session::CdpSession;
-use crate::types::{BrowserContextId, FrameId, TargetId};
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
-/// Browser window identifier.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct BrowserContextId(pub String);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct WindowId(pub i64);
 
 /// The state of the browser window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WindowState {
+    #[default]
+    #[serde(rename = "normal")]
     Normal,
+    #[serde(rename = "minimized")]
     Minimized,
+    #[serde(rename = "maximized")]
     Maximized,
+    #[serde(rename = "fullscreen")]
     Fullscreen,
 }
 
@@ -25,71 +32,113 @@ pub enum WindowState {
 #[serde(rename_all = "camelCase")]
 pub struct Bounds {
     /// The offset from the left edge of the screen to the window in pixels.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub left: Option<i64>,
     /// The offset from the top edge of the screen to the window in pixels.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub top: Option<i64>,
     /// The window width in pixels.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<i64>,
     /// The window height in pixels.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<i64>,
     /// The window state. Default to normal.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_state: Option<WindowState>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionType {
+    #[default]
+    #[serde(rename = "ar")]
     Ar,
+    #[serde(rename = "audioCapture")]
     AudioCapture,
+    #[serde(rename = "automaticFullscreen")]
     AutomaticFullscreen,
+    #[serde(rename = "backgroundFetch")]
     BackgroundFetch,
+    #[serde(rename = "backgroundSync")]
     BackgroundSync,
+    #[serde(rename = "cameraPanTiltZoom")]
     CameraPanTiltZoom,
+    #[serde(rename = "capturedSurfaceControl")]
     CapturedSurfaceControl,
+    #[serde(rename = "clipboardReadWrite")]
     ClipboardReadWrite,
+    #[serde(rename = "clipboardSanitizedWrite")]
     ClipboardSanitizedWrite,
+    #[serde(rename = "displayCapture")]
     DisplayCapture,
+    #[serde(rename = "durableStorage")]
     DurableStorage,
+    #[serde(rename = "geolocation")]
     Geolocation,
+    #[serde(rename = "handTracking")]
     HandTracking,
+    #[serde(rename = "idleDetection")]
     IdleDetection,
+    #[serde(rename = "keyboardLock")]
     KeyboardLock,
+    #[serde(rename = "localFonts")]
     LocalFonts,
+    #[serde(rename = "localNetwork")]
     LocalNetwork,
+    #[serde(rename = "localNetworkAccess")]
     LocalNetworkAccess,
+    #[serde(rename = "loopbackNetwork")]
     LoopbackNetwork,
+    #[serde(rename = "midi")]
     Midi,
+    #[serde(rename = "midiSysex")]
     MidiSysex,
+    #[serde(rename = "nfc")]
     Nfc,
+    #[serde(rename = "notifications")]
     Notifications,
+    #[serde(rename = "paymentHandler")]
     PaymentHandler,
+    #[serde(rename = "periodicBackgroundSync")]
     PeriodicBackgroundSync,
+    #[serde(rename = "pointerLock")]
     PointerLock,
+    #[serde(rename = "protectedMediaIdentifier")]
     ProtectedMediaIdentifier,
+    #[serde(rename = "sensors")]
     Sensors,
+    #[serde(rename = "smartCard")]
     SmartCard,
+    #[serde(rename = "speakerSelection")]
     SpeakerSelection,
+    #[serde(rename = "storageAccess")]
     StorageAccess,
+    #[serde(rename = "topLevelStorageAccess")]
     TopLevelStorageAccess,
+    #[serde(rename = "videoCapture")]
     VideoCapture,
+    #[serde(rename = "vr")]
     Vr,
+    #[serde(rename = "wakeLockScreen")]
     WakeLockScreen,
+    #[serde(rename = "wakeLockSystem")]
     WakeLockSystem,
+    #[serde(rename = "webAppInstallation")]
     WebAppInstallation,
+    #[serde(rename = "webPrinting")]
     WebPrinting,
+    #[serde(rename = "windowManagement")]
     WindowManagement,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionSetting {
+    #[default]
+    #[serde(rename = "granted")]
     Granted,
+    #[serde(rename = "denied")]
     Denied,
+    #[serde(rename = "prompt")]
     Prompt,
 }
 
@@ -102,34 +151,37 @@ pub struct PermissionDescriptor {
     /// See https://cs.chromium.org/chromium/src/third_party/blink/renderer/modules/permissions/permission_descriptor.idl for valid permission names.
     pub name: String,
     /// For "midi" permission, may also specify sysex control.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sysex: Option<bool>,
     /// For "push" permission, may specify userVisibleOnly.
     /// Note that userVisibleOnly = true is the only currently supported type.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_visible_only: Option<bool>,
     /// For "clipboard" permission, may specify allowWithoutSanitization.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_without_sanitization: Option<bool>,
     /// For "fullscreen" permission, must specify allowWithoutGesture:true.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_without_gesture: Option<bool>,
     /// For "camera" permission, may specify panTiltZoom.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pan_tilt_zoom: Option<bool>,
 }
 
 /// Browser command ids used by executeBrowserCommand.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BrowserCommandId {
+    #[default]
+    #[serde(rename = "openTabSearch")]
     OpenTabSearch,
+    #[serde(rename = "closeTabSearch")]
     CloseTabSearch,
+    #[serde(rename = "openGlic")]
     OpenGlic,
 }
 
 /// Chrome histogram bucket.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bucket {
     /// Minimum value (inclusive).
@@ -141,7 +193,7 @@ pub struct Bucket {
 }
 
 /// Chrome histogram.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Histogram {
     /// Name.
@@ -154,37 +206,47 @@ pub struct Histogram {
     pub buckets: Vec<Bucket>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PrivacySandboxApi {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PrivacySandboxAPI {
+    #[default]
     BiddingAndAuctionServices,
     TrustedKeyValue,
 }
 
+// ── Inline enums ─────────────────────────────────────────────────────────────
+
 /// Whether to allow all or deny all download requests, or use default Chrome behavior if
-/// available (otherwise deny). `AllowAndName` allows download and names files according to
+/// available (otherwise deny). |allowAndName| allows download and names files according to
 /// their download guids.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum DownloadBehavior {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SetDownloadBehaviorBehavior {
+    #[default]
+    #[serde(rename = "deny")]
     Deny,
+    #[serde(rename = "allow")]
     Allow,
+    #[serde(rename = "allowAndName")]
     AllowAndName,
+    #[serde(rename = "default")]
     Default,
 }
 
 /// Download status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DownloadProgressState {
+    #[default]
+    #[serde(rename = "inProgress")]
     InProgress,
+    #[serde(rename = "completed")]
     Completed,
+    #[serde(rename = "canceled")]
     Canceled,
 }
 
-// ── Param types ─────────────────────────────────────────────────────────────
+// ── Param types ──────────────────────────────────────────────────────────────
 
 /// Parameters for [`BrowserCommands::browser_set_permission`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetPermissionParams {
     /// Descriptor of permission to override.
@@ -214,13 +276,13 @@ pub struct ResetPermissionsParams {
 }
 
 /// Parameters for [`BrowserCommands::browser_set_download_behavior`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetDownloadBehaviorParams {
     /// Whether to allow all or deny all download requests, or use default Chrome behavior if
-    /// available (otherwise deny). `AllowAndName` allows download and names files according to
+    /// available (otherwise deny). |allowAndName| allows download and names files according to
     /// their download guids.
-    pub behavior: DownloadBehavior,
+    pub behavior: SetDownloadBehaviorBehavior,
     /// BrowserContext to set download behavior. When omitted, default browser context is used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_context_id: Option<BrowserContextId>,
@@ -234,7 +296,7 @@ pub struct SetDownloadBehaviorParams {
 }
 
 /// Parameters for [`BrowserCommands::browser_cancel_download`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CancelDownloadParams {
     /// Global unique identifier of the download.
@@ -259,7 +321,7 @@ pub struct GetHistogramsParams {
 }
 
 /// Parameters for [`BrowserCommands::browser_get_histogram`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetHistogramParams {
     /// Requested histogram name.
@@ -276,17 +338,6 @@ pub struct GetWindowForTargetParams {
     /// Devtools agent host id. If called as a part of the session, associated targetId is used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_id: Option<TargetId>,
-}
-
-/// Parameters for [`BrowserCommands::browser_set_window_bounds`].
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SetWindowBoundsParams {
-    /// Browser window id.
-    pub window_id: WindowId,
-    /// New window bounds. The 'minimized', 'maximized' and 'fullscreen' states cannot be combined
-    /// with 'left', 'top', 'width' or 'height'. Leaves unspecified fields unchanged.
-    pub bounds: Bounds,
 }
 
 /// Parameters for [`BrowserCommands::browser_set_contents_size`].
@@ -317,18 +368,19 @@ pub struct SetDockTileParams {
 }
 
 /// Parameters for [`BrowserCommands::browser_add_privacy_sandbox_coordinator_key_config`].
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AddPrivacySandboxCoordinatorKeyConfigParams {
-    pub api: PrivacySandboxApi,
+    pub api: PrivacySandboxAPI,
     pub coordinator_origin: String,
     pub key_config: String,
-    /// BrowserContext to perform the action in. When omitted, default browser context is used.
+    /// BrowserContext to perform the action in. When omitted, default browser
+    /// context is used.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub browser_context_id: Option<BrowserContextId>,
 }
 
-// ── Return types ────────────────────────────────────────────────────────────
+// ── Return types ─────────────────────────────────────────────────────────────
 
 /// Return type for [`BrowserCommands::browser_get_version`].
 #[derive(Debug, Deserialize)]
@@ -390,11 +442,9 @@ pub struct GetWindowForTargetReturn {
     pub bounds: Bounds,
 }
 
-// ── Events ──────────────────────────────────────────────────────────────────
+// ── Events ───────────────────────────────────────────────────────────────────
 
 /// Fired when page is about to start a download.
-///
-/// CDP: `Browser.downloadWillBegin`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadWillBeginEvent {
@@ -408,9 +458,7 @@ pub struct DownloadWillBeginEvent {
     pub suggested_filename: String,
 }
 
-/// Fired when download makes progress. Last call has `done` == true.
-///
-/// CDP: `Browser.downloadProgress`
+/// Fired when download makes progress. Last call has |done| == true.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgressEvent {
@@ -450,8 +498,7 @@ pub trait BrowserCommands {
     /// Set the behavior when downloading a file.
     ///
     /// CDP: `Browser.setDownloadBehavior`
-    async fn browser_set_download_behavior(&self, params: &SetDownloadBehaviorParams)
-    -> Result<()>;
+    async fn browser_set_download_behavior(&self, params: &SetDownloadBehaviorParams) -> Result<()>;
 
     /// Cancel a download if in progress.
     ///
@@ -487,37 +534,27 @@ pub trait BrowserCommands {
     /// Get Chrome histograms.
     ///
     /// CDP: `Browser.getHistograms`
-    async fn browser_get_histograms(
-        &self,
-        params: &GetHistogramsParams,
-    ) -> Result<GetHistogramsReturn>;
+    async fn browser_get_histograms(&self, params: &GetHistogramsParams) -> Result<GetHistogramsReturn>;
 
     /// Get a Chrome histogram by name.
     ///
     /// CDP: `Browser.getHistogram`
-    async fn browser_get_histogram(
-        &self,
-        params: &GetHistogramParams,
-    ) -> Result<GetHistogramReturn>;
+    async fn browser_get_histogram(&self, params: &GetHistogramParams) -> Result<GetHistogramReturn>;
 
     /// Get position and size of the browser window.
     ///
     /// CDP: `Browser.getWindowBounds`
-    async fn browser_get_window_bounds(&self, window_id: WindowId)
-    -> Result<GetWindowBoundsReturn>;
+    async fn browser_get_window_bounds(&self, window_id: &WindowId) -> Result<GetWindowBoundsReturn>;
 
     /// Get the browser window that contains the devtools target.
     ///
     /// CDP: `Browser.getWindowForTarget`
-    async fn browser_get_window_for_target(
-        &self,
-        params: &GetWindowForTargetParams,
-    ) -> Result<GetWindowForTargetReturn>;
+    async fn browser_get_window_for_target(&self, params: &GetWindowForTargetParams) -> Result<GetWindowForTargetReturn>;
 
     /// Set position and/or size of the browser window.
     ///
     /// CDP: `Browser.setWindowBounds`
-    async fn browser_set_window_bounds(&self, params: &SetWindowBoundsParams) -> Result<()>;
+    async fn browser_set_window_bounds(&self, window_id: &WindowId, bounds: &Bounds) -> Result<()>;
 
     /// Set size of the browser contents resizing browser window as necessary.
     ///
@@ -532,7 +569,7 @@ pub trait BrowserCommands {
     /// Invoke custom browser commands used by telemetry.
     ///
     /// CDP: `Browser.executeBrowserCommand`
-    async fn browser_execute_browser_command(&self, command_id: BrowserCommandId) -> Result<()>;
+    async fn browser_execute_browser_command(&self, command_id: &BrowserCommandId) -> Result<()>;
 
     /// Allows a site to use privacy sandbox features that require enrollment
     /// without the site actually being enrolled. Only supported on page targets.
@@ -541,29 +578,33 @@ pub trait BrowserCommands {
     async fn browser_add_privacy_sandbox_enrollment_override(&self, url: &str) -> Result<()>;
 
     /// Configures encryption keys used with a given privacy sandbox API to talk
-    /// to a trusted coordinator. Since this is intended for test automation only,
+    /// to a trusted coordinator.  Since this is intended for test automation only,
     /// coordinatorOrigin must be a .test domain. No existing coordinator
     /// configuration for the origin may exist.
     ///
     /// CDP: `Browser.addPrivacySandboxCoordinatorKeyConfig`
-    async fn browser_add_privacy_sandbox_coordinator_key_config(
-        &self,
-        params: &AddPrivacySandboxCoordinatorKeyConfigParams,
-    ) -> Result<()>;
+    async fn browser_add_privacy_sandbox_coordinator_key_config(&self, params: &AddPrivacySandboxCoordinatorKeyConfigParams) -> Result<()>;
 }
 
-// ── Impl ────────────────────────────────────────────────────────────────────
+// ── Impl ─────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct GetWindowBoundsInternalParams {
-    window_id: WindowId,
+struct GetWindowBoundsInternalParams<'a> {
+    window_id: &'a WindowId,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ExecuteBrowserCommandInternalParams {
-    command_id: BrowserCommandId,
+struct SetWindowBoundsInternalParams<'a> {
+    window_id: &'a WindowId,
+    bounds: &'a Bounds,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecuteBrowserCommandInternalParams<'a> {
+    command_id: &'a BrowserCommandId,
 }
 
 #[derive(Serialize)]
@@ -578,108 +619,78 @@ impl BrowserCommands for CdpSession {
     }
 
     async fn browser_reset_permissions(&self, params: &ResetPermissionsParams) -> Result<()> {
-        self.call_no_response("Browser.resetPermissions", params)
-            .await
+        self.call_no_response("Browser.resetPermissions", params).await
     }
 
-    async fn browser_set_download_behavior(
-        &self,
-        params: &SetDownloadBehaviorParams,
-    ) -> Result<()> {
-        self.call_no_response("Browser.setDownloadBehavior", params)
-            .await
+    async fn browser_set_download_behavior(&self, params: &SetDownloadBehaviorParams) -> Result<()> {
+        self.call_no_response("Browser.setDownloadBehavior", params).await
     }
 
     async fn browser_cancel_download(&self, params: &CancelDownloadParams) -> Result<()> {
-        self.call_no_response("Browser.cancelDownload", params)
-            .await
+        self.call_no_response("Browser.cancelDownload", params).await
     }
 
     async fn browser_close(&self) -> Result<()> {
-        self.call_no_response("Browser.close", &serde_json::json!({}))
-            .await
+        self.call_no_response("Browser.close", &serde_json::json!({})).await
     }
 
     async fn browser_crash(&self) -> Result<()> {
-        self.call_no_response("Browser.crash", &serde_json::json!({}))
-            .await
+        self.call_no_response("Browser.crash", &serde_json::json!({})).await
     }
 
     async fn browser_crash_gpu_process(&self) -> Result<()> {
-        self.call_no_response("Browser.crashGpuProcess", &serde_json::json!({}))
-            .await
+        self.call_no_response("Browser.crashGpuProcess", &serde_json::json!({})).await
     }
 
     async fn browser_get_version(&self) -> Result<GetVersionReturn> {
-        self.call("Browser.getVersion", &serde_json::json!({}))
-            .await
+        self.call("Browser.getVersion", &serde_json::json!({})).await
     }
 
     async fn browser_get_browser_command_line(&self) -> Result<GetBrowserCommandLineReturn> {
-        self.call("Browser.getBrowserCommandLine", &serde_json::json!({}))
-            .await
+        self.call("Browser.getBrowserCommandLine", &serde_json::json!({})).await
     }
 
-    async fn browser_get_histograms(
-        &self,
-        params: &GetHistogramsParams,
-    ) -> Result<GetHistogramsReturn> {
+    async fn browser_get_histograms(&self, params: &GetHistogramsParams) -> Result<GetHistogramsReturn> {
         self.call("Browser.getHistograms", params).await
     }
 
-    async fn browser_get_histogram(
-        &self,
-        params: &GetHistogramParams,
-    ) -> Result<GetHistogramReturn> {
+    async fn browser_get_histogram(&self, params: &GetHistogramParams) -> Result<GetHistogramReturn> {
         self.call("Browser.getHistogram", params).await
     }
 
-    async fn browser_get_window_bounds(
-        &self,
-        window_id: WindowId,
-    ) -> Result<GetWindowBoundsReturn> {
+    async fn browser_get_window_bounds(&self, window_id: &WindowId) -> Result<GetWindowBoundsReturn> {
         let params = GetWindowBoundsInternalParams { window_id };
         self.call("Browser.getWindowBounds", &params).await
     }
 
-    async fn browser_get_window_for_target(
-        &self,
-        params: &GetWindowForTargetParams,
-    ) -> Result<GetWindowForTargetReturn> {
+    async fn browser_get_window_for_target(&self, params: &GetWindowForTargetParams) -> Result<GetWindowForTargetReturn> {
         self.call("Browser.getWindowForTarget", params).await
     }
 
-    async fn browser_set_window_bounds(&self, params: &SetWindowBoundsParams) -> Result<()> {
-        self.call_no_response("Browser.setWindowBounds", params)
-            .await
+    async fn browser_set_window_bounds(&self, window_id: &WindowId, bounds: &Bounds) -> Result<()> {
+        let params = SetWindowBoundsInternalParams { window_id, bounds };
+        self.call_no_response("Browser.setWindowBounds", &params).await
     }
 
     async fn browser_set_contents_size(&self, params: &SetContentsSizeParams) -> Result<()> {
-        self.call_no_response("Browser.setContentsSize", params)
-            .await
+        self.call_no_response("Browser.setContentsSize", params).await
     }
 
     async fn browser_set_dock_tile(&self, params: &SetDockTileParams) -> Result<()> {
         self.call_no_response("Browser.setDockTile", params).await
     }
 
-    async fn browser_execute_browser_command(&self, command_id: BrowserCommandId) -> Result<()> {
+    async fn browser_execute_browser_command(&self, command_id: &BrowserCommandId) -> Result<()> {
         let params = ExecuteBrowserCommandInternalParams { command_id };
-        self.call_no_response("Browser.executeBrowserCommand", &params)
-            .await
+        self.call_no_response("Browser.executeBrowserCommand", &params).await
     }
 
     async fn browser_add_privacy_sandbox_enrollment_override(&self, url: &str) -> Result<()> {
         let params = AddPrivacySandboxEnrollmentOverrideInternalParams { url };
-        self.call_no_response("Browser.addPrivacySandboxEnrollmentOverride", &params)
-            .await
+        self.call_no_response("Browser.addPrivacySandboxEnrollmentOverride", &params).await
     }
 
-    async fn browser_add_privacy_sandbox_coordinator_key_config(
-        &self,
-        params: &AddPrivacySandboxCoordinatorKeyConfigParams,
-    ) -> Result<()> {
-        self.call_no_response("Browser.addPrivacySandboxCoordinatorKeyConfig", params)
-            .await
+    async fn browser_add_privacy_sandbox_coordinator_key_config(&self, params: &AddPrivacySandboxCoordinatorKeyConfigParams) -> Result<()> {
+        self.call_no_response("Browser.addPrivacySandboxCoordinatorKeyConfig", params).await
     }
 }

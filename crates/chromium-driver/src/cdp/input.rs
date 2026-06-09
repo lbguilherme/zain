@@ -14,52 +14,59 @@ pub struct TouchPoint {
     /// the top of the viewport and Y increases as it proceeds towards the bottom of the viewport.
     pub y: f64,
     /// X radius of the touch area (default: 1.0).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radius_x: Option<f64>,
     /// Y radius of the touch area (default: 1.0).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radius_y: Option<f64>,
     /// Rotation angle (default: 0.0).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotation_angle: Option<f64>,
     /// Force (default: 1.0).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub force: Option<f64>,
     /// The normalized tangential pressure, which has a range of [-1,1] (default: 0).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tangential_pressure: Option<f64>,
     /// The plane angle between the Y-Z plane and the plane containing both the stylus axis and the Y axis, in degrees of the range [-90,90], a positive tiltX is to the right (default: 0)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tilt_x: Option<f64>,
     /// The plane angle between the X-Z plane and the plane containing both the stylus axis and the X axis, in degrees of the range [-90,90], a positive tiltY is towards the user (default: 0).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tilt_y: Option<f64>,
     /// The clockwise rotation of a pen stylus around its own major axis, in degrees in the range [0,359] (default: 0).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub twist: Option<i64>,
     /// Identifier used to track touch sources between events, must be unique within an event.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum GestureSourceType {
     #[default]
+    #[serde(rename = "default")]
     Default,
+    #[serde(rename = "touch")]
     Touch,
+    #[serde(rename = "mouse")]
     Mouse,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum MouseButton {
     #[default]
+    #[serde(rename = "none")]
     None,
+    #[serde(rename = "left")]
     Left,
+    #[serde(rename = "middle")]
     Middle,
+    #[serde(rename = "right")]
     Right,
+    #[serde(rename = "back")]
     Back,
+    #[serde(rename = "forward")]
     Forward,
 }
 
@@ -76,12 +83,12 @@ pub struct DragDataItem {
     /// text, HTML markup or any other data.
     pub data: String,
     /// Title associated with a link. Only valid when `mimeType` == "text/uri-list".
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     /// Stores the base URL for the contained markup. Only valid when `mimeType`
     /// == "text/html".
     #[serde(rename = "baseURL")]
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
 }
 
@@ -90,7 +97,7 @@ pub struct DragDataItem {
 pub struct DragData {
     pub items: Vec<DragDataItem>,
     /// List of filenames that should be included when dropping.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<String>>,
     /// Bit field representing allowed drag operations. Copy = 1, Link = 2, Move = 16.
     pub drag_operations_mask: i64,
@@ -100,66 +107,82 @@ pub struct DragData {
 
 /// Type of the drag event.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum DispatchDragEventType {
     #[default]
+    #[serde(rename = "dragEnter")]
     DragEnter,
+    #[serde(rename = "dragOver")]
     DragOver,
+    #[serde(rename = "drop")]
     Drop,
+    #[serde(rename = "dragCancel")]
     DragCancel,
 }
 
 /// Type of the key event.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum DispatchKeyEventType {
     #[default]
+    #[serde(rename = "keyDown")]
     KeyDown,
+    #[serde(rename = "keyUp")]
     KeyUp,
+    #[serde(rename = "rawKeyDown")]
     RawKeyDown,
+    #[serde(rename = "char")]
     Char,
 }
 
 /// Type of the mouse event.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum DispatchMouseEventType {
     #[default]
+    #[serde(rename = "mousePressed")]
     MousePressed,
+    #[serde(rename = "mouseReleased")]
     MouseReleased,
+    #[serde(rename = "mouseMoved")]
     MouseMoved,
+    #[serde(rename = "mouseWheel")]
     MouseWheel,
 }
 
 /// Pointer type (default: "mouse").
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum DispatchMouseEventPointerType {
     #[default]
+    #[serde(rename = "mouse")]
     Mouse,
+    #[serde(rename = "pen")]
     Pen,
 }
 
 /// Type of the touch event. TouchEnd and TouchCancel must not contain any touch points, while
 /// TouchStart and TouchMove must contains at least one.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum DispatchTouchEventType {
     #[default]
+    #[serde(rename = "touchStart")]
     TouchStart,
+    #[serde(rename = "touchEnd")]
     TouchEnd,
+    #[serde(rename = "touchMove")]
     TouchMove,
+    #[serde(rename = "touchCancel")]
     TouchCancel,
 }
 
 /// Type of the mouse event.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub enum EmulateTouchFromMouseEventType {
     #[default]
+    #[serde(rename = "mousePressed")]
     MousePressed,
+    #[serde(rename = "mouseReleased")]
     MouseReleased,
+    #[serde(rename = "mouseMoved")]
     MouseMoved,
+    #[serde(rename = "mouseWheel")]
     MouseWheel,
 }
 

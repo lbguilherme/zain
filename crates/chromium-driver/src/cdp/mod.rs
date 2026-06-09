@@ -1,4 +1,5 @@
 pub mod browser;
+pub mod common;
 pub mod dom;
 pub mod emulation;
 pub mod input;
