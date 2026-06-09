@@ -2,7 +2,7 @@
 //!
 //! Downloads the pinned DevTools protocol (`browser_protocol.json` +
 //! `js_protocol.json` at [`PROTOCOL_TAG`]) into a `target/` cache, then emits
-//! the Rust bindings following `src/cdp/CONVENTIONS.md`. Writes into `src/cdp/`
+//! the typed Rust bindings. Writes into `src/cdp/`
 //! (build.rs → src, by design) but only:
 //!   - for the domains listed in `MANIFEST` (opt-in, curated coverage),
 //!   - plus a generated `common.rs` holding types pulled in from domains we
