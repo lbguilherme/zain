@@ -3,9 +3,9 @@ use crate::source::{DataSource, Download};
 
 // https://www.gov.br/pgfn/pt-br/assuntos/divida-ativa-da-uniao/transparencia-fiscal-1/dados-abertos
 
-const DATA_VERSION: &str = "2025_trimestre_04";
+const DATA_VERSION: &str = "2026_trimestre_01";
 const EXTRACTOR_VERSION: u32 = 2;
-const BASE_URL: &str = "https://dadosabertos.pgfn.gov.br/2025_trimestre_04";
+const BASE_URL: &str = "https://dadosabertos.pgfn.gov.br/2026_trimestre_01";
 
 fn parse_date_dmy(val: &str) -> Result<String, &'static str> {
     if val.len() == 10 && val.as_bytes()[2] == b'/' {

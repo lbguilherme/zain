@@ -29,6 +29,11 @@ struct Cli {
     /// Sincronizar apenas este schema (ex: cnpj, pgfn)
     #[arg(long)]
     only: Option<String>,
+
+    /// Reprocessar mesmo quando a versão instalada já está atualizada.
+    /// O swap de schema continua atômico (zero downtime).
+    #[arg(long)]
+    force: bool,
 }
 
 #[tokio::main]
@@ -65,7 +70,7 @@ async fn main() -> Result<()> {
 
         let installed = db::read_schema_version(&client, name).await?;
 
-        if !source.needs_update(installed.as_ref()) {
+        if !cli.force && !source.needs_update(installed.as_ref()) {
             println!(
                 "{name}: up to date (dados={}, extrator=v{})",
                 source.data_version(),

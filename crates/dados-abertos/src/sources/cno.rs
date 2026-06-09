@@ -1,9 +1,9 @@
 use crate::schema::{Column, Table};
 use crate::source::{DataSource, Download};
 
-// https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNO/
+// https://arquivos.receitafederal.gov.br/index.php/s/gn672Ad4CF8N6TK?dir=/Dados/Cadastros/CNO
 
-const DATA_VERSION: &str = "2026-04-06";
+const DATA_VERSION: &str = "2026-06-09";
 const EXTRACTOR_VERSION: u32 = 2;
 const ZIP_URL: &str = "https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNO/cno.zip";
 const ZIP_FILENAME: &str = "cno.zip";

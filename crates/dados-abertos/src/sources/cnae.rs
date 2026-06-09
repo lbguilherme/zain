@@ -14,7 +14,7 @@ use crate::source::{DataSource, Download};
 
 const API_URL: &str = "https://servicodados.ibge.gov.br/api/v2/cnae/subclasses";
 const DATA_VERSION: &str = "2.3";
-const EXTRACTOR_VERSION: u32 = 4;
+const EXTRACTOR_VERSION: u32 = 5;
 
 // --- Deserialização do JSON da API ---
 
@@ -363,9 +363,12 @@ static TABLES: &[Table] = &[
             Column::text("descricao", "TEXT NOT NULL"),
             Column::text("classe_id", "CHAR(5) NOT NULL"),
             Column::text("observacoes", "TEXT"),
-            Column::text("embedding", "halfvec NOT NULL"),
+            Column::text("embedding", "halfvec(2560) NOT NULL"),
         ],
-        extra_ddl: &["CREATE INDEX ON \"{schema}\".\"subclasses\" (\"classe_id\")"],
+        extra_ddl: &[
+            "CREATE INDEX ON \"{schema}\".\"subclasses\" (\"classe_id\")",
+            "CREATE INDEX ON \"{schema}\".\"subclasses\" USING hnsw (\"embedding\" halfvec_cosine_ops)",
+        ],
         has_headers: false,
         delimiter: b';',
         csv_filename: None,
@@ -377,9 +380,12 @@ static TABLES: &[Table] = &[
         columns: &[
             Column::text("subclasse_id", "CHAR(7) NOT NULL"),
             Column::text("atividade", "TEXT NOT NULL"),
-            Column::text("embedding", "halfvec NOT NULL"),
+            Column::text("embedding", "halfvec(2560) NOT NULL"),
         ],
-        extra_ddl: &["CREATE INDEX ON \"{schema}\".\"subclasse_atividades\" (\"subclasse_id\")"],
+        extra_ddl: &[
+            "CREATE INDEX ON \"{schema}\".\"subclasse_atividades\" (\"subclasse_id\")",
+            "CREATE INDEX ON \"{schema}\".\"subclasse_atividades\" USING hnsw (\"embedding\" halfvec_cosine_ops)",
+        ],
         has_headers: false,
         delimiter: b';',
         csv_filename: None,

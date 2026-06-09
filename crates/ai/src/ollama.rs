@@ -124,7 +124,7 @@ impl OllamaClient {
     /// Gera embeddings para uma lista de textos.
     ///
     /// Se `cache_dir` for `Some`, os embeddings são cacheados em disco
-    /// como arquivos `.bin` nomeados pelo SHA256 do texto.
+    /// como arquivos `.bin` nomeados pelo SHA256 de `modelo + texto`.
     pub async fn embed_many(
         &self,
         model: &str,
@@ -139,7 +139,7 @@ impl OllamaClient {
         let mut uncached: Vec<usize> = Vec::new();
 
         for (i, text) in texts.iter().enumerate() {
-            let cached = cache_dir.and_then(|dir| read_cached(dir, text));
+            let cached = cache_dir.and_then(|dir| read_cached(dir, model, text));
             if let Some(vec) = cached {
                 results[i] = Some(vec);
             } else {
@@ -189,7 +189,7 @@ impl OllamaClient {
                 for (j, embedding) in resp.embeddings.into_iter().enumerate() {
                     let idx = chunk[j];
                     if let Some(dir) = cache_dir {
-                        write_cached(dir, &texts[idx], &embedding);
+                        write_cached(dir, model, &texts[idx], &embedding);
                     }
                     results[idx] = Some(embedding);
                 }
@@ -205,13 +205,24 @@ struct EmbedResponse {
     embeddings: Vec<Vec<f32>>,
 }
 
-fn cache_key(text: &str) -> String {
-    let hash = Sha256::digest(text.as_bytes());
-    hash.iter().map(|b| format!("{b:02x}")).collect()
+fn cache_key(model: &str, text: &str) -> String {
+    // O hash inclui o modelo: embeddings de modelos diferentes (com
+    // dimensões diferentes) nunca devem colidir na mesma chave de cache.
+    // O byte nulo separa modelo de texto para evitar ambiguidade na
+    // concatenação (ex: "a"+"bc" vs "ab"+"c").
+    let mut hasher = Sha256::new();
+    hasher.update(model.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(text.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
-fn read_cached(cache_dir: &Path, text: &str) -> Option<Vec<f32>> {
-    let path = cache_dir.join(format!("{}.bin", cache_key(text)));
+fn read_cached(cache_dir: &Path, model: &str, text: &str) -> Option<Vec<f32>> {
+    let path = cache_dir.join(format!("{}.bin", cache_key(model, text)));
     let data = std::fs::read(&path).ok()?;
     if data.len() % 4 != 0 {
         return None;
@@ -223,8 +234,8 @@ fn read_cached(cache_dir: &Path, text: &str) -> Option<Vec<f32>> {
     )
 }
 
-fn write_cached(cache_dir: &Path, text: &str, vec: &[f32]) {
-    let path = cache_dir.join(format!("{}.bin", cache_key(text)));
+fn write_cached(cache_dir: &Path, model: &str, text: &str, vec: &[f32]) {
+    let path = cache_dir.join(format!("{}.bin", cache_key(model, text)));
     let data: Vec<u8> = vec.iter().flat_map(|v| v.to_le_bytes()).collect();
     let _ = std::fs::write(&path, &data);
 }
