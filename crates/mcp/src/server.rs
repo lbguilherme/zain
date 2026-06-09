@@ -32,7 +32,7 @@ impl ZainMcpServer {
 #[tool_router]
 impl ZainMcpServer {
     #[tool(
-        description = "Devolve o estado atual do cliente: contato (chat_id, telefone, nome), dados coletados (CPF, CNPJ, intent de MEI, pagamento solicitado, recusa), estado da sessão gov.br (autenticado, nível, nome), flags derivadas (`has_ccmei_pdf` etc.) e a `memory` JSONB livre. Use no início de cada turno pra entender onde o lead parou.",
+        description = "Devolve o estado atual do cliente: contato (chat_id, telefone, nome), dados coletados (CPF, CNPJ, intent de MEI, pagamento solicitado, recusa), estado da sessão gov.br (autenticado / aguardando OTP / sessão expirada / não autenticado, nível, nome), situação MEI (já tem MEI ativo / impedido de abrir + motivo / elegível a abrir / não verificada) e a `memory` JSONB livre. Leitura barata — a situação MEI é mantida fresca por um worker de background. Use no início de cada turno pra entender onde o lead parou.",
         annotations(
             title = "Obter estado do cliente",
             read_only_hint = true,

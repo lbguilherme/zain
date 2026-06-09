@@ -7,6 +7,7 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use tokio_postgres::NoTls;
 
 mod client_state;
+mod jobs;
 mod meta;
 mod resources;
 mod server;
@@ -32,6 +33,16 @@ async fn main() -> anyhow::Result<()> {
     let ai = Arc::new(ai::Client::from_env());
     let models = Arc::new(Models::from_env()?);
     let state = Arc::new(AppState { pool, ai, models });
+
+    // Worker de background: mantém a situação MEI dos clientes fresca pra
+    // o `get_client_state` ser leitura SQL pura. Desligável via
+    // `MEI_REFRESH_ENABLED=false`.
+    if jobs::mei_refresh::enabled() {
+        let worker_state = state.clone();
+        tokio::spawn(async move { jobs::mei_refresh::run_forever(worker_state).await });
+    } else {
+        tracing::info!("mei_refresh: worker desligado (MEI_REFRESH_ENABLED=false)");
+    }
 
     let service_state = state.clone();
     // Stateless + json_response: sem `Mcp-Session-Id` obrigatório e

@@ -38,7 +38,10 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
             govbr_nivel,
             (govbr_session  IS NOT NULL) AS govbr_autenticado,
             (govbr_password IS NOT NULL) AS govbr_has_password,
+            govbr_otp_pendente,
             (mei_ccmei_pdf  IS NOT NULL) AS has_mei_ccmei_pdf,
+            mei_pode_abrir,
+            mei_impedimento_motivo,
             mei_consultado_em
          FROM zain.clients
          WHERE id = $client_id"
@@ -74,9 +77,12 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
         row.recusado_em.as_ref().map(|t| t.to_rfc3339()),
         row.govbr_autenticado,
         row.govbr_has_password,
+        row.govbr_otp_pendente,
         row.govbr_nome.as_deref(),
         row.govbr_nivel,
         row.has_mei_ccmei_pdf,
+        row.mei_pode_abrir,
+        row.mei_impedimento_motivo.as_deref(),
         row.mei_consultado_em.as_ref().map(|t| t.to_rfc3339()),
     );
 
@@ -102,9 +108,12 @@ fn format_dados_coletados(
     recusado_em: Option<String>,
     govbr_autenticado: bool,
     govbr_has_password: bool,
+    govbr_otp_pendente: bool,
     govbr_nome: Option<&str>,
     govbr_nivel: Option<Nivel>,
     has_mei_ccmei_pdf: bool,
+    mei_pode_abrir: Option<bool>,
+    mei_impedimento_motivo: Option<&str>,
     mei_consultado_em: Option<String>,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
@@ -124,11 +133,22 @@ fn format_dados_coletados(
             } else {
                 lines.push(format!("- gov.br: autenticado ({})", detalhes.join(", ")));
             }
+        } else if govbr_otp_pendente {
+            // Sessão limpa + flag setada = último login parou no 2FA. O
+            // worker de background não vai relogar sozinho; depende do
+            // cliente gerar o código no app gov.br.
+            lines.push(
+                "- gov.br: deslogado — aguardando código OTP (peça ao cliente o código do app gov.br e chame `auth_govbr_otp`)"
+                    .into(),
+            );
         } else if govbr_has_password {
-            // Senha salva mas sessão ausente = fluxo de 2FA em andamento.
-            // Sinalizar pro caller chamar `auth_govbr_otp` no próximo
-            // turno em vez de pedir senha de novo.
-            lines.push("- gov.br: aguardando código OTP (senha já fornecida)".into());
+            // Senha salva, sem sessão e sem OTP pendente: a sessão
+            // expirou mas o background consegue revalidar sozinho com a
+            // senha no próximo ciclo.
+            lines.push(
+                "- gov.br: sessão expirada (senha já salva; será revalidada automaticamente)"
+                    .into(),
+            );
         } else {
             lines.push("- gov.br: não autenticado".into());
         }
@@ -136,7 +156,10 @@ fn format_dados_coletados(
     if let Some(cnpj) = cnpj {
         lines.push(format!("- CNPJ: {cnpj}"));
     }
+
+    // Situação MEI (mantida fresca pelo worker `jobs::mei_refresh`).
     if has_mei_ccmei_pdf {
+        lines.push("- MEI: já tem MEI ativo".into());
         // O CCMEI fica disponível como MCP resource indexado por CNPJ.
         // Aviso o caller sobre a URI exata pra baixar via `resources/read`.
         if let Some(cnpj) = cnpj {
@@ -147,10 +170,23 @@ fn format_dados_coletados(
         } else {
             lines.push("- CCMEI disponível (resource MCP)".into());
         }
+    } else if mei_pode_abrir == Some(false) {
+        let motivo = mei_impedimento_motivo.unwrap_or("(motivo não informado)");
+        lines.push(format!(
+            "- MEI: **impedido de abrir MEI** — motivo: {motivo}"
+        ));
+    } else if mei_pode_abrir == Some(true) {
+        lines.push("- MEI: sem MEI ativo, mas elegível a abrir um".into());
+    } else if mei_consultado_em.is_some() {
+        lines.push(
+            "- MEI: sem MEI ativo; elegibilidade ainda não verificada (precisa de login gov.br)"
+                .into(),
+        );
     }
     if let Some(em) = mei_consultado_em {
-        lines.push(format!("- Dados do MEI consultados em: {em}"));
+        lines.push(format!("- Situação MEI verificada em: {em}"));
     }
+
     if let Some(quer_abrir_mei) = quer_abrir_mei {
         lines.push(format!(
             "- Quer abrir MEI novo: {}",

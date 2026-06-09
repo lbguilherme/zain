@@ -3,7 +3,7 @@
 /.dados_abertos
 .pgsafe/
 .env
-/dumps
-/.playwright-mcp
+dumps/
+.playwright-mcp/
 /whapi-openapi.yaml
 /dist

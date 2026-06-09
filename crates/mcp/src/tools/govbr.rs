@@ -119,8 +119,9 @@ async fn dispatch_outcome(
             //    tem direito a abrir um (pode estar impedido por
             //    vínculo com outros CNPJs, por exemplo).
             // Falhas em qualquer etapa NÃO invalidam o login — apenas
-            // logamos e seguimos.
-            let extras = consultar_mei_e_elegibilidade(state, client_id, cpf, &ok.session).await;
+            // logamos e seguimos. Passamos a sessão recém-validada pra
+            // `refresh_mei_status` reusar direto (sem revalidar de novo).
+            let extras = refresh_mei_status(state, client_id, cpf, Some(ok.session.clone())).await;
             let mut response = json!({
                 "status": "ok",
                 "perfil": profile_json(&ok.profile),
@@ -166,6 +167,13 @@ async fn dispatch_outcome(
             })
         }
         Err(GovbrError::MissingOtp) => {
+            // Marca OTP pendente: o login fresco parou no 2FA. Enquanto
+            // o cliente não mandar o código, o worker de background NÃO
+            // deve ficar tentando relogar (cada tentativa dispararia um
+            // novo push de 2FA). A flag zera quando `save_success` rodar.
+            if let Err(e) = mark_otp_pendente(&state.pool, client_id).await {
+                tracing::warn!(%client_id, error = %e, "govbr auth: falha ao marcar otp_pendente");
+            }
             tracing::info!(%client_id, "govbr auth: 2FA exigido");
             json!({
                 "status": "otp_necessario",
@@ -254,12 +262,13 @@ struct GovbrFullState {
     cpf: Option<String>,
     password: Option<String>,
     session: Option<SavedSession>,
+    otp_pendente: bool,
 }
 
 async fn load_full_state(pool: &Pool, client_id: Uuid) -> anyhow::Result<Option<GovbrFullState>> {
     let row = sql!(
         pool,
-        "SELECT govbr_cpf, govbr_password, govbr_session
+        "SELECT govbr_cpf, govbr_password, govbr_session, govbr_otp_pendente
          FROM zain.clients
          WHERE id = $client_id"
     )
@@ -269,6 +278,7 @@ async fn load_full_state(pool: &Pool, client_id: Uuid) -> anyhow::Result<Option<
         cpf: r.govbr_cpf,
         password: r.govbr_password,
         session: r.govbr_session,
+        otp_pendente: r.govbr_otp_pendente,
     }))
 }
 
@@ -336,11 +346,11 @@ pub(super) async fn ensure_valid_session(
         }
         Err(GovbrError::MissingOtp) => {
             tracing::info!(%client_id, elapsed_ms, "ensure_valid_session: portal exigiu 2FA");
-            if let Err(e) = clear_session(pool, client_id).await {
+            if let Err(e) = mark_otp_pendente(pool, client_id).await {
                 tracing::warn!(
                     %client_id,
                     error = %e,
-                    "ensure_valid_session: falha ao limpar sessão após MissingOtp"
+                    "ensure_valid_session: falha ao marcar otp_pendente após MissingOtp"
                 );
             }
             Err(json!({
@@ -395,6 +405,82 @@ pub(super) async fn ensure_valid_session(
     }
 }
 
+/// Desfecho de uma tentativa de garantir uma sessão gov.br válida pro
+/// background, sem nunca falhar de forma ruidosa.
+pub(super) enum GovbrSessionOutcome {
+    /// Sessão válida (reusada ou relogada), já persistida via `save_success`.
+    Valid(SavedSession),
+    /// Login fresco parou no 2FA. `govbr_otp_pendente` foi marcado e a
+    /// sessão limpa — o worker não tenta de novo; só o fluxo interativo.
+    OtpNeeded,
+    /// Senha confirmadamente errada (ERL0003900). A senha foi apagada — o
+    /// worker para de tentar até o agente coletar uma nova.
+    PasswordWrong,
+    /// Sem CPF/senha salvos pra sequer tentar.
+    NoCredentials,
+    /// Portal gov.br instável/indisponível. Transitório — vale retentar.
+    Unstable(String),
+}
+
+/// Garante uma sessão gov.br válida pra usos de background (worker), sem
+/// interação humana. Diferente de [`ensure_valid_session`] (que exige uma
+/// sessão pré-existente e devolve payload de erro pro caller MCP), aqui:
+///
+/// - Se `govbr_otp_pendente` já está marcado, devolve `OtpNeeded` sem
+///   tentar nada (evita disparar 2FA repetido a cada ciclo).
+/// - Senão, chama [`check_govbr_profile`], que reusa a sessão salva e, se
+///   ela morreu, faz login fresco com a senha. 2FA → `OtpNeeded` (+marca a
+///   flag); senha errada → `PasswordWrong` (+apaga a senha). O sucesso é
+///   persistido e zera a flag (via `save_success`).
+pub(super) async fn ensure_govbr_session(pool: &Pool, client_id: Uuid) -> GovbrSessionOutcome {
+    let st = match load_full_state(pool, client_id).await {
+        Ok(Some(s)) => s,
+        Ok(None) => return GovbrSessionOutcome::NoCredentials,
+        Err(e) => {
+            tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao ler estado gov.br");
+            return GovbrSessionOutcome::Unstable(e.to_string());
+        }
+    };
+    let (Some(cpf), Some(password)) = (st.cpf, st.password) else {
+        return GovbrSessionOutcome::NoCredentials;
+    };
+    if st.otp_pendente {
+        // Última tentativa parou no 2FA e nada mudou desde então: não
+        // reloga (dispararia outro push). Espera o fluxo interativo.
+        return GovbrSessionOutcome::OtpNeeded;
+    }
+
+    match check_govbr_profile(&cpf, &password, None, st.session.as_ref()).await {
+        Ok(ok) => {
+            if let Err(e) = save_success(pool, client_id, &ok).await {
+                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao persistir sessão");
+            }
+            GovbrSessionOutcome::Valid(ok.session)
+        }
+        Err(GovbrError::MissingOtp) => {
+            if let Err(e) = mark_otp_pendente(pool, client_id).await {
+                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao marcar otp_pendente");
+            }
+            GovbrSessionOutcome::OtpNeeded
+        }
+        Err(GovbrError::InvalidCredentials(detalhe)) => {
+            let senha_errada = detalhe.contains("ERL0003900");
+            if senha_errada && let Err(e) = clear_password(pool, client_id).await {
+                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao apagar senha");
+            }
+            if let Err(e) = clear_session(pool, client_id).await {
+                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao limpar sessão");
+            }
+            if senha_errada {
+                GovbrSessionOutcome::PasswordWrong
+            } else {
+                GovbrSessionOutcome::Unstable(detalhe)
+            }
+        }
+        Err(e) => GovbrSessionOutcome::Unstable(e.to_string()),
+    }
+}
+
 async fn load_credentials(pool: &Pool, client_id: Uuid) -> anyhow::Result<Option<GovbrCreds>> {
     let row = sql!(
         pool,
@@ -426,6 +512,7 @@ async fn save_success(pool: &Pool, client_id: Uuid, outcome: &CheckOutcome) -> a
         "UPDATE zain.clients
          SET govbr_session          = $session!,
              govbr_session_valid_at = now(),
+             govbr_otp_pendente     = false,
              govbr_nome             = $nome,
              govbr_email            = $email,
              govbr_telefone         = $telefone,
@@ -438,24 +525,93 @@ async fn save_success(pool: &Pool, client_id: Uuid, outcome: &CheckOutcome) -> a
     Ok(())
 }
 
+/// Marca "OTP pendente" e descarta a sessão: o último login fresco parou
+/// num 2FA que ainda não foi resolvido. Os cookies salvos (se houver) já
+/// não servem — limpamos. A flag faz o worker de background parar de
+/// tentar relogar sozinho; só o fluxo interativo (com o cliente pra
+/// digitar o código) religa. `save_success` zera tudo de volta.
+async fn mark_otp_pendente(pool: &Pool, client_id: Uuid) -> anyhow::Result<()> {
+    sql!(
+        pool,
+        "UPDATE zain.clients
+         SET govbr_session      = NULL,
+             govbr_otp_pendente = true,
+             updated_at         = now()
+         WHERE id = $client_id"
+    )
+    .execute()
+    .await?;
+    Ok(())
+}
+
 // ── MEI: consulta + persistência ───────────────────────────────────────
 
-struct MeiExtras {
+pub(crate) struct MeiExtras {
     mei: Value,
     pode_abrir: Option<bool>,
     motivo_impedimento: Option<String>,
     orientacao: Option<String>,
 }
 
-async fn consultar_mei_e_elegibilidade(
+/// Atualiza a situação MEI do cliente e PERSISTE o resultado. Usado tanto
+/// pelo login (`dispatch_outcome`, passando a sessão recém-validada em
+/// `session`) quanto pelo worker de background (`jobs::mei_refresh`, com
+/// `session = None` — nesse caso a sessão é obtida via
+/// [`ensure_govbr_session`], que tenta reusar/relogar respeitando a flag
+/// `govbr_otp_pendente`).
+///
+/// Com a sessão em mãos: Tier 1 (`consultar_certificado`) decide "tem MEI?".
+/// Se não tem, Tier 2 (`checar_pode_abrir_mei`) decide a elegibilidade —
+/// ambos rodam no portal da Receita logado. Sem sessão utilizável, nada é
+/// verificado. `mei_consultado_em` é carimbado nos desfechos conclusivos
+/// (tem MEI / elegibilidade checada); em instabilidade do portal NÃO é
+/// carimbado (pra retentar no próximo ciclo). Nunca propaga erro — o worker
+/// ignora o retorno e o caller interativo injeta os campos no prompt.
+pub(crate) async fn refresh_mei_status(
     state: &AppState,
     client_id: Uuid,
     cpf: &str,
-    saved: &SavedSession,
+    session: Option<SavedSession>,
 ) -> MeiExtras {
-    tracing::info!(%client_id, "govbr auth: consultando CCMEI pelo CPF");
+    // O portal do CCMEI deixou de ser público — TUDO no MEI agora exige
+    // sessão gov.br. No login ela já vem pronta em `session`; no background
+    // a gente obtém via `ensure_govbr_session` (reusa/reloga respeitando a
+    // flag `govbr_otp_pendente`, sem loop de re-login).
+    let saved = match session {
+        Some(s) => s,
+        None => match ensure_govbr_session(&state.pool, client_id).await {
+            GovbrSessionOutcome::Valid(s) => s,
+            outcome => {
+                // Sem sessão utilizável: não dá pra checar NADA (nem
+                // tem-MEI). Deixa "não verificado" sem carimbar nem mexer
+                // em dados. OTP pendente / senha errada / sem-credenciais
+                // já travam o worker (flag / ausência de senha) e nenhum
+                // desses sobe browser nos próximos ciclos.
+                let motivo = match &outcome {
+                    GovbrSessionOutcome::OtpNeeded => "otp_pendente",
+                    GovbrSessionOutcome::PasswordWrong => "senha_invalida",
+                    GovbrSessionOutcome::NoCredentials => "sem_credenciais",
+                    GovbrSessionOutcome::Unstable(detalhe) => {
+                        tracing::warn!(%client_id, %detalhe, "refresh_mei_status: gov.br instável ao obter sessão");
+                        "govbr_instavel"
+                    }
+                    GovbrSessionOutcome::Valid(_) => "ok",
+                };
+                tracing::info!(%client_id, motivo, "refresh_mei_status: sem sessão gov.br utilizável; situação MEI não verificada");
+                return MeiExtras {
+                    mei: Value::Null,
+                    pode_abrir: None,
+                    motivo_impedimento: None,
+                    orientacao: None,
+                };
+            }
+        },
+    };
+
+    // Tier 1 — consulta o CCMEI (agora exige login). Tem MEI ativo?
+    tracing::info!(%client_id, "refresh_mei_status: consultando CCMEI");
     let start = std::time::Instant::now();
-    match rpa::mei::consultar_certificado(cpf).await {
+    match rpa::mei::consultar_certificado(&saved, cpf).await {
         Ok(Some(cert)) => {
             let elapsed_ms = start.elapsed().as_millis() as u64;
             let pdf_bytes = cert.pdf.len();
@@ -492,7 +648,7 @@ async fn consultar_mei_e_elegibilidade(
             tracing::info!(
                 %client_id,
                 elapsed_ms,
-                "govbr auth: CPF não tem MEI, checando elegibilidade"
+                "refresh_mei_status: CPF não tem MEI ativo, checando elegibilidade"
             );
         }
         Err(e) => {
@@ -501,8 +657,10 @@ async fn consultar_mei_e_elegibilidade(
                 %client_id,
                 elapsed_ms,
                 error = %e,
-                "govbr auth: SIMEI indisponível durante consulta do CCMEI"
+                "refresh_mei_status: SIMEI indisponível durante consulta do CCMEI"
             );
+            // Instabilidade do portal: NÃO carimba mei_consultado_em, pra
+            // o worker retentar no próximo ciclo.
             return MeiExtras {
                 mei: Value::Null,
                 pode_abrir: None,
@@ -512,8 +670,10 @@ async fn consultar_mei_e_elegibilidade(
         }
     }
 
+    // Tier 2 — não tem MEI ativo: checa elegibilidade pra abrir um, reusando
+    // a mesma sessão já validada acima.
     let start = std::time::Instant::now();
-    match rpa::mei::checar_pode_abrir_mei(saved).await {
+    match rpa::mei::checar_pode_abrir_mei(&saved).await {
         Ok(ElegibilidadeMei { pode_abrir, motivo }) => {
             let elapsed_ms = start.elapsed().as_millis() as u64;
             tracing::info!(
@@ -521,8 +681,13 @@ async fn consultar_mei_e_elegibilidade(
                 elapsed_ms,
                 pode_abrir,
                 motivo = motivo.as_deref().unwrap_or(""),
-                "govbr auth: elegibilidade MEI checada"
+                "refresh_mei_status: elegibilidade MEI checada"
             );
+            if let Err(e) =
+                save_elegibilidade(&state.pool, client_id, pode_abrir, motivo.as_deref()).await
+            {
+                tracing::warn!(%client_id, error = %e, "refresh_mei_status: falha ao persistir elegibilidade");
+            }
             let orientacao = (!pode_abrir).then(|| {
                 "O cliente NÃO tem MEI ativo e TAMBÉM NÃO pode abrir um novo — o portal da Receita recusou o acesso ao form de inscrição com o impedimento acima (tipicamente porque o CPF está vinculado a outro CNPJ que bloqueia MEI). Comunique o motivo ao cliente em português claro e, em seguida, chame `recusar_lead` com um motivo curto (ex: 'CPF impedido de abrir MEI: vínculo com outro CNPJ').".to_string()
             });
@@ -604,6 +769,32 @@ pub(super) async fn save_mei(
              mei_ccmei_pdf     = $mei_ccmei_pdf,
              mei_consultado_em = now(),
              updated_at        = now()
+         WHERE id = $client_id"
+    )
+    .execute()
+    .await?;
+    Ok(())
+}
+
+/// Persiste o resultado da checagem de elegibilidade (Tier 2) quando o
+/// cliente NÃO tem MEI ativo: grava `mei_pode_abrir`/`mei_impedimento_motivo`,
+/// carimba `mei_consultado_em` e limpa qualquer CCMEI obsoleto (sem MEI
+/// ativo não há certificado válido).
+async fn save_elegibilidade(
+    pool: &Pool,
+    client_id: Uuid,
+    pode_abrir: bool,
+    motivo: Option<&str>,
+) -> anyhow::Result<()> {
+    sql!(
+        pool,
+        "UPDATE zain.clients
+         SET mei_ccmei              = NULL,
+             mei_ccmei_pdf          = NULL,
+             mei_pode_abrir         = $pode_abrir,
+             mei_impedimento_motivo = $motivo,
+             mei_consultado_em      = now(),
+             updated_at             = now()
          WHERE id = $client_id"
     )
     .execute()

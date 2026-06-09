@@ -1,12 +1,18 @@
 //! RPA para consulta do Certificado da Condição de MEI (CCMEI) no
 //! portal da Receita.
 //!
-//! A página é pública (não exige sessão gov.br): aceita CPF ou CNPJ como
-//! entrada, redireciona para a visualização do certificado se o
-//! documento tem MEI ativo, ou mostra um banner `br-message.danger` se
-//! não tem. O formulário é Angular + ngx-mask, então seguimos o mesmo
-//! padrão de [`crate::mei::inscricao`]: digitação real via CDP para
-//! acionar a máscara e clicks via JS.
+//! ATENÇÃO: o portal **deixou de ser público** (a rota `/certificado/consulta`
+//! passou a redirecionar para `/certificado/login`). Agora exige uma sessão
+//! gov.br válida — por isso [`consultar_certificado`] recebe uma
+//! [`SavedSession`] e faz o mesmo dance de login do [`crate::mei::inscricao`]:
+//! restaura a sessão, clica "Entrar com gov.br" e aguarda o form de consulta
+//! (tratando SSO/OAuth pelo caminho).
+//!
+//! Depois do login: aceita CPF ou CNPJ, mostra a tela
+//! `app-visualizacao-certificado` se o documento tem MEI ativo, ou um banner
+//! `br-message.danger` se não tem. O formulário é Angular + ngx-mask, então
+//! seguimos o mesmo padrão: digitação real via CDP para acionar a máscara e
+//! clicks via JS.
 //!
 //! Quando o certificado existe, além de extrair os dados da tela, o RPA
 //! clica em "Fazer Download do Certificado em PDF" e captura os bytes
@@ -19,7 +25,11 @@ use std::time::Duration;
 
 use chromium_driver::PageSession;
 use chromium_driver::cdp::browser::DownloadBehavior;
+use chromium_driver::dom::Dom;
 use serde::{Deserialize, Serialize};
+
+use crate::govbr::launch;
+use crate::govbr::session::{self, SavedSession};
 
 const CONSULTA_CERTIFICADO_URL: &str = "https://mei.receita.economia.gov.br/certificado/consulta";
 
@@ -78,7 +88,10 @@ pub struct PeriodoMei {
 /// documento não tem empresas MEI (tela com banner `.br-message.danger`);
 /// `Some(certificado)` devolve todos os dados disponíveis na tela de
 /// visualização.
-pub async fn consultar_certificado(cpf_or_cnpj: &str) -> anyhow::Result<Option<CertificadoMei>> {
+pub async fn consultar_certificado(
+    saved: &SavedSession,
+    cpf_or_cnpj: &str,
+) -> anyhow::Result<Option<CertificadoMei>> {
     let digits: String = cpf_or_cnpj.chars().filter(|c| c.is_ascii_digit()).collect();
     let tipo = match digits.len() {
         11 => TipoConsulta::Cpf,
@@ -103,8 +116,10 @@ pub async fn consultar_certificado(cpf_or_cnpj: &str) -> anyhow::Result<Option<C
         .ok_or_else(|| anyhow::anyhow!("download_dir tem bytes não-UTF8"))?
         .to_string();
 
-    let (mut process, browser) =
-        chromium_driver::launch(chromium_driver::LaunchOptions::default()).await?;
+    // Extensões (NopeCHA) ligadas: o login gov.br pode esbarrar em hCaptcha,
+    // igual ao fluxo de inscrição.
+    let opts = launch::options_with_extensions().await?;
+    let (mut process, browser) = chromium_driver::launch(opts).await?;
 
     let result: anyhow::Result<Option<CertificadoMei>> = async {
         // Liga o download antes de qualquer navegação pra garantir que
@@ -116,14 +131,17 @@ pub async fn consultar_certificado(cpf_or_cnpj: &str) -> anyhow::Result<Option<C
         let page = browser.create_page("about:blank").await?.attach().await?;
         page.enable().await?;
 
+        // O portal exige login: restaura a sessão gov.br ANTES de navegar.
+        session::restore(&browser, &page, saved).await?;
+
         page.navigate(CONSULTA_CERTIFICADO_URL).await?;
         page.wait_for_load(TIMEOUT).await.ok();
 
         let dom = page.dom().await?;
-        // Aguarda o form estar totalmente hidratado: o botão "Continuar"
-        // só aparece depois que o Angular termina o bootstrap.
-        dom.wait_for("app-consulta button.br-button.primary", TIMEOUT)
-            .await?;
+        // A rota `/certificado/consulta` redireciona pra `/certificado/login`.
+        // Clica "Entrar com gov.br" e aguarda o form de consulta aparecer
+        // (lidando com SSO/OAuth e sessão expirada pelo caminho).
+        login_e_aguardar_consulta(&page, dom).await?;
 
         // Default é CNPJ (`#tipo-0` checked). Se for CPF, clica no label
         // do radio alternativo — o `<input type=radio>` tem opacity:0 do
@@ -167,6 +185,86 @@ pub async fn consultar_certificado(cpf_or_cnpj: &str) -> anyhow::Result<Option<C
     let _ = process.wait().await;
     let _ = std::fs::remove_dir_all(&download_dir);
     result
+}
+
+/// Faz o login no portal do CCMEI (que deixou de ser público) e aguarda o
+/// form de consulta hidratar. A tela inicial é `/certificado/login` com o
+/// botão "Entrar com gov.br"; clicar dispara o SSO, que — com a sessão
+/// restaurada — devolve direto pro form de consulta. Trata o consentimento
+/// OAuth (1º acesso) e detecta sessão expirada (redirect pro login do SSO).
+/// Espelha o `wait_for_inscrever_form` de [`crate::mei::inscricao`].
+async fn login_e_aguardar_consulta(page: &PageSession, dom: &Dom) -> anyhow::Result<()> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    let mut clicou_entrar = false;
+    let mut autorizou_oauth = false;
+    loop {
+        dom.invalidate();
+
+        // Form de consulta pronto? (input de CPF ou CNPJ dentro de app-consulta)
+        let pronto = page
+            .eval_value(
+                r#"(() => !!document.querySelector('app-consulta input[name=cpf], app-consulta input[name=cnpj]'))()"#,
+            )
+            .await?
+            .as_bool()
+            .unwrap_or(false);
+        if pronto {
+            return Ok(());
+        }
+
+        let url = page
+            .eval_value("location.href")
+            .await?
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+
+        // Sessão expirada: o SSO pediu CPF/senha de novo.
+        if url.starts_with("https://sso.acesso.gov.br/login") {
+            let _ = page.debug_dump("mei-certificado-sessao-invalida").await;
+            anyhow::bail!("sessão gov.br inválida/expirada ao acessar o portal do CCMEI");
+        }
+
+        // Consentimento OAuth (1º acesso ao portal do certificado pelo SSO).
+        if url.starts_with("https://sso.acesso.gov.br/authorize") && !autorizou_oauth {
+            dom.wait_for("button[name=user_oauth_approval][value=true]", TIMEOUT)
+                .await?;
+            click_js(page, "button[name=user_oauth_approval][value=true]").await?;
+            autorizou_oauth = true;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            continue;
+        }
+
+        // Tela de login do certificado: clica "Entrar com gov.br" (casamos
+        // pelo texto pra não confundir com o "Ir para gov.br" nem com o
+        // "Continuar" do form de consulta).
+        if !clicou_entrar {
+            let clicou = page
+                .eval_value(
+                    r#"(() => {
+                        const btns = [...document.querySelectorAll('button.br-button')];
+                        const b = btns.find(x => (x.textContent || '').replace(/\s+/g,' ').trim().startsWith('Entrar com'));
+                        if (!b) return false;
+                        b.click();
+                        return true;
+                    })()"#,
+                )
+                .await?
+                .as_bool()
+                .unwrap_or(false);
+            if clicou {
+                clicou_entrar = true;
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        }
+
+        if tokio::time::Instant::now() >= deadline {
+            let _ = page.debug_dump("mei-certificado-login-timeout").await;
+            anyhow::bail!("timeout aguardando form de consulta do CCMEI (url atual: {url})");
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
 }
 
 /// Poll o diretório de download até aparecer um arquivo finalizado

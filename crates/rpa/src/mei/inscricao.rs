@@ -408,7 +408,7 @@ pub async fn inscrever_mei(
     // estiver indexado, guardamos `None` e deixamos o caller tentar
     // de novo — a abertura em si já deu certo.
     tracing::info!(%cnpj, "consultando CCMEI após abertura");
-    let ccmei = match consultar_certificado(&cnpj).await {
+    let ccmei = match consultar_certificado(saved, &cnpj).await {
         Ok(Some(cert)) => Some(cert),
         Ok(None) => {
             tracing::warn!(
