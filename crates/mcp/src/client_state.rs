@@ -106,10 +106,10 @@ pub async fn require_enabled(
             })));
         }
         Err(e) => {
-            tracing::warn!(%client_id, tool, error = %e, "require_enabled: falha ao carregar snapshot");
+            tracing::warn!(%client_id, tool, error = %crate::errlog::anyhow_chain(&e), "require_enabled: falha ao carregar snapshot");
             return Some(CallToolResult::structured_error(json!({
                 "status": "erro",
-                "mensagem": format!("Falha ao validar pré-requisitos: {e}"),
+                "mensagem": "Não consegui validar os pré-requisitos no banco agora. Tente de novo em instantes.",
             })));
         }
     };

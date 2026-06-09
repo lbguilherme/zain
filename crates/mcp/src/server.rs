@@ -274,9 +274,9 @@ impl ServerHandler for ZainMcpServer {
                 ClientSnapshot::default()
             }
             Err(e) => {
-                tracing::warn!(%client_id, error = %e, "list_tools: falha ao carregar snapshot");
+                tracing::warn!(%client_id, error = %crate::errlog::anyhow_chain(&e), "list_tools: falha ao carregar snapshot");
                 return Err(ErrorData::internal_error(
-                    format!("Falha ao listar tools: {e}"),
+                    "Não consegui carregar o estado do cliente agora.".to_string(),
                     None,
                 ));
             }

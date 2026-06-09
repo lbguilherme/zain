@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::errlog::ErrChain;
 use crate::state::AppState;
 
 #[derive(Deserialize, JsonSchema)]
@@ -27,8 +28,8 @@ pub async fn run(state: &AppState, client_id: Uuid, args: Args) -> Value {
     {
         Ok(_) => json!({ "status": "ok" }),
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "save_quer_abrir_mei: falha ao salvar");
-            json!({ "status": "erro", "mensagem": format!("Falha ao salvar: {e}") })
+            tracing::warn!(%client_id, error = %e.chain_string(), "save_quer_abrir_mei: falha ao salvar");
+            json!({ "status": "erro", "mensagem": "Não consegui salvar no banco agora. Tente de novo em instantes." })
         }
     }
 }

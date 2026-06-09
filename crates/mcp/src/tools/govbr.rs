@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::pgfn;
+use crate::errlog::{self, ErrChain};
 use crate::state::AppState;
 
 #[derive(Deserialize, JsonSchema)]
@@ -45,19 +46,19 @@ pub async fn run_auth(state: &AppState, client_id: Uuid, args: AuthArgs) -> Valu
             });
         }
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "auth_govbr: falha ao ler CPF");
+            tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "auth_govbr: falha ao ler CPF");
             return json!({
                 "status": "erro",
-                "mensagem": format!("Falha ao ler CPF: {e}"),
+                "mensagem": "Não consegui ler o CPF do cadastro agora. Tente de novo em instantes.",
             });
         }
     };
 
     if let Err(e) = save_credentials(&state.pool, client_id, &cpf, &args.senha).await {
-        tracing::warn!(%client_id, error = %e, "auth_govbr: falha ao salvar credenciais");
+        tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "auth_govbr: falha ao salvar credenciais");
         return json!({
             "status": "erro",
-            "mensagem": format!("Falha ao salvar credenciais: {e}"),
+            "mensagem": "Não consegui salvar as credenciais agora. Tente de novo em instantes.",
         });
     }
 
@@ -84,10 +85,10 @@ pub async fn run_otp(state: &AppState, client_id: Uuid, args: OtpArgs) -> Value 
             });
         }
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "auth_govbr_otp: falha ao carregar credenciais");
+            tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "auth_govbr_otp: falha ao carregar credenciais");
             return json!({
                 "status": "erro",
-                "mensagem": format!("Falha ao carregar credenciais: {e}"),
+                "mensagem": "Não consegui carregar as credenciais agora. Tente de novo em instantes.",
             });
         }
     };
@@ -106,10 +107,10 @@ async fn dispatch_outcome(
     match outcome {
         Ok(ok) => {
             if let Err(e) = save_success(&state.pool, client_id, &ok).await {
-                tracing::warn!(%client_id, error = %e, "govbr auth: falha ao salvar sessão/perfil");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "govbr auth: falha ao salvar sessão/perfil");
                 return json!({
                     "status": "erro",
-                    "mensagem": format!("Autenticação OK mas falhou ao persistir: {e}"),
+                    "mensagem": "Autenticação OK, mas não consegui salvar a sessão agora. Tente de novo em instantes.",
                 });
             }
             tracing::info!(%client_id, fresh = ok.fresh_login, "govbr auth: sucesso");
@@ -151,7 +152,7 @@ async fn dispatch_outcome(
             if senha_confirmadamente_errada
                 && let Err(e) = clear_password(&state.pool, client_id).await
             {
-                tracing::warn!(%client_id, error = %e, "govbr auth: falha ao apagar senha após ERL0003900");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "govbr auth: falha ao apagar senha após ERL0003900");
             }
             tracing::info!(
                 %client_id,
@@ -172,7 +173,7 @@ async fn dispatch_outcome(
             // deve ficar tentando relogar (cada tentativa dispararia um
             // novo push de 2FA). A flag zera quando `save_success` rodar.
             if let Err(e) = mark_otp_pendente(&state.pool, client_id).await {
-                tracing::warn!(%client_id, error = %e, "govbr auth: falha ao marcar otp_pendente");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "govbr auth: falha ao marcar otp_pendente");
             }
             tracing::info!(%client_id, "govbr auth: 2FA exigido");
             json!({
@@ -181,10 +182,12 @@ async fn dispatch_outcome(
             })
         }
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "govbr auth: falha");
+            // `e` é GovbrError (RPA/browser) — detalhe técnico só no log; o
+            // LLM recebe uma mensagem genérica de instabilidade.
+            tracing::warn!(%client_id, error = %e.chain_string(), "govbr auth: falha");
             json!({
                 "status": "erro",
-                "mensagem": format!("Falha ao autenticar no gov.br: {e}"),
+                "mensagem": "Não consegui concluir o login no gov.br agora — o sistema pode estar instável. Explique ao cliente e peça pra tentar de novo em alguns minutos.",
             })
         }
     }
@@ -306,10 +309,10 @@ pub(super) async fn ensure_valid_session(
             }));
         }
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "ensure_valid_session: falha ao ler estado gov.br");
+            tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "ensure_valid_session: falha ao ler estado gov.br");
             return Err(json!({
                 "status": "erro",
-                "mensagem": format!("Falha ao ler credenciais gov.br: {e}"),
+                "mensagem": "Não consegui ler as credenciais gov.br agora. Tente de novo em instantes.",
             }));
         }
     };
@@ -338,7 +341,7 @@ pub(super) async fn ensure_valid_session(
             if let Err(e) = save_success(pool, client_id, &ok).await {
                 tracing::warn!(
                     %client_id,
-                    error = %e,
+                    error = %errlog::anyhow_chain(&e),
                     "ensure_valid_session: falha ao persistir sessão renovada"
                 );
             }
@@ -349,7 +352,7 @@ pub(super) async fn ensure_valid_session(
             if let Err(e) = mark_otp_pendente(pool, client_id).await {
                 tracing::warn!(
                     %client_id,
-                    error = %e,
+                    error = %errlog::anyhow_chain(&e),
                     "ensure_valid_session: falha ao marcar otp_pendente após MissingOtp"
                 );
             }
@@ -370,14 +373,14 @@ pub(super) async fn ensure_valid_session(
             if senha_confirmadamente_errada && let Err(e) = clear_password(pool, client_id).await {
                 tracing::warn!(
                     %client_id,
-                    error = %e,
+                    error = %errlog::anyhow_chain(&e),
                     "ensure_valid_session: falha ao apagar senha após ERL0003900"
                 );
             }
             if let Err(e) = clear_session(pool, client_id).await {
                 tracing::warn!(
                     %client_id,
-                    error = %e,
+                    error = %errlog::anyhow_chain(&e),
                     "ensure_valid_session: falha ao limpar sessão após InvalidCredentials"
                 );
             }
@@ -393,13 +396,13 @@ pub(super) async fn ensure_valid_session(
             tracing::warn!(
                 %client_id,
                 elapsed_ms,
-                error = %e,
+                error = %e.chain_string(),
                 "ensure_valid_session: falha ao revalidar sessão gov.br"
             );
             Err(json!({
                 "status": "erro",
                 "motivo": "validacao_govbr_falhou",
-                "mensagem": format!("Não consegui validar a sessão do gov.br agora: {e}. O sistema do gov.br pode estar instável — explique a situação ao cliente de forma direta e peça pra ele tentar de novo em alguns minutos."),
+                "mensagem": "Não consegui validar a sessão do gov.br agora. O sistema do gov.br pode estar instável — explique a situação ao cliente de forma direta e peça pra ele tentar de novo em alguns minutos.",
             }))
         }
     }
@@ -437,8 +440,8 @@ pub(super) async fn ensure_govbr_session(pool: &Pool, client_id: Uuid) -> GovbrS
         Ok(Some(s)) => s,
         Ok(None) => return GovbrSessionOutcome::NoCredentials,
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao ler estado gov.br");
-            return GovbrSessionOutcome::Unstable(e.to_string());
+            tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "ensure_govbr_session: falha ao ler estado gov.br");
+            return GovbrSessionOutcome::Unstable(errlog::anyhow_chain(&e));
         }
     };
     let (Some(cpf), Some(password)) = (st.cpf, st.password) else {
@@ -453,23 +456,23 @@ pub(super) async fn ensure_govbr_session(pool: &Pool, client_id: Uuid) -> GovbrS
     match check_govbr_profile(&cpf, &password, None, st.session.as_ref()).await {
         Ok(ok) => {
             if let Err(e) = save_success(pool, client_id, &ok).await {
-                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao persistir sessão");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "ensure_govbr_session: falha ao persistir sessão");
             }
             GovbrSessionOutcome::Valid(ok.session)
         }
         Err(GovbrError::MissingOtp) => {
             if let Err(e) = mark_otp_pendente(pool, client_id).await {
-                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao marcar otp_pendente");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "ensure_govbr_session: falha ao marcar otp_pendente");
             }
             GovbrSessionOutcome::OtpNeeded
         }
         Err(GovbrError::InvalidCredentials(detalhe)) => {
             let senha_errada = detalhe.contains("ERL0003900");
             if senha_errada && let Err(e) = clear_password(pool, client_id).await {
-                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao apagar senha");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "ensure_govbr_session: falha ao apagar senha");
             }
             if let Err(e) = clear_session(pool, client_id).await {
-                tracing::warn!(%client_id, error = %e, "ensure_govbr_session: falha ao limpar sessão");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "ensure_govbr_session: falha ao limpar sessão");
             }
             if senha_errada {
                 GovbrSessionOutcome::PasswordWrong
@@ -477,7 +480,7 @@ pub(super) async fn ensure_govbr_session(pool: &Pool, client_id: Uuid) -> GovbrS
                 GovbrSessionOutcome::Unstable(detalhe)
             }
         }
-        Err(e) => GovbrSessionOutcome::Unstable(e.to_string()),
+        Err(e) => GovbrSessionOutcome::Unstable(e.chain_string()),
     }
 }
 
@@ -625,7 +628,7 @@ pub(crate) async fn refresh_mei_status(
             if let Err(e) = save_mei(&state.pool, client_id, &cert).await {
                 tracing::warn!(
                     %client_id,
-                    error = %e,
+                    error = %errlog::anyhow_chain(&e),
                     "govbr auth: falha ao persistir dados do MEI"
                 );
             }
@@ -656,7 +659,7 @@ pub(crate) async fn refresh_mei_status(
             tracing::warn!(
                 %client_id,
                 elapsed_ms,
-                error = %e,
+                error = %errlog::anyhow_chain(&e),
                 "refresh_mei_status: SIMEI indisponível durante consulta do CCMEI"
             );
             // Instabilidade do portal: NÃO carimba mei_consultado_em, pra
@@ -686,7 +689,7 @@ pub(crate) async fn refresh_mei_status(
             if let Err(e) =
                 save_elegibilidade(&state.pool, client_id, pode_abrir, motivo.as_deref()).await
             {
-                tracing::warn!(%client_id, error = %e, "refresh_mei_status: falha ao persistir elegibilidade");
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "refresh_mei_status: falha ao persistir elegibilidade");
             }
             let orientacao = (!pode_abrir).then(|| {
                 "O cliente NÃO tem MEI ativo e TAMBÉM NÃO pode abrir um novo — o portal da Receita recusou o acesso ao form de inscrição com o impedimento acima (tipicamente porque o CPF está vinculado a outro CNPJ que bloqueia MEI). Comunique o motivo ao cliente em português claro e, em seguida, chame `recusar_lead` com um motivo curto (ex: 'CPF impedido de abrir MEI: vínculo com outro CNPJ').".to_string()
@@ -703,7 +706,7 @@ pub(crate) async fn refresh_mei_status(
             tracing::warn!(
                 %client_id,
                 elapsed_ms,
-                error = %e,
+                error = %e.chain_string(),
                 "govbr auth: SIMEI indisponível durante checagem de elegibilidade"
             );
             MeiExtras {

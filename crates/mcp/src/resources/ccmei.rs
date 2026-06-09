@@ -47,9 +47,9 @@ pub async fn list_for_client(
     let meta = match load_meta(&state.pool, client_id).await {
         Ok(m) => m,
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "ccmei list: falha ao ler metadata");
+            tracing::warn!(%client_id, error = %crate::errlog::anyhow_chain(&e), "ccmei list: falha ao ler metadata");
             return Err(ErrorData::internal_error(
-                format!("Falha ao listar CCMEI: {e}"),
+                "Não consegui listar o CCMEI no banco agora.".to_string(),
                 None,
             ));
         }
@@ -92,9 +92,9 @@ pub async fn read(
             ));
         }
         Err(e) => {
-            tracing::warn!(%client_id, cnpj, error = %e, "ccmei read: falha ao ler PDF");
+            tracing::warn!(%client_id, cnpj, error = %crate::errlog::anyhow_chain(&e), "ccmei read: falha ao ler PDF");
             return Err(ErrorData::internal_error(
-                format!("Falha ao ler CCMEI do banco: {e}"),
+                "Não consegui ler o CCMEI do banco agora.".to_string(),
                 None,
             ));
         }

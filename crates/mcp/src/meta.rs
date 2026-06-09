@@ -78,8 +78,8 @@ pub async fn ensure_client_exists(pool: &Pool, client_id: Uuid) -> anyhow::Resul
 pub async fn extract_and_ensure_client_id(pool: &Pool, meta: &Meta) -> Result<Uuid, ErrorData> {
     let client_id = extract_client_id(meta)?;
     ensure_client_exists(pool, client_id).await.map_err(|e| {
-        tracing::warn!(%client_id, error = %e, "ensure_client_exists falhou");
-        ErrorData::internal_error(format!("Falha ao registrar cliente: {e}"), None)
+        tracing::warn!(%client_id, error = %crate::errlog::anyhow_chain(&e), "ensure_client_exists falhou");
+        ErrorData::internal_error("Não consegui registrar o cliente no banco agora.".to_string(), None)
     })?;
     Ok(client_id)
 }

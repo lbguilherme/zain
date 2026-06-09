@@ -14,6 +14,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::errlog::{self, ErrChain};
 use crate::state::AppState;
 
 #[derive(Deserialize, JsonSchema)]
@@ -100,12 +101,14 @@ async fn run_code(pool: &Pool, client_id: Uuid, codigo: &str) -> Result<Value, V
             }
         }
         Err(e) => {
+            // Detalhe completo (mensagem do Postgres) só no log; o retorno
+            // pro LLM fica genérico.
             tracing::warn!(
                 %client_id,
-                error = %e,
+                error = %e.chain_string(),
                 "Falha na query de CNAE por código"
             );
-            Err(json!({ "erro": format!("Falha ao consultar CNAE: {}", e) }))
+            Err(json!({ "erro": "Falha ao consultar o CNAE no banco de dados." }))
         }
     }
 }
@@ -123,8 +126,9 @@ async fn run_semantic(
             pgvector::HalfVector::from(half)
         }
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "Falha ao gerar embedding");
-            return Err(json!({ "erro": format!("Falha ao gerar embedding: {}", e) }));
+            // `ai.embed` devolve `anyhow::Error` → usa `anyhow_chain`.
+            tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "Falha ao gerar embedding");
+            return Err(json!({ "erro": "Falha ao processar a busca de atividade no momento." }));
         }
     };
 
@@ -161,10 +165,10 @@ async fn run_semantic(
         Err(e) => {
             tracing::warn!(
                 %client_id,
-                error = %e,
+                error = %e.chain_string(),
                 "Falha na busca de CNAE por atividade"
             );
-            Err(json!({ "erro": format!("Falha ao buscar CNAE: {}", e) }))
+            Err(json!({ "erro": "Falha ao buscar o CNAE no banco de dados." }))
         }
     }
 }

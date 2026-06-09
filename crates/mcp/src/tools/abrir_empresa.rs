@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::govbr;
+use crate::errlog::ErrChain;
 use crate::state::AppState;
 
 #[derive(Deserialize, JsonSchema)]
@@ -136,7 +137,7 @@ pub async fn run(state: &AppState, client_id: Uuid, args: Args) -> Value {
             if let Err(e) = persist_result {
                 tracing::warn!(
                     %client_id,
-                    error = %e,
+                    error = %crate::errlog::anyhow_chain(&e),
                     "abrir_empresa: falha ao persistir resultado da abertura"
                 );
             }
@@ -154,7 +155,7 @@ pub async fn run(state: &AppState, client_id: Uuid, args: Args) -> Value {
             tracing::warn!(
                 %client_id,
                 elapsed_ms,
-                error = %e,
+                error = %e.chain_string(),
                 "abrir_empresa: inscrição falhou"
             );
             map_error(&e)

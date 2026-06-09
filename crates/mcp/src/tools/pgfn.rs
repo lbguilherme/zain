@@ -78,7 +78,7 @@ async fn fetch_with_cache(pool: &Pool, client_id: Uuid, documento: &str) -> anyh
         }
         Ok(None) => {}
         Err(e) => {
-            tracing::warn!(client_id = %client_id, error = %e, "pgfn: falha ao ler cache");
+            tracing::warn!(client_id = %client_id, error = %crate::errlog::anyhow_chain(&e), "pgfn: falha ao ler cache");
         }
     }
 
@@ -108,7 +108,7 @@ async fn fetch_with_cache(pool: &Pool, client_id: Uuid, documento: &str) -> anyh
     });
 
     if let Err(e) = save_cache(pool, documento, &result).await {
-        tracing::warn!(client_id = %client_id, error = %e, "pgfn: falha ao salvar cache");
+        tracing::warn!(client_id = %client_id, error = %crate::errlog::anyhow_chain(&e), "pgfn: falha ao salvar cache");
     }
 
     Ok(result)

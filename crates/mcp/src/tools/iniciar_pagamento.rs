@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use crate::errlog::ErrChain;
 use crate::state::AppState;
 
 #[derive(Deserialize, JsonSchema)]
@@ -19,10 +20,10 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> Value {
     {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "iniciar_pagamento: falha ao ler cliente");
+            tracing::warn!(%client_id, error = %e.chain_string(), "iniciar_pagamento: falha ao ler cliente");
             return json!({
                 "status": "erro",
-                "mensagem": format!("Falha ao ler cliente: {e}")
+                "mensagem": "Não consegui ler o cadastro do cliente agora. Tente de novo em instantes."
             });
         }
     };
@@ -56,10 +57,10 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> Value {
     .execute()
     .await
     {
-        tracing::warn!(%client_id, error = %e, "iniciar_pagamento: falha ao marcar");
+        tracing::warn!(%client_id, error = %e.chain_string(), "iniciar_pagamento: falha ao marcar");
         return json!({
             "status": "erro",
-            "mensagem": format!("Falha ao salvar: {e}")
+            "mensagem": "Não consegui salvar no banco agora. Tente de novo em instantes."
         });
     }
 

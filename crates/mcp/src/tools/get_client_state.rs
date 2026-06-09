@@ -16,6 +16,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::errlog::ErrChain;
 use crate::resources::ccmei;
 use crate::state::AppState;
 
@@ -58,10 +59,10 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
             }));
         }
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "get_client_state: falha ao ler cliente");
+            tracing::warn!(%client_id, error = %e.chain_string(), "get_client_state: falha ao ler cliente");
             return CallToolResult::structured_error(serde_json::json!({
                 "status": "erro",
-                "mensagem": format!("Falha ao ler cliente: {e}"),
+                "mensagem": "Não consegui ler o cadastro do cliente agora. Tente de novo em instantes.",
             }));
         }
     };

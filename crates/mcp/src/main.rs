@@ -7,6 +7,7 @@ use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, Stream
 use tokio_postgres::NoTls;
 
 mod client_state;
+mod errlog;
 mod jobs;
 mod meta;
 mod resources;

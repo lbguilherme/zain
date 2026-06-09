@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::pgfn;
+use crate::errlog::ErrChain;
 use crate::state::AppState;
 use crate::validators;
 
@@ -40,8 +41,8 @@ pub async fn run(state: &AppState, client_id: Uuid, args: Args) -> Value {
     {
         Ok(_) => json!({ "status": "ok" }),
         Err(e) => {
-            tracing::warn!(%client_id, error = %e, "save_cpf: falha ao salvar");
-            json!({ "status": "erro", "mensagem": format!("Falha ao salvar: {e}") })
+            tracing::warn!(%client_id, error = %e.chain_string(), "save_cpf: falha ao salvar");
+            json!({ "status": "erro", "mensagem": "Não consegui salvar o CPF no banco agora. Tente de novo em instantes." })
         }
     }
 }

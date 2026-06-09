@@ -55,7 +55,7 @@ pub async fn run_forever(state: Arc<AppState>) {
     loop {
         tick.tick().await;
         if let Err(e) = run_once(&state).await {
-            tracing::warn!(error = %e, "mei_refresh: ciclo falhou");
+            tracing::warn!(error = %crate::errlog::anyhow_chain(&e), "mei_refresh: ciclo falhou");
         }
     }
 }
