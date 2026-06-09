@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::{CONSULTA_URL, ConsultaOptante, Periodo, Situacao};
+use crate::sanity;
 
 /// Strips CNPJ formatting, keeping only digits.
 fn normalize_cnpj(cnpj: &str) -> String {
@@ -71,7 +72,8 @@ pub async fn consultar_optante(cnpj: &str) -> anyhow::Result<ConsultaOptante> {
     let result = async {
         // 1. Navigate to the main page (contains iframe with the form)
         page.navigate(CONSULTA_URL).await?;
-        page.wait_for_load(timeout).await?;
+        page.wait_for_load(timeout).await.ok();
+        sanity::checkpoint(&page, "simei: página de consulta carregada").await;
 
         // 2. Enter the iframe via FrameSession
         let frame_info = page.wait_for_frame("consultaoptantes", timeout).await?;
@@ -79,7 +81,8 @@ pub async fn consultar_optante(cnpj: &str) -> anyhow::Result<ConsultaOptante> {
         let dom = frame.dom().await?;
 
         // 3. Fill CNPJ and click Consultar
-        let input = dom.wait_for("#Cnpj", timeout).await?;
+        let input =
+            sanity::wait_for(&page, &dom, "simei: aguardar campo CNPJ", "#Cnpj", timeout).await?;
         input.click().await?;
         input.type_text(&cnpj_digits).await?;
 
@@ -88,9 +91,10 @@ pub async fn consultar_optante(cnpj: &str) -> anyhow::Result<ConsultaOptante> {
 
         // 4. Wait for the iframe to reload with results.
         // The iframe is cross-origin so wait_for_load on the parent page
-        // won't fire. Poll the iframe DOM for the result content instead.
+        // won't fire. Poll the iframe DOM for the result content instead —
+        // com teto de tempo (antes era um `loop` sem deadline).
+        let deadline = tokio::time::Instant::now() + timeout;
         let dom = loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
             let frame_info = page
                 .wait_for_frame("consultaoptantes", Duration::from_secs(5))
                 .await?;
@@ -100,6 +104,13 @@ pub async fn consultar_optante(cnpj: &str) -> anyhow::Result<ConsultaOptante> {
             if dom.try_query_selector("#conteudo").await?.is_some() {
                 break dom;
             }
+            sanity::tick(
+                &page,
+                "simei: aguardar resultado da consulta",
+                deadline,
+                Duration::from_secs(1),
+            )
+            .await?;
         };
 
         // 5. Check for errors (e.g. invalid CNPJ, captcha)
@@ -119,11 +130,17 @@ pub async fn consultar_optante(cnpj: &str) -> anyhow::Result<ConsultaOptante> {
         let data_consulta = parse_timestamp_br(&data_consulta_raw);
 
         let spans = dom.query_selector_all(".spanValorVerde").await?;
-        anyhow::ensure!(
-            spans.len() >= 4,
-            "Expected at least 4 .spanValorVerde elements, found {}",
-            spans.len()
-        );
+        if spans.len() < 4 {
+            return Err(sanity::fail(
+                &page,
+                "simei: extrair situação cadastral",
+                &format!(
+                    "esperava ≥4 .spanValorVerde na tela de resultado, achei {} (layout pode ter mudado)",
+                    spans.len()
+                ),
+            )
+            .await);
+        }
 
         // Validate that the CNPJ on the result page matches what was queried
         let cnpj_on_page = spans[0].text().await?.trim().to_string();
@@ -140,9 +157,28 @@ pub async fn consultar_optante(cnpj: &str) -> anyhow::Result<ConsultaOptante> {
         let mais_info_btn = dom.query_selector("#btnMaisInfo").await?;
         mais_info_btn.click().await?;
 
-        // Wait for AJAX content to load into #maisInfo
-        tokio::time::sleep(Duration::from_secs(3)).await;
-        dom.invalidate();
+        // Aguarda o AJAX popular #maisInfo com os panels (antes era um
+        // `sleep(3s)` cego — se o AJAX demorava/falhava, a extração saía
+        // vazia silenciosamente). Se não popular no tempo, loga + dump mas
+        // SEGUE best-effort: alguns CNPJs não têm seções extras.
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            dom.invalidate();
+            if dom
+                .try_query_selector("#maisInfo .panel.panel-success")
+                .await?
+                .is_some()
+            {
+                break;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                let (url, _) = sanity::page_where(&page).await;
+                tracing::warn!(%url, "simei: 'Mais informações' não populou os panels no tempo — seguindo com o que há");
+                let _ = page.debug_dump("rpa-simei-maisinfo-vazio").await;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
 
         // 8. Extract periods and events from the expanded panels inside #maisInfo
         let mais_info = dom.query_selector("#maisInfo").await?;

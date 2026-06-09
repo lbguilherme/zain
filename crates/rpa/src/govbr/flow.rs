@@ -241,10 +241,13 @@ async fn do_fresh_login(
                 break false;
             }
             if tokio::time::Instant::now() >= post_password_deadline {
-                let _ = page.debug_dump("govbr-login-post-password-timeout").await;
-                return Err(GovbrError::Other(anyhow::anyhow!(
-                    "timeout aguardando próxima etapa após senha"
-                )));
+                return Err(crate::sanity::fail(
+                    &page,
+                    "login govbr: aguardar tela após senha",
+                    "nenhuma tela esperada (2FA / perfil / erro de senha) apareceu após enviar a senha",
+                )
+                .await
+                .into());
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         };
@@ -309,10 +312,13 @@ async fn do_fresh_login(
                     break;
                 }
                 if tokio::time::Instant::now() >= post_otp_deadline {
-                    let _ = page.debug_dump("govbr-login-post-otp-timeout").await;
-                    return Err(GovbrError::Other(anyhow::anyhow!(
-                        "timeout aguardando próxima etapa após OTP"
-                    )));
+                    return Err(crate::sanity::fail(
+                        &page,
+                        "login govbr: aguardar tela após OTP",
+                        "nenhuma tela esperada (erro de OTP / perfil) apareceu após enviar o código",
+                    )
+                    .await
+                    .into());
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }

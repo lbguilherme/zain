@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::govbr::launch;
 use crate::govbr::session::{self, SavedSession};
+use crate::sanity;
 
 const CONSULTA_CERTIFICADO_URL: &str = "https://mei.receita.economia.gov.br/certificado/consulta";
 
@@ -336,10 +337,13 @@ async fn wait_for_outcome(page: &PageSession) -> anyhow::Result<Outcome> {
             "sem_mei" => return Ok(Outcome::SemMei),
             _ => {}
         }
-        if tokio::time::Instant::now() >= deadline {
-            anyhow::bail!("timeout aguardando resposta da consulta de certificado MEI");
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        sanity::tick(
+            page,
+            "certificado: aguardar resposta da consulta",
+            deadline,
+            Duration::from_millis(300),
+        )
+        .await?;
     }
 }
 
@@ -394,9 +398,14 @@ async fn extrair_certificado(page: &PageSession) -> anyhow::Result<CertificadoMe
         )
         .await?;
 
-    let obj = v
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("extração do certificado retornou null"))?;
+    let Some(obj) = v.as_object() else {
+        return Err(sanity::fail(
+            page,
+            "certificado: extrair dados do certificado",
+            "tela de visualização não tinha os campos esperados (app-visualizacao-certificado ausente)",
+        )
+        .await);
+    };
     let get = |k: &str| -> String {
         obj.get(k)
             .and_then(|x| x.as_str())
@@ -405,10 +414,14 @@ async fn extrair_certificado(page: &PageSession) -> anyhow::Result<CertificadoMe
             .to_string()
     };
 
-    let end_obj = obj
-        .get("endereco_comercial")
-        .and_then(|v| v.as_object())
-        .ok_or_else(|| anyhow::anyhow!("endereco_comercial ausente na extração"))?;
+    let Some(end_obj) = obj.get("endereco_comercial").and_then(|v| v.as_object()) else {
+        return Err(sanity::fail(
+            page,
+            "certificado: extrair endereço do certificado",
+            "endereco_comercial ausente na extração do certificado",
+        )
+        .await);
+    };
     let end = |k: &str| -> String {
         end_obj
             .get(k)

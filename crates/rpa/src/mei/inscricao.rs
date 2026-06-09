@@ -24,6 +24,7 @@ use thiserror::Error;
 use super::certificado::{CertificadoMei, consultar_certificado};
 use crate::govbr::launch;
 use crate::govbr::session::{self, SavedSession};
+use crate::sanity;
 
 #[derive(Debug, Error)]
 pub enum InscricaoMeiError {
@@ -351,10 +352,12 @@ pub async fn inscrever_mei(
                 }
             }
             if tokio::time::Instant::now() >= ciente_deadline {
-                let _ = page.debug_dump("mei-inscricao-ciente-timeout").await;
-                return Err(anyhow::anyhow!(
-                    "timeout aguardando botão 'Ciente' na tela de conclusão"
+                return Err(sanity::fail(
+                    &page,
+                    "inscrição mei: modal 'Ciente' na conclusão",
+                    "botão 'Ciente' não apareceu na tela de conclusão",
                 )
+                .await
                 .into());
             }
             tokio::time::sleep(Duration::from_millis(300)).await;
@@ -384,10 +387,12 @@ pub async fn inscrever_mei(
                 break cnpj.to_string();
             }
             if tokio::time::Instant::now() >= cnpj_deadline {
-                let _ = page.debug_dump("mei-inscricao-cnpj-timeout").await;
-                return Err(anyhow::anyhow!(
-                    "timeout aguardando CNPJ aparecer na tela de conclusão"
+                return Err(sanity::fail(
+                    &page,
+                    "inscrição mei: extrair CNPJ na conclusão",
+                    "CNPJ não apareceu na tela de conclusão após confirmar",
                 )
+                .await
                 .into());
             }
             tokio::time::sleep(Duration::from_millis(300)).await;
@@ -1457,7 +1462,9 @@ async fn read_danger_message(page: &PageSession) -> Result<Option<String>, Inscr
         .map(str::to_string))
 }
 
-/// Poll até a modal Bootstrap ficar com a classe `.show`.
+/// Poll até a modal Bootstrap ficar com a classe `.show`. No timeout, o
+/// `sanity::tick` loga URL/título + `debug_dump` antes de abortar — em vez
+/// de um "timeout aguardando modal" sem contexto.
 async fn wait_for_modal_open(page: &PageSession, id: &str) -> anyhow::Result<()> {
     let deadline = tokio::time::Instant::now() + DEFAULT_TIMEOUT;
     let id_js = serde_json::to_string(id)?;
@@ -1467,14 +1474,11 @@ async fn wait_for_modal_open(page: &PageSession, id: &str) -> anyhow::Result<()>
             return !!(m && m.classList.contains('show'));
         }})()"#
     );
+    let etapa = format!("inscrição mei: aguardar modal {id}");
     loop {
-        let v = page.eval_value(&js).await?;
-        if v.as_bool().unwrap_or(false) {
+        if page.eval_value(&js).await?.as_bool().unwrap_or(false) {
             return Ok(());
         }
-        if tokio::time::Instant::now() >= deadline {
-            anyhow::bail!("timeout aguardando modal {id} abrir");
-        }
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        sanity::tick(page, &etapa, deadline, Duration::from_millis(300)).await?;
     }
 }

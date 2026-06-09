@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::{ConsultaDivida, PGFN_URL};
+use crate::sanity;
 
 /// Normaliza CPF/CNPJ, mantendo apenas dígitos.
 fn normalize_documento(doc: &str) -> String {
@@ -37,27 +38,41 @@ pub async fn consultar_divida(documento: &str) -> anyhow::Result<ConsultaDivida>
     let result = async {
         // 1. Navegar para a página da PGFN
         page.navigate(PGFN_URL).await?;
-        page.wait_for_load(timeout).await?;
+        page.wait_for_load(timeout).await.ok();
+        sanity::checkpoint(&page, "pgfn: página carregada").await;
 
         let dom = page.dom().await?;
 
         // 2. Aguardar o formulário carregar (Angular bootstrap)
-        let input = dom.wait_for("#identificacaoInput", timeout).await?;
+        let input = sanity::wait_for(
+            &page,
+            dom,
+            "pgfn: aguardar form de consulta",
+            "#identificacaoInput",
+            timeout,
+        )
+        .await?;
 
         // 3. Preencher o CPF/CNPJ
         input.click().await?;
         input.type_text(&doc_digits).await?;
 
-        // 4. Aguardar o botão CONSULTAR ficar habilitado
-        //    O Angular habilita o botão após validar o input.
-        //    Polling até o botão não ter o atributo "disabled".
+        // 4. Aguardar o botão CONSULTAR ficar habilitado (o Angular habilita
+        //    após validar o input). Polling COM teto de tempo — antes era um
+        //    `loop` infinito que travaria se o botão nunca habilitasse.
+        let deadline = tokio::time::Instant::now() + timeout;
         let btn = loop {
-            tokio::time::sleep(Duration::from_millis(500)).await;
             let btn = dom.query_selector("button.btn-warning").await?;
-            let disabled = btn.attribute("disabled").await?;
-            if disabled.is_none() {
+            if btn.attribute("disabled").await?.is_none() {
                 break btn;
             }
+            sanity::tick(
+                &page,
+                "pgfn: aguardar botão CONSULTAR habilitar",
+                deadline,
+                Duration::from_millis(500),
+            )
+            .await?;
         };
 
         // 5. Scrollar o botão para dentro da viewport e clicar CONSULTAR
@@ -68,18 +83,24 @@ pub async fn consultar_divida(documento: &str) -> anyhow::Result<ConsultaDivida>
         tokio::time::sleep(Duration::from_millis(300)).await;
         btn.click().await?;
 
-        // 6. Aguardar resultado — polling por .total-mensagens.info-panel
-        //    Aparece tanto no caso de "nenhum registro" quanto no caso de resultado.
+        // 6. Aguardar resultado — polling por p.total-mensagens (aparece tanto
+        //    no "Nenhum registro" quanto no resultado). Com teto de tempo.
+        let deadline = tokio::time::Instant::now() + timeout;
         let result_text = loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
             dom.invalidate();
             if let Some(msg_el) = dom.try_query_selector("p.total-mensagens").await? {
-                let text = msg_el.text().await?;
-                let text = text.trim().to_string();
+                let text = msg_el.text().await?.trim().to_string();
                 if !text.is_empty() {
                     break text;
                 }
             }
+            sanity::tick(
+                &page,
+                "pgfn: aguardar resultado da consulta",
+                deadline,
+                Duration::from_secs(1),
+            )
+            .await?;
         };
 
         // 7. Interpretar resultado
@@ -101,13 +122,17 @@ pub async fn consultar_divida(documento: &str) -> anyhow::Result<ConsultaDivida>
             .query_selector_all("cdk-virtual-scroll-viewport tbody tr")
             .await?;
 
+        // A página indicou resultado (não foi "Nenhum registro"), mas a tabela
+        // veio vazia — estado inesperado (não renderizou? layout mudou?). NÃO
+        // tratamos como "sem dívida" pra não gerar falso negativo perigoso;
+        // abortamos com contexto (e o cache PGFN não grava o resultado errado).
         if rows.is_empty() {
-            return Ok(ConsultaDivida {
-                documento: doc_digits.clone(),
-                tem_divida: false,
-                total_divida: 0.0,
-                nome: None,
-            });
+            return Err(sanity::fail(
+                &page,
+                "pgfn: extrair tabela de devedores",
+                "página indicou resultado mas a tabela de devedores veio vazia",
+            )
+            .await);
         }
 
         let mut total_divida = 0.0;
@@ -130,6 +155,19 @@ pub async fn consultar_divida(documento: &str) -> anyhow::Result<ConsultaDivida>
                 let valor_text = valor_td.text().await?;
                 total_divida += parse_valor_br(&valor_text);
             }
+        }
+
+        // Havia linhas, mas nenhuma casou os seletores de nome/valor —
+        // provável mudança de layout do portal. Loga pra investigar (sem
+        // abortar: `tem_divida=true` segue correto, a tabela tinha registros).
+        if total_divida == 0.0 && primeiro_nome.is_none() {
+            let (url, _) = sanity::page_where(&page).await;
+            tracing::warn!(
+                rows = rows.len(),
+                %url,
+                "pgfn: tabela tinha linhas mas nenhum td.tamanho-maximo-nome/td.text-end casou — layout pode ter mudado"
+            );
+            let _ = page.debug_dump("rpa-pgfn-extracao-sem-campos").await;
         }
 
         Ok(ConsultaDivida {
