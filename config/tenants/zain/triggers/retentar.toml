@@ -1,0 +1,61 @@
+display_name = "Retentar mais tarde"
+description = """
+Agende uma ação sua pra daqui a alguns minutos e deixe que ela se retente sozinha.
+Use quando algo travou por causa externa e temporária (um sistema/portal fora do
+ar, um processamento demorado) OU quando você precisa fazer algo no futuro próximo
+sem depender do cliente mandar mensagem de novo.
+
+Quando disparar, você reavalia o estado: se já resolveu, age e avisa o cliente; se
+AINDA não resolveu, reagenda esta mesma tarefa automaticamente. NÃO use pra erro de
+dado do cliente, recusa de lead, nem quando você só está aguardando uma resposta do
+cliente.
+
+Capriche no `tarefa`: na hora que isto disparar, é ele que te orienta — você não vai
+ter o contexto da conversa fresco na cabeça. Descreva de forma COMPLETA e
+autossuficiente: o que precisa ser feito, o contexto necessário (o que já rolou, qual
+etapa/tool retomar, dados relevantes do lead) e como saber que já resolveu. Texto raso
+aqui vira retomada perdida; quanto mais completo e específico, melhor a retomada.
+"""
+agent_slug = "zain"
+
+# Disparo único; o próprio agente reagenda quando ainda não resolveu (one-shot + re-arm).
+# default_cron_expr = ""
+# caller_can_schedule = true            # você escolhe daqui a quanto tempo dispara
+timezone = "America/Sao_Paulo"
+min_period_minutes = 5                   # piso: não dá pra reagendar pra antes de 5 min
+
+prompt_template = """
+Tarefa agendada que você mesmo marcou pra fazer agora. Tentativa {{tentativa}}.
+
+O que você queria fazer: {{tarefa}}
+
+Reavalie pelo estado atual do cliente (já injetado no contexto) e pelo histórico da
+conversa ANTES de agir:
+
+- Se isso já NÃO faz mais sentido (a tarefa já foi resolvida, o cliente seguiu por
+  conta própria, o lead foi recusado, ou o contexto mudou) → não faça nada, não
+  mande mensagem e não reagende. A tarefa perdeu o propósito.
+- Caso contrário, tente executar a tarefa:
+    - Conseguiu / resolveu → reaja ao resultado real, siga o fluxo normalmente e
+      avise o cliente. NÃO reagende.
+    - Precisa de algo do cliente pra continuar (ex.: a sessão gov.br expirou) →
+      mande UMA mensagem curta e honesta pedindo só o que falta. NÃO reagende.
+    - Ainda travado por causa externa temporária (sistema fora do ar etc.):
+        - Se {{tentativa}} >= 6 → mande UMA mensagem honesta dizendo que ainda não
+          deu certo e pra te chamar quando puder; pare por aqui (NÃO reagende).
+        - Senão → NÃO mande mensagem (pra não ficar spammando) e REAGENDE: chame
+          `schedule_retentar` de novo com `fire_at` pra daqui a alguns minutos
+          (calcule a partir do horário atual), passando a MESMA `tarefa` e
+          `tentativa` = {{tentativa}} + 1.
+
+A regra de Honestidade vale integralmente: só afirme que fez algo se você chamou a
+tool correspondente NESTE turno E recebeu status: ok.
+"""
+
+[[parameters]]
+name = "tarefa"
+description = "O que você quer fazer quando isto disparar, e como saber se já resolveu (ex: 'retentar a etapa que tinha falhado por indisponibilidade do sistema e seguir o cadastro; resolvido quando a tool voltar com sucesso')"
+
+[[parameters]]
+name = "tentativa"
+description = "Número desta tentativa. Passe 1 ao agendar pela primeira vez; ao reagendar, some 1 ao valor que veio"
