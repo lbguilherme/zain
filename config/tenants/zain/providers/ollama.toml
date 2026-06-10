@@ -2,19 +2,23 @@ provider_type = "ollama"
 base_url = "http://pc:11434"
 
 [[model_overrides]]
-model = "gemma4:26b-a4b-it-q4_K_M"
+model = "gemma4:26b-a4b-it-qat"
 context_window_tokens_override = 16384
 
 [[model_overrides]]
-model = "gemma4:31b-it-q4_K_M"
+model = "gemma4:31b-it-qat"
 context_window_tokens_override = 16384
 
 [[model_overrides]]
-model = "gemma4:e2b-it-q4_K_M"
+model = "gemma4:12b-it-qat"
 context_window_tokens_override = 16384
 
 [[model_overrides]]
-model = "gemma4:e4b-it-q4_K_M"
+model = "gemma4:e2b-it-qat"
+context_window_tokens_override = 16384
+
+[[model_overrides]]
+model = "gemma4:e4b-it-qat"
 context_window_tokens_override = 16384
 
 [[model_overrides]]
