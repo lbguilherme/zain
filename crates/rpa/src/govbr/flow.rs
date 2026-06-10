@@ -128,6 +128,8 @@ async fn try_reuse_session(
 ) -> anyhow::Result<Option<(Profile, SavedSession)>> {
     let opts = launch::options_with_extensions().await?;
     let (mut process, browser) = chromium_driver::launch(opts).await?;
+    // Re-injeta a key paga do NopeCHA (se houver) — o profile é descartável.
+    let _ = launch::configure_nopecha(&browser).await;
 
     let result = async {
         let page = browser.create_page("about:blank").await?.attach().await?;
@@ -182,6 +184,8 @@ async fn do_fresh_login(
     let (mut process, browser) = chromium_driver::launch(opts)
         .await
         .map_err(anyhow::Error::from)?;
+    // Re-injeta a key paga do NopeCHA (se houver) — o profile é descartável.
+    let _ = launch::configure_nopecha(&browser).await;
 
     let result = async {
         let page = browser.create_page("about:blank").await?.attach().await?;

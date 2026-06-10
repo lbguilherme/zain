@@ -69,12 +69,26 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
     // (>24h) OU nunca checada OU não tem MEI/elegibilidade desconhecida
     // mas agora há sessão gov.br pra checar (3ª cláusula: re-dispara a
     // elegibilidade só DEPOIS que o cliente re-autentica).
+    //
+    // Filtros adicionais:
+    // - Credenciais utilizáveis no background: sem `govbr_cpf`+`govbr_password`
+    //   ou com `govbr_otp_pendente`, o `ensure_govbr_session` devolve
+    //   NoCredentials/OtpNeeded e nada acontece — não adianta selecionar (só
+    //   gera ruído de log). Quem não tem credencial só é tratado pelo fluxo
+    //   interativo `auth_govbr`.
+    // - Backoff: `mei_proxima_tentativa_em` segura o cliente que vem falhando
+    //   (gov.br instável / captcha) por um tempo crescente, em vez de retentar
+    //   a cada ciclo.
     let pendentes = sql!(
         &state.pool,
         "SELECT id, cpf
          FROM zain.clients
          WHERE cpf IS NOT NULL
            AND recusado_em IS NULL
+           AND govbr_cpf IS NOT NULL
+           AND govbr_password IS NOT NULL
+           AND govbr_otp_pendente = false
+           AND (mei_proxima_tentativa_em IS NULL OR mei_proxima_tentativa_em <= now())
            AND ( mei_consultado_em IS NULL
               OR mei_consultado_em < now() - interval '24 hours'
               OR (mei_ccmei IS NULL AND mei_pode_abrir IS NULL AND govbr_session IS NOT NULL) )

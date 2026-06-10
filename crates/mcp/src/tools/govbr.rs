@@ -596,6 +596,11 @@ pub(crate) async fn refresh_mei_status(
                     GovbrSessionOutcome::NoCredentials => "sem_credenciais",
                     GovbrSessionOutcome::Unstable(detalhe) => {
                         tracing::warn!(%client_id, %detalhe, "refresh_mei_status: gov.br instável ao obter sessão");
+                        // Transitório: espaça a próxima tentativa do worker.
+                        // OTP-pendente/senha-errada/sem-credenciais já são
+                        // excluídos pela query do worker (flag / colunas), então
+                        // só o caso instável precisa de backoff aqui.
+                        bump_refresh_backoff(&state.pool, client_id).await;
                         "govbr_instavel"
                     }
                     GovbrSessionOutcome::Valid(_) => "ok",
@@ -662,8 +667,10 @@ pub(crate) async fn refresh_mei_status(
                 error = %errlog::anyhow_chain(&e),
                 "refresh_mei_status: SIMEI indisponível durante consulta do CCMEI"
             );
-            // Instabilidade do portal: NÃO carimba mei_consultado_em, pra
-            // o worker retentar no próximo ciclo.
+            // Instabilidade do portal: NÃO carimba mei_consultado_em (não há
+            // resultado conclusivo), mas aplica backoff pra o worker não
+            // retentar de hora em hora enquanto o SIMEI estiver fora.
+            bump_refresh_backoff(&state.pool, client_id).await;
             return MeiExtras {
                 mei: Value::Null,
                 pode_abrir: None,
@@ -766,12 +773,14 @@ pub(super) async fn save_mei(
     sql!(
         pool,
         "UPDATE zain.clients
-         SET cnpj              = $cnpj_digits,
-             quer_abrir_mei    = $quer_abrir_mei_false,
-             mei_ccmei         = $mei_ccmei!,
-             mei_ccmei_pdf     = $mei_ccmei_pdf,
-             mei_consultado_em = now(),
-             updated_at        = now()
+         SET cnpj                     = $cnpj_digits,
+             quer_abrir_mei           = $quer_abrir_mei_false,
+             mei_ccmei                = $mei_ccmei!,
+             mei_ccmei_pdf            = $mei_ccmei_pdf,
+             mei_consultado_em        = now(),
+             mei_refresh_falhas       = 0,
+             mei_proxima_tentativa_em = NULL,
+             updated_at               = now()
          WHERE id = $client_id"
     )
     .execute()
@@ -792,15 +801,49 @@ async fn save_elegibilidade(
     sql!(
         pool,
         "UPDATE zain.clients
-         SET mei_ccmei              = NULL,
-             mei_ccmei_pdf          = NULL,
-             mei_pode_abrir         = $pode_abrir,
-             mei_impedimento_motivo = $motivo,
-             mei_consultado_em      = now(),
-             updated_at             = now()
+         SET mei_ccmei                 = NULL,
+             mei_ccmei_pdf             = NULL,
+             mei_pode_abrir            = $pode_abrir,
+             mei_impedimento_motivo    = $motivo,
+             mei_consultado_em         = now(),
+             mei_refresh_falhas        = 0,
+             mei_proxima_tentativa_em  = NULL,
+             updated_at                = now()
          WHERE id = $client_id"
     )
     .execute()
     .await?;
     Ok(())
+}
+
+/// Registra uma falha transitória do refresh MEI e espaça a próxima tentativa
+/// do worker com backoff exponencial: 1h, 2h, 4h, … saturando em 72h.
+///
+/// Só afeta a seleção do worker `jobs::mei_refresh` (que filtra por
+/// `mei_proxima_tentativa_em`). O fluxo interativo `auth_govbr` nunca consulta
+/// essa coluna, então o cliente presente pode tentar de novo na hora. Um
+/// desfecho conclusivo (via `save_mei`/`save_elegibilidade`) zera o contador.
+///
+/// Best-effort: loga e segue em caso de erro de escrita (o backoff é uma
+/// otimização, não pode derrubar o ciclo do worker).
+async fn bump_refresh_backoff(pool: &Pool, client_id: Uuid) {
+    // O cálculo usa o valor ANTIGO de `mei_refresh_falhas` (o Postgres avalia
+    // o RHS do SET com os valores correntes da linha): 0 → 1h, 1 → 2h,
+    // 2 → 4h, … até o teto de 72h.
+    let res = sql!(
+        pool,
+        "UPDATE zain.clients
+         SET mei_refresh_falhas       = mei_refresh_falhas + 1,
+             mei_proxima_tentativa_em = now() + LEAST(
+                 interval '1 hour' * power(2, mei_refresh_falhas),
+                 interval '72 hours'
+             ),
+             updated_at = now()
+         WHERE id = $client_id"
+    )
+    .execute()
+    .await;
+    if let Err(e) = res {
+        tracing::warn!(%client_id, error = %e.chain_string(), "refresh_mei_status: falha ao gravar backoff");
+    }
 }
