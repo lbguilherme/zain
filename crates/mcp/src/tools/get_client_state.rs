@@ -181,18 +181,37 @@ async fn load_das_lines(
         ]);
     }
 
-    let descrever = |r: &_DasRow| -> String {
-        let mut s = r.competencia.clone();
-        if let Some(total) = r.total_cents {
-            s.push_str(&format!(" ({}", das::fmt_cents(total)));
-            if let Some(v) = r.vencimento {
-                s.push_str(&format!(", vence {}", v.format("%d/%m/%Y")));
-            }
-            s.push(')');
-        } else if let Some(v) = r.vencimento {
-            s.push_str(&format!(" (vence {})", v.format("%d/%m/%Y")));
+    // Status temporal do vencimento calculado AQUI (sabemos o "agora") em vez
+    // de deixar o modelo comparar datas — ele erra: lê "vence 22/06" (futuro)
+    // como "venceu" e diz pro cliente que está em atraso. BRT é UTC-3 fixo
+    // (Brasil não tem horário de verão desde 2019).
+    let hoje = (chrono::Utc::now() - chrono::Duration::hours(3)).date_naive();
+    let venc_frase = |v: chrono::NaiveDate| -> String {
+        let dias = (v - hoje).num_days();
+        if dias < 0 {
+            format!("venceu em {} (há {} dia(s))", v.format("%d/%m/%Y"), -dias)
+        } else if dias == 0 {
+            format!("vence HOJE ({})", v.format("%d/%m/%Y"))
+        } else {
+            format!(
+                "ainda vai vencer em {} (daqui a {dias} dia(s))",
+                v.format("%d/%m/%Y")
+            )
         }
-        s
+    };
+    let descrever = |r: &_DasRow| -> String {
+        let mut partes = Vec::new();
+        if let Some(total) = r.total_cents {
+            partes.push(das::fmt_cents(total));
+        }
+        if let Some(v) = r.vencimento {
+            partes.push(venc_frase(v));
+        }
+        if partes.is_empty() {
+            r.competencia.clone()
+        } else {
+            format!("{} ({})", r.competencia, partes.join(", "))
+        }
     };
     let das_rows: Vec<_DasRow> = rows
         .into_iter()
@@ -266,7 +285,7 @@ async fn load_das_lines(
     }
 
     if let Some(prox) = das_rows.iter().find(|r| r.situacao == "a_vencer") {
-        lines.push(format!("- Próximo DAS: {}", descrever(prox)));
+        lines.push(format!("- Próximo DAS (a vencer): {}", descrever(prox)));
     }
     if let Some(em) = das_consultado_em {
         lines.push(format!("- Situação DAS consultada em: {}", em.to_rfc3339()));
