@@ -133,13 +133,12 @@ impl ZainMcpServer {
         Ok(CallToolResult::structured(value))
     }
 
-
     #[tool(
-        description = "Marca o lead como recusado — decisão PERMANENTE e irreversível: encerra o caso pra sempre e o lead nunca mais será atendido pela Zain. Use APENAS com sinal claro de impedimento definitivo do próprio cliente (ex: tool retornou pedindo pra recusar, atividade não permitida pra MEI, outro regime empresarial). NUNCA use por falha de sistema/integração (SIMEI fora do ar, gov.br instável, consulta sem resultado, timeout) — nesses casos agende uma retentativa. Na dúvida, NÃO recuse. Antes de chamar, comunique o motivo ao cliente de forma gentil.",
+        description = "Marca o lead como NÃO-ATENDIDO AGORA, com um motivo: pausa o caso e tira de cena as tools de avanço. NÃO é permanente — o bloqueio é REVERSÍVEL e deve ser revisto se a situação do cliente mudar (a `consultar_mei` reabre o caso sozinha quando reconfirma que ele voltou a ser atendível). Use quando, NESTE MOMENTO, o cliente realmente não faz sentido pra Zain — atividade não permitida pra MEI, já tem empresa em outro regime, ou uma tool retornou pedindo recusa explicitamente. NUNCA use por falha de sistema/integração (SIMEI fora do ar, gov.br instável, consulta sem resultado, timeout) NEM por impedimento RESOLÚVEL do próprio cliente (ex: CPF vinculado a outro CNPJ que ele pode encerrar) — nesses casos mantenha o caso aberto e use `schedule_retentar` / `consultar_mei`. Na dúvida, NÃO recuse. Antes de chamar, comunique o motivo ao cliente de forma gentil.",
         annotations(
-            title = "Recusar lead",
+            title = "Pausar atendimento do lead",
             read_only_hint = false,
-            destructive_hint = true,
+            destructive_hint = false,
             idempotent_hint = true,
             open_world_hint = false,
         )
@@ -239,6 +238,28 @@ impl ZainMcpServer {
             return Ok(err);
         }
         Ok(tools::dasn::run_consultar(&self.state, client_id, args).await)
+    }
+
+    #[tool(
+        description = "Reconsulta AO VIVO a situação MEI do cliente no portal da Receita (logado no gov.br) e atualiza o estado: descobre se ele já tem MEI ativo (puxa o CNPJ + CCMEI) e, se não tiver, se o CPF pode abrir um (`pode_abrir_mei` + eventual `motivo_impedimento`). Use principalmente quando o cliente disser que RESOLVEU um impedimento que antes bloqueava a abertura (ex: 'fechei o outro CNPJ que estava no meu CPF') — a tool reverifica e, se ele voltou a ser atendível, REABRE o caso automaticamente (campo `reaberto: true`) mesmo que tivesse sido pausado antes. Caro (~30-60s, sobe browser): chame só sob pedido/contexto explícito. Precisa de sessão gov.br ativa ou senha salva; se vier `status: nao_verificado`, siga a `mensagem` (pode pedir `auth_govbr`).",
+        annotations(
+            title = "Consultar situação MEI",
+            read_only_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true,
+        )
+    )]
+    async fn consultar_mei(
+        &self,
+        Parameters(_args): Parameters<tools::govbr::ConsultarMeiArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let client_id = extract_and_ensure_client_id(&self.state.pool, &ctx.meta).await?;
+        if let Some(err) = require_enabled(&self.state, "consultar_mei", client_id).await {
+            return Ok(err);
+        }
+        let value = tools::govbr::run_consultar_mei(&self.state, client_id).await;
+        Ok(CallToolResult::structured(value))
     }
 
     #[tool(

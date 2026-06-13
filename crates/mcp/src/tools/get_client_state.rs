@@ -376,10 +376,12 @@ fn format_dados_coletados(
         ));
     }
     if let (Some(motivo), Some(em)) = (recusa_motivo, recusado_em) {
-        // "Recusado" = a Zain decidiu NÃO atender esse lead pelo
-        // motivo registrado. Tratar como caso encerrado.
+        // "Pausado" = a Zain decidiu NÃO atender esse lead AGORA, pelo
+        // motivo registrado. É reversível: se o motivo deixar de valer
+        // (ex.: cliente resolveu um impedimento), `consultar_mei`
+        // reverifica e reabre o caso.
         lines.push(format!(
-            "- **Recusado** em {em} (a Zain NÃO vai atender esse lead). Motivo: {motivo}"
+            "- **Atendimento pausado** em {em}. Motivo: {motivo}. NÃO é definitivo — se o cliente sinalizar que o motivo mudou, reverifique com `consultar_mei` (ela reabre o caso quando ele volta a ser atendível)."
         ));
     }
     if lines.is_empty() {

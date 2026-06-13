@@ -36,6 +36,9 @@ pub struct OtpArgs {
     pub otp: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct ConsultarMeiArgs {}
+
 pub async fn run_auth(state: &AppState, client_id: Uuid, args: AuthArgs) -> Value {
     let cpf = match load_cpf(&state.pool, client_id).await {
         Ok(Some(c)) => c,
@@ -96,6 +99,86 @@ pub async fn run_otp(state: &AppState, client_id: Uuid, args: OtpArgs) -> Value 
     tracing::info!(%client_id, "auth_govbr_otp: tentando login com OTP");
     let outcome = check_govbr_profile(&creds.cpf, &creds.password, Some(&otp_digits), None).await;
     dispatch_outcome(state, client_id, &creds.cpf, outcome).await
+}
+
+/// Reconsulta a situação MEI do cliente AO VIVO — Tier 1 (CCMEI: tem MEI
+/// ativo?) + Tier 2 (elegibilidade pra abrir um) — e atualiza o estado.
+/// Pensada pra quando o cliente diz que a situação mudou desde a última
+/// verificação: o caso mais comum é ele ter resolvido o impedimento que
+/// bloqueava a abertura ("fechei o outro CNPJ").
+///
+/// Como o bloqueio (`recusado_em`) é REVERSÍVEL, se a reconsulta concluir
+/// que o cliente voltou a ser atendível (já tem MEI ativo OU pode abrir um),
+/// o bloqueio é limpo aqui — reabrindo o caso automaticamente. Reusa toda a
+/// máquina de `refresh_mei_status` (que obtém/reloga a sessão sozinho).
+pub async fn run_consultar_mei(state: &AppState, client_id: Uuid) -> Value {
+    let cpf = match load_cpf(&state.pool, client_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return json!({
+                "status": "erro",
+                "mensagem": "CPF ainda não foi salvo — chame save_cpf antes de consultar a situação MEI.",
+            });
+        }
+        Err(e) => {
+            tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "consultar_mei: falha ao ler CPF");
+            return json!({
+                "status": "erro",
+                "mensagem": "Não consegui ler o CPF do cadastro agora. Tente de novo em instantes.",
+            });
+        }
+    };
+
+    tracing::info!(%client_id, "consultar_mei: reconsultando situação MEI ao vivo");
+    let extras = refresh_mei_status(state, client_id, &cpf, None).await;
+
+    let tem_mei = !extras.mei.is_null();
+    let pode_abrir = extras.pode_abrir;
+
+    // Sem MEI e sem veredito de elegibilidade = não deu pra verificar (sessão
+    // expirada / portal instável). Devolve sem mexer no bloqueio.
+    if !tem_mei && pode_abrir.is_none() {
+        return json!({
+            "status": "nao_verificado",
+            "mensagem": "Não consegui confirmar a situação do MEI agora — a sessão do gov.br pode ter expirado ou o sistema do governo está instável. Se a sessão expirou, peça a senha e chame `auth_govbr`; se for instabilidade, oriente o cliente e tente de novo em alguns minutos (ou agende com `schedule_retentar`).",
+            "orientacao": extras.orientacao,
+        });
+    }
+
+    // Recusa é reversível: se a reconsulta mostra o cliente atendível,
+    // limpa o bloqueio (reabre o caso) caso ele estivesse recusado.
+    let atendivel = tem_mei || pode_abrir == Some(true);
+    let mut reaberto = false;
+    if atendivel {
+        match clear_recusa(&state.pool, client_id).await {
+            Ok(true) => {
+                reaberto = true;
+                tracing::info!(%client_id, "consultar_mei: lead reaberto — situação MEI voltou a ser atendível");
+            }
+            Ok(false) => {}
+            Err(e) => {
+                tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "consultar_mei: falha ao limpar recusa");
+            }
+        }
+    }
+
+    let mut response = json!({
+        "status": "ok",
+        "mei": extras.mei,
+        "reaberto": reaberto,
+    });
+    if let Some(obj) = response.as_object_mut() {
+        if let Some(pode) = pode_abrir {
+            obj.insert("pode_abrir_mei".into(), json!(pode));
+        }
+        if let Some(motivo) = extras.motivo_impedimento {
+            obj.insert("motivo_impedimento".into(), json!(motivo));
+        }
+        if let Some(orientacao) = extras.orientacao {
+            obj.insert("orientacao".into(), json!(orientacao));
+        }
+    }
+    response
 }
 
 async fn dispatch_outcome(
@@ -259,6 +342,25 @@ async fn clear_session(pool: &Pool, client_id: Uuid) -> anyhow::Result<()> {
     .execute()
     .await?;
     Ok(())
+}
+
+/// Limpa o bloqueio (`recusado_em`/`recusa_motivo`) de um lead — a recusa
+/// é REVERSÍVEL. Devolve `true` se de fato havia bloqueio (i.e., reabriu o
+/// caso); `false` se o lead já estava ativo. Usado pela `consultar_mei`
+/// quando uma reconsulta confirma que o cliente voltou a ser atendível.
+async fn clear_recusa(pool: &Pool, client_id: Uuid) -> anyhow::Result<bool> {
+    let row = sql!(
+        pool,
+        "UPDATE zain.clients
+         SET recusado_em   = NULL,
+             recusa_motivo = NULL,
+             updated_at    = now()
+         WHERE id = $client_id AND recusado_em IS NOT NULL
+         RETURNING id AS id"
+    )
+    .fetch_optional()
+    .await?;
+    Ok(row.is_some())
 }
 
 struct GovbrFullState {
@@ -704,7 +806,7 @@ pub(crate) async fn refresh_mei_status(
                 tracing::warn!(%client_id, error = %errlog::anyhow_chain(&e), "refresh_mei_status: falha ao persistir elegibilidade");
             }
             let orientacao = (!pode_abrir).then(|| {
-                "O cliente NÃO tem MEI ativo e TAMBÉM NÃO pode abrir um novo — o portal da Receita recusou o acesso ao form de inscrição com o impedimento acima (tipicamente porque o CPF está vinculado a outro CNPJ que bloqueia MEI). Comunique o motivo ao cliente em português claro e, em seguida, chame `recusar_lead` com um motivo curto (ex: 'CPF impedido de abrir MEI: vínculo com outro CNPJ').".to_string()
+                "O cliente NÃO tem MEI ativo e, NESTE MOMENTO, o portal da Receita recusou o acesso ao form de inscrição com o impedimento acima — tipicamente porque o CPF está vinculado a outro CNPJ que bloqueia o MEI. ISSO É RESOLÚVEL pelo próprio cliente (ex.: encerrar ou sair do outro CNPJ) e NÃO é motivo pra encerrar o atendimento — NÃO chame `recusar_lead`. Comunique o impedimento em português claro, diga o que ele precisa regularizar na Receita, e deixe a porta aberta: quando ele disser que resolveu, chame `consultar_mei` pra reverificar a elegibilidade ao vivo. A baixa pode levar um tempo pra refletir na Receita — se ainda vier bloqueado logo após ele resolver, oriente a aguardar e use `schedule_retentar`.".to_string()
             });
             MeiExtras {
                 mei: Value::Null,

@@ -38,7 +38,7 @@ Faz login no gov.br com a senha do cliente + o CPF já salvo. É a única forma 
 
 - **Se encontrar MEI ativo no CPF**: persiste automaticamente o CNPJ + dados do certificado (nome empresarial, endereço, ocupação, data de abertura, situação cadastral, PDF do CCMEI). Resposta vem com `mei: {...}`.
 - **Se NÃO encontrar MEI**: checa no SIMEI se o CPF pode abrir um MEI novo, devolve `pode_abrir_mei: bool` + eventual `motivo_impedimento` + `orientacao`.
-- **Se vier `orientacao` preenchida**: siga literalmente — pode mandar tentar mais tarde (SIMEI indisponível) ou recusar o lead (impedimento / pendência cadastral).
+- **Se vier `orientacao` preenchida**: siga literalmente — pode mandar tentar mais tarde (SIMEI indisponível) ou, num impedimento **resolúvel** (ex: CPF vinculado a outro CNPJ), orientar o cliente a regularizar na Receita e voltar — **sem recusar** (depois que ele resolver, use `consultar_mei` pra reverificar).
 - **Se o gov.br pedir 2FA**: a resposta indica. Próximo turno você chama `auth_govbr_otp`.
 
 ### `auth_govbr_otp(otp)`
@@ -47,14 +47,18 @@ Completa o login gov.br com o código de 6 dígitos do app gov.br. Mesma semânt
 
 ### `recusar_lead(motivo)`
 
-Marca o lead como recusado — **decisão PERMANENTE e irreversível**: encerra o caso pra sempre, o lead nunca mais será atendido pela Zain e nenhuma tool de avanço volta a ficar disponível pra ele. Por isso, use **apenas** quando estiver confirmado que o cliente **não faz sentido pra Zain mesmo** — um impedimento definitivo do próprio cliente:
+Marca o lead como **não-atendido agora**, com um motivo: pausa o caso e tira de cena as tools de avanço. **NÃO é permanente — o bloqueio é reversível** e deve ser revisto se a situação do cliente mudar (a `consultar_mei` reabre o caso sozinha quando reconfirma que ele voltou a ser atendível). Use **apenas** quando, neste momento, o cliente **não faz sentido pra Zain mesmo** — um impedimento do próprio cliente que ele não vai ou não pode resolver:
 
 - Tool retornou erro pedindo explicitamente pra recusar
-- `auth_govbr` / `auth_govbr_otp` com `orientacao` mandando recusar
 - Busca CNAE vazia pra atividade claramente regulamentada (advocacia, medicina, etc.)
-- Cliente já tem empresa em outro regime (Simples Nacional, LTDA, etc.)
+- Cliente já tem empresa em outro regime (Simples Nacional, LTDA, etc.) e vai mantê-la
 
-**NUNCA recuse por falha de sistema ou de integração.** Sistema do governo fora do ar, SIMEI instável, consulta que não retornou resultado, timeout, erro genérico, situação MEI "ainda não verificada" — nada disso diz respeito ao cliente; é problema temporário nosso ou do governo. Nesses casos a resposta certa é `schedule_retentar`, nunca `recusar_lead`. Na dúvida, **não recuse**: um lead bom recusado por engano é perdido pra sempre.
+**NUNCA recuse por:**
+
+- **Falha de sistema ou integração** — gov.br instável, SIMEI fora do ar, consulta sem resultado, timeout, erro genérico, situação MEI "ainda não verificada". Nada disso diz respeito ao cliente; é problema temporário nosso ou do governo → a resposta certa é `schedule_retentar`.
+- **Impedimento resolúvel do cliente** — ex: CPF vinculado a outro CNPJ que ele pode encerrar. **Mantenha o caso aberto**, explique em português claro o que ele precisa regularizar na Receita, e quando ele disser que resolveu use `consultar_mei` pra reverificar ao vivo (e reabrir, se for o caso).
+
+Na dúvida, **não recuse**: pausar à toa trava a venda, e ainda que reversível, recomeçar custa.
 
 ### `abrir_empresa(...)`
 
@@ -111,3 +115,13 @@ Reconsulta **ao vivo** o status da **DASN-SIMEI** (declaração anual de faturam
 **Importante**: só conta como atraso ano dentro da vigência do MEI dele — anos anteriores à abertura aparecem como não-declarados no portal mas **não são obrigação** (já tratado; confie no bloco "DASN" do estado). **A Zain ainda não transmite a DASN pelo cliente** — por ora você orienta; o envio automático vem depois.
 
 A **situação anual** (anos entregues, em atraso, a declarar) já chega consolidada no estado do cliente (bloco "DASN"). Estado sem o bloco = ainda não consultado, **não é problema**.
+
+### `consultar_mei()`
+
+Reconsulta **ao vivo** a situação MEI no portal da Receita (logado no gov.br) e atualiza o estado: descobre se o cliente já tem MEI ativo (puxa CNPJ + CCMEI) e, se não tiver, se o CPF **pode abrir** um (`pode_abrir_mei` + eventual `motivo_impedimento`).
+
+O uso principal é quando o cliente diz que **resolveu um impedimento** que antes bloqueava a abertura — ex: *"fechei o outro CNPJ que estava no meu CPF"*. A tool reverifica e, se ele voltou a ser atendível, **reabre o caso automaticamente** (`reaberto: true`) mesmo que tivesse sido pausado por `recusar_lead`. É assim que um lead "impedido" volta pro fluxo sem ter que recomeçar do zero.
+
+- **Caro** (~30-60s, sobe browser): chame só sob pedido/contexto explícito.
+- Precisa de **sessão gov.br ativa ou senha salva**. Se vier `status: nao_verificado`, siga a `mensagem` (pode pedir `auth_govbr` de novo, ou aguardar se o portal estiver instável).
+- A baixa de um vínculo pode **demorar a refletir** na Receita: se logo após o cliente resolver ainda vier bloqueado, oriente a aguardar e agende com `schedule_retentar`.

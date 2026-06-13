@@ -75,6 +75,12 @@ pub fn tool_enabled(name: &str, s: &ClientSnapshot) -> bool {
         // recusado não recebe guia nem reconsulta.
         "emitir_das" | "consultar_das" | "consultar_dasn" => !s.recusado && s.has_cnpj,
 
+        // consultar_mei reverifica a situação MEI ao vivo. NÃO é gated por
+        // `recusado` de propósito: é justamente a porta pra reabrir um caso
+        // pausado quando o cliente resolve um impedimento. Precisa de sessão
+        // gov.br ativa ou senha salva pra conseguir relogar e checar.
+        "consultar_mei" => s.has_cpf && (s.govbr_autenticado || s.govbr_has_password),
+
         // Só faz sentido enquanto o lead não foi recusado.
         "save_quer_abrir_mei" => !s.recusado && !s.has_cnpj,
         "recusar_lead" => !s.recusado && s.has_cpf,
