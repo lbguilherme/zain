@@ -22,6 +22,20 @@ use crate::state::AppState;
 pub struct Args {}
 
 pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResult {
+    // Carimba a atividade do cliente: o `get_client_state` roda todo turno
+    // em que o cliente interage, então é o melhor sinal de "cliente ativo".
+    // Os workers usam isso pra espaçar a cadência de inativos. Best-effort:
+    // falha aqui não pode atrapalhar a leitura do estado.
+    if let Err(e) = sql!(
+        &state.pool,
+        "UPDATE zain.clients SET last_activity_at = now() WHERE id = $client_id"
+    )
+    .execute()
+    .await
+    {
+        tracing::warn!(%client_id, error = %e.chain_string(), "get_client_state: falha ao carimbar last_activity_at");
+    }
+
     let row = match sql!(
         &state.pool,
         "SELECT
