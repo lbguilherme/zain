@@ -66,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     "outro"
                 };
-                format!("{kind}")
+                kind.to_string()
             })
             .collect();
         let has_pwd = dom
