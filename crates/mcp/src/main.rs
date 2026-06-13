@@ -45,32 +45,15 @@ async fn main() -> anyhow::Result<()> {
     let models = Arc::new(Models::from_env()?);
     let state = Arc::new(AppState { pool, ai, models });
 
-    // Worker de background: mantém a situação MEI dos clientes fresca pra
-    // o `get_client_state` ser leitura SQL pura. Desligável via
-    // `MEI_REFRESH_ENABLED=false`.
-    if jobs::mei_refresh::enabled() {
+    // Worker de background ÚNICO: mantém MEI/DAS/DASN frescos pra o
+    // `get_client_state` ser leitura SQL pura. Acorda a cada poucos minutos
+    // e pega qualquer cliente com qualquer refresh pendente. Desligável via
+    // `REFRESH_ENABLED=false`.
+    if jobs::refresh::enabled() {
         let worker_state = state.clone();
-        tokio::spawn(async move { jobs::mei_refresh::run_forever(worker_state).await });
+        tokio::spawn(async move { jobs::refresh::run_forever(worker_state).await });
     } else {
-        tracing::info!("mei_refresh: worker desligado (MEI_REFRESH_ENABLED=false)");
-    }
-
-    // Worker do DAS: consolida a situação mensal (atraso, valores,
-    // vencimentos) direto do PGMEI. Desligável via DAS_REFRESH_ENABLED=false.
-    if jobs::das_refresh::enabled() {
-        let worker_state = state.clone();
-        tokio::spawn(async move { jobs::das_refresh::run_forever(worker_state).await });
-    } else {
-        tracing::info!("das_refresh: worker desligado (DAS_REFRESH_ENABLED=false)");
-    }
-
-    // Worker da DASN: consolida o status da declaração anual (anos
-    // entregues/pendentes). Cadência bem longa. DASN_REFRESH_ENABLED=false desliga.
-    if jobs::dasn_refresh::enabled() {
-        let worker_state = state.clone();
-        tokio::spawn(async move { jobs::dasn_refresh::run_forever(worker_state).await });
-    } else {
-        tracing::info!("dasn_refresh: worker desligado (DASN_REFRESH_ENABLED=false)");
+        tracing::info!("refresh: worker desligado (REFRESH_ENABLED=false)");
     }
 
     let service_state = state.clone();

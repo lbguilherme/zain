@@ -1,7 +1,5 @@
-//! Tarefas de background do servidor MCP. Cada submódulo expõe um
-//! `run_forever(state)` que roda num `tokio::spawn` disparado em
-//! [`crate::main`].
+//! Tarefas de background do servidor MCP. Um único worker
+//! ([`refresh::run_forever`]) cuida de todos os refreshes (MEI/DAS/DASN),
+//! disparado num `tokio::spawn` em [`crate::main`].
 
-pub mod das_refresh;
-pub mod dasn_refresh;
-pub mod mei_refresh;
+pub mod refresh;
