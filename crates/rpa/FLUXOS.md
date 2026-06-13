@@ -37,17 +37,7 @@ Status: ✅ implementado · 🟡 parcialmente mapeado · 🔴 não explorado.
 
 ## Pendências (ordenadas por complexidade crescente)
 
-### 1. 🔴 2ª via de DAS / comprovante de pagamento — **complexidade baixa**
-
-- **Autenticação**: **público** (reimprimir a guia no PGMEI) · **gov.br** (puxar
-  o *comprovante de pagamento* no e-CAC).
-- **O que sabemos**: reimprimir uma guia é praticamente o `emitir_das` que já
-  temos. O comprovante de pagamento (prova de que pagou) fica no e-CAC e exige
-  gov.br.
-- **A fazer**: reaproveitar `emitir_das` para reimpressão; explorar o
-  comprovante no e-CAC se houver demanda.
-
-### 2. 🔴 Consultar regularidade / pendências fiscais — **complexidade baixa**
+### 1. 🔴 Consultar regularidade / pendências fiscais (situação fiscal + CND) — **complexidade baixa**
 
 - **Autenticação**: **público** (PGFN, já temos parcial) · **gov.br** (situação
   fiscal completa / CND no e-CAC).
@@ -56,14 +46,14 @@ Status: ✅ implementado · 🟡 parcialmente mapeado · 🔴 não explorado.
 - **A fazer**: consolidar "está regular?" cruzando PGFN + DAS em aberto;
   e-CAC só se precisarmos da CND oficial.
 
-### 3. 🔴 Consultar contribuição previdenciária / CNIS — **complexidade baixa-média**
+### 2. 🔴 Consultar contribuição previdenciária / CNIS — **complexidade baixa-média**
 
 - **Autenticação**: **gov.br** (Meu INSS).
 - **O que sabemos**: o DAS pago conta como contribuição pra aposentadoria; o
   cliente pode querer ver tempo/contribuições. É leitura.
 - **A fazer**: explorar o Meu INSS (extrato CNIS) — leitura, sem efeito.
 
-### 4. 🟡 Declarar / transmitir a DASN-SIMEI (declaração anual) — **complexidade média**
+### 3. 🟡 Declarar / transmitir a DASN-SIMEI (declaração anual) — **complexidade média**
 
 A leitura já existe (`consultar_dasn`); falta o **preenchimento + transmissão**.
 
@@ -86,7 +76,7 @@ A leitura já existe (`consultar_dasn`); falta o **preenchimento + transmissão*
   explícito. Atraso = multa mínima R$ 50.
 - **A fazer**: `rpa::dasn::declarar(...)` + tool `declarar_dasn` (recibo inline).
 
-### 5. 🔴 Alteração cadastral do MEI — **complexidade média**
+### 4. 🔴 Alteração cadastral do MEI — **complexidade média**
 
 - **Autenticação**: **gov.br** (Portal do Empreendedor).
 - **O que sabemos**: mudar atividades (CNAE), endereço, nome fantasia, forma de
@@ -95,7 +85,7 @@ A leitura já existe (`consultar_dasn`); falta o **preenchimento + transmissão*
 - **Riscos**: muda o cadastro oficial — consentimento; confirmar antes.
 - **A fazer**: explorar o fluxo de alteração no Portal do Empreendedor.
 
-### 6. 🔴 Parcelamento de dívida (consultar → parcela → formalizar) — **complexidade média→alta**
+### 5. 🔴 Parcelamento de dívida (consultar → parcela → formalizar) — **complexidade média→alta**
 
 Sub-operações que **escalam em complexidade/risco**:
 
@@ -112,7 +102,7 @@ Sub-operações que **escalam em complexidade/risco**:
 - **A fazer**: explorar ambos; implementar pelo menos **consultar status +
   emitir DAS da parcela**.
 
-### 7. 🔴 Desenquadramento do SIMEI — **complexidade alta**
+### 6. 🔴 Desenquadramento do SIMEI — **complexidade alta**
 
 - **Autenticação**: **gov.br** (Portal do Simples Nacional / Empreendedor).
 - **O que sabemos**: sair do MEI por ultrapassar o teto (R$ 81k) ou virar ME —
@@ -121,7 +111,7 @@ Sub-operações que **escalam em complexidade/risco**:
 - **Riscos**: alto — muda o regime da empresa. Consentimento + orientação clara.
 - **A fazer**: explorar; provavelmente só executar com forte confirmação.
 
-### 8. 🔴 Baixa do MEI (encerramento do CNPJ) — **complexidade alta**
+### 7. 🔴 Baixa do MEI (encerramento do CNPJ) — **complexidade alta**
 
 - **Autenticação**: **gov.br** (Portal do Empreendedor).
 - **O que sabemos**: inverso da abertura (`rpa::mei::inscricao`). **Exige a
@@ -133,7 +123,7 @@ Sub-operações que **escalam em complexidade/risco**:
 - **A fazer**: explorar o portal de baixa, mapear (incluindo a DASN de
   extinção), `rpa::mei::baixar` + tool.
 
-### 9. 🔴 Empregado do MEI (eSocial) — **complexidade muito alta**
+### 8. 🔴 Empregado do MEI (eSocial) — **complexidade muito alta**
 
 - **Autenticação**: **gov.br** (eSocial — sistema à parte).
 - **O que sabemos**: o MEI pode ter **1 empregado**; envolve registro, folha,
@@ -142,7 +132,7 @@ Sub-operações que **escalam em complexidade/risco**:
 - **Riscos**: obrigações trabalhistas com efeito legal recorrente.
 - **A fazer**: avaliar viabilidade; é um subprojeto próprio.
 
-### 10. 🔴 Emitir nota fiscal — **complexidade muito alta**
+### 9. 🔴 Emitir nota fiscal — **complexidade muito alta**
 
 O fluxo **mais fragmentado** — não há um portal único.
 
@@ -159,7 +149,7 @@ O fluxo **mais fragmentado** — não há um portal único.
 - **Riscos**: documento fiscal (efeito legal) + fragmentação técnica enorme.
 - **A fazer**: escopo (**Emissor Nacional NFS-e** primeiro), explorar, implementar.
 
-### 11. 🔴 Cancelar nota fiscal — **complexidade muito alta**
+### 10. 🔴 Cancelar nota fiscal — **complexidade muito alta**
 
 - **Autenticação**: a mesma do #10 (depende do emissor usado).
 - **O que sabemos**: só dentro do prazo permitido — NFS-e segue a regra do
