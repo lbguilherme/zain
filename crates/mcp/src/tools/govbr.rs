@@ -775,6 +775,10 @@ pub(super) async fn save_mei(
     let mei_ccmei: CertificadoMei = cert.clone();
     let mei_ccmei_pdf = cert.pdf.clone();
 
+    // Cadência do mei_refresh — MEI ATIVO confirmado: base 30 dias (a
+    // situação quase nunca muda) × fator de atividade (1/2/4/6) → 30d ativo
+    // … 180d inativo. Espaça o gov.br (caro e que desloga). Ver "Cadência
+    // das crons" no FLUXOS.md.
     sql!(
         pool,
         "UPDATE zain.clients
@@ -784,7 +788,13 @@ pub(super) async fn save_mei(
              mei_ccmei_pdf            = $mei_ccmei_pdf,
              mei_consultado_em        = now(),
              mei_refresh_falhas       = 0,
-             mei_proxima_tentativa_em = NULL,
+             mei_proxima_tentativa_em = now() + (30 * (CASE
+                 WHEN last_activity_at IS NULL                      THEN 6
+                 WHEN last_activity_at > now() - interval '7 days'  THEN 1
+                 WHEN last_activity_at > now() - interval '30 days' THEN 2
+                 WHEN last_activity_at > now() - interval '90 days' THEN 4
+                 ELSE 6
+             END)) * interval '1 day',
              updated_at               = now()
          WHERE id = $client_id"
     )
@@ -803,6 +813,10 @@ async fn save_elegibilidade(
     pode_abrir: bool,
     motivo: Option<&str>,
 ) -> anyhow::Result<()> {
+    // Cadência do mei_refresh — SEM MEI ativo (lead em qualificação ou
+    // impedido): base 7 dias × fator de atividade → 7d ativo … 42d inativo.
+    // Mais curto que o MEI confirmado porque a elegibilidade pode mudar
+    // (lead resolve pendência, abre MEI etc.). Ver "Cadência" no FLUXOS.md.
     sql!(
         pool,
         "UPDATE zain.clients
@@ -812,7 +826,13 @@ async fn save_elegibilidade(
              mei_impedimento_motivo    = $motivo,
              mei_consultado_em         = now(),
              mei_refresh_falhas        = 0,
-             mei_proxima_tentativa_em  = NULL,
+             mei_proxima_tentativa_em  = now() + (7 * (CASE
+                 WHEN last_activity_at IS NULL                      THEN 6
+                 WHEN last_activity_at > now() - interval '7 days'  THEN 1
+                 WHEN last_activity_at > now() - interval '30 days' THEN 2
+                 WHEN last_activity_at > now() - interval '90 days' THEN 4
+                 ELSE 6
+             END)) * interval '1 day',
              updated_at                = now()
          WHERE id = $client_id"
     )

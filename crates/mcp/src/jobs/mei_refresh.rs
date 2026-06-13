@@ -65,20 +65,18 @@ pub async fn run_forever(state: Arc<AppState>) {
 async fn run_once(state: &AppState) -> anyhow::Result<()> {
     let batch = env_num::<i64>("MEI_REFRESH_BATCH", DEFAULT_BATCH);
 
-    // Pendentes: tem CPF, não foi recusado, e a situação MEI está velha
-    // (>24h) OU nunca checada OU não tem MEI/elegibilidade desconhecida
-    // mas agora há sessão gov.br pra checar (3ª cláusula: re-dispara a
-    // elegibilidade só DEPOIS que o cliente re-autentica).
+    // Seleção governada por `mei_proxima_tentativa_em` (NULL = nunca checado,
+    // entra já). Esse timestamp carrega DUAS coisas: a CADÊNCIA do sucesso
+    // (fórmula por situação×atividade em `save_mei`/`save_elegibilidade` —
+    // ver "Cadência das crons" no FLUXOS.md) e o BACKOFF da falha. Abrir
+    // gov.br é caro e desloga o cliente, então clientes com MEI confirmado /
+    // inativos são espaçados pra bem longe pela fórmula.
     //
-    // Filtros adicionais:
-    // - Credenciais utilizáveis no background: sem `govbr_cpf`+`govbr_password`
-    //   ou com `govbr_otp_pendente`, o `ensure_govbr_session` devolve
-    //   NoCredentials/OtpNeeded e nada acontece — não adianta selecionar (só
-    //   gera ruído de log). Quem não tem credencial só é tratado pelo fluxo
-    //   interativo `auth_govbr`.
-    // - Backoff: `mei_proxima_tentativa_em` segura o cliente que vem falhando
-    //   (gov.br instável / captcha) por um tempo crescente, em vez de retentar
-    //   a cada ciclo.
+    // Filtros: credenciais utilizáveis no background — sem
+    // `govbr_cpf`+`govbr_password` ou com `govbr_otp_pendente`, o
+    // `ensure_govbr_session` devolve NoCredentials/OtpNeeded e nada acontece;
+    // não adianta selecionar (só gera ruído). Quem re-autentica é tratado na
+    // hora pelo fluxo interativo `auth_govbr` (não depende da cron).
     let pendentes = sql!(
         &state.pool,
         "SELECT id, cpf
@@ -89,10 +87,7 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
            AND govbr_password IS NOT NULL
            AND govbr_otp_pendente = false
            AND (mei_proxima_tentativa_em IS NULL OR mei_proxima_tentativa_em <= now())
-           AND ( mei_consultado_em IS NULL
-              OR mei_consultado_em < now() - interval '24 hours'
-              OR (mei_ccmei IS NULL AND mei_pode_abrir IS NULL AND govbr_session IS NOT NULL) )
-         ORDER BY mei_consultado_em ASC NULLS FIRST
+         ORDER BY mei_proxima_tentativa_em ASC NULLS FIRST
          LIMIT $batch"
     )
     .fetch_all()

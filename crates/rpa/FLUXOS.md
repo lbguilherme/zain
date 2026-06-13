@@ -173,6 +173,44 @@ Não precisam de automação de portal — são cálculo/derivação nossa. **Au
 
 ---
 
+## Cadência das crons (recorrência por cliente)
+
+Cada worker de background reconsulta cada cliente num intervalo próprio,
+gravado em `<cron>_proxima_tentativa_em` (o worker só seleciona quem já
+passou desse instante; `NULL` = nunca consultado, entra já). O intervalo é
+uma **fórmula por cron** que combina a **situação do cliente** com um
+**fator de atividade** — clientes inativos são espaçados pra bem longe (não
+vale abrir portal/gov.br por quem sumiu).
+
+**Fator de atividade** (de `last_activity_at`, carimbado a cada
+`get_client_state`):
+
+| última atividade | fator |
+|---|---|
+| ≤ 7 dias (ativo) | ×1 |
+| 8–30 dias (morno) | ×2 |
+| 31–90 dias (esfriando) | ×4 |
+| > 90 dias ou nunca (inativo) | ×6 |
+
+**Fórmulas:**
+
+| Cron | Base (situação) | Intervalo |
+|---|---|---|
+| `mei_refresh` (gov.br) | MEI ativo confirmado: **30d**; sem MEI/elegibilidade: **7d** | `base × fator` (30d…180d / 7d…42d) |
+| `das_refresh` (público) | âncora = menor vencimento `a_vencer` **+3d** (ou 24h) | `âncora + (fator−1)×14d` (ativo = no vencimento; inativo estica) |
+| `dasn_refresh` (público) | **30d** (muda ~1x/ano) | `base × fator` (30d…180d) |
+
+Notas:
+- O **gov.br é o mais caro** (e desloga o cliente), então o `mei_refresh`
+  com MEI confirmado fica em 30d×fator — a situação quase nunca muda.
+- Falha transitória (portal instável) usa **backoff exponencial** na MESMA
+  coluna `*_proxima_tentativa_em`, sobrepondo a cadência até o portal voltar.
+- Eventos que mudam algo **na hora** não dependem da cron: o cliente
+  declarando/pagando dispara `consultar_das`/`consultar_dasn`/`auth_govbr`
+  interativos, que atualizam o estado imediatamente.
+
+---
+
 ## Notas transversais (valem pra qualquer fluxo novo)
 
 - **hCaptcha**: portais do Simples (PGMEI/DASN) usam hCaptcha invisível

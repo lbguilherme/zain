@@ -67,16 +67,22 @@ pub(crate) async fn refresh_dasn_status(
     }
     tracing::info!(%client_id, n = anos.len(), "dasn_refresh: status DASN atualizado");
 
-    // Próxima consulta daqui a 30 dias: muda só quando o cliente declara
-    // (aí o fluxo interativo `consultar_dasn` atualiza na hora) ou quando o
-    // portal adiciona o ano novo (todo janeiro). 30 dias pega isso sem
-    // relançar browser/captcha à toa.
+    // Cadência do dasn_refresh (ver "Cadência das crons" no FLUXOS.md):
+    // base 30 dias (a DASN muda ~1x/ano; o que muda fora disso o cliente
+    // declarando dispara via `consultar_dasn` na hora), multiplicado pelo
+    // fator de atividade (1/2/4/6) → 30d ativo … 180d inativo.
     sql!(
         &state.pool,
         "UPDATE zain.clients
          SET dasn_consultado_em        = now(),
              dasn_refresh_falhas       = 0,
-             dasn_proxima_tentativa_em = now() + interval '30 days',
+             dasn_proxima_tentativa_em = now() + (30 * (CASE
+                 WHEN last_activity_at IS NULL                      THEN 6
+                 WHEN last_activity_at > now() - interval '7 days'  THEN 1
+                 WHEN last_activity_at > now() - interval '30 days' THEN 2
+                 WHEN last_activity_at > now() - interval '90 days' THEN 4
+                 ELSE 6
+             END)) * interval '1 day',
              updated_at                = now()
          WHERE id = $client_id"
     )

@@ -86,14 +86,14 @@ pub(crate) async fn refresh_das_status(
         tracing::info!(%client_id, ano, n = meses.len(), "das_refresh: situação DAS atualizada");
     }
 
-    // Próxima consulta = menor vencimento futuro entre os `a_vencer`,
-    // +3 dias de margem (compensação bancária D+1/D+2 + fim de semana, pra
-    // o mês pago já aparecer como `liquidado` e não num `devedor`
-    // transitório). Sem nenhum vencimento futuro (tudo liquidado/devedor),
-    // cai num TTL de segurança de 24h. Um mês `devedor` tem o valor
-    // crescendo por dia, mas o número exibido é só informativo — a guia de
-    // verdade o `emitir_das` recalcula na hora —, então não forçamos
-    // recheck diário por causa dele.
+    // Cadência do das_refresh (ver "Cadência das crons" no FLUXOS.md):
+    // ÂNCORA = menor vencimento futuro entre os `a_vencer` + 3 dias de margem
+    // (compensação bancária D+1/D+2 + fim de semana). Sem vencimento futuro,
+    // TTL de segurança de 24h.
+    // ATIVIDADE: cliente inativo NÃO precisa de recheck no passo do
+    // vencimento — esticamos a âncora em +14 dias por nível de inatividade
+    // (ativo +0; morno +14; esfriando +42; inativo +70). O fator de
+    // atividade (1/2/4/6) menos 1 dá esses "passos".
     sql!(
         &state.pool,
         "UPDATE zain.clients
@@ -106,7 +106,13 @@ pub(crate) async fn refresh_das_status(
                      AND situacao  = 'a_vencer'
                      AND vencimento >= now()::date) + interval '3 days')::timestamptz,
                  now() + interval '24 hours'
-             ),
+             ) + ((CASE
+                 WHEN last_activity_at IS NULL                      THEN 6
+                 WHEN last_activity_at > now() - interval '7 days'  THEN 1
+                 WHEN last_activity_at > now() - interval '30 days' THEN 2
+                 WHEN last_activity_at > now() - interval '90 days' THEN 4
+                 ELSE 6
+             END) - 1) * interval '14 days',
              updated_at               = now()
          WHERE id = $client_id"
     )
