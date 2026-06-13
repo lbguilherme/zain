@@ -104,7 +104,10 @@ async fn run_once(state: &AppState) -> anyhow::Result<()> {
     if pendentes.is_empty() {
         return Ok(());
     }
-    tracing::info!(n = pendentes.len(), "refresh: processando tarefas pendentes");
+    tracing::info!(
+        n = pendentes.len(),
+        "refresh: processando tarefas pendentes"
+    );
 
     for row in &pendentes {
         let client_id = row.id;

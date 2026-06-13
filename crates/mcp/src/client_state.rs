@@ -77,9 +77,6 @@ pub fn tool_enabled(name: &str, s: &ClientSnapshot) -> bool {
 
         // Só faz sentido enquanto o lead não foi recusado.
         "save_quer_abrir_mei" => !s.recusado && !s.has_cnpj,
-        "iniciar_pagamento" => {
-            !s.recusado && s.has_cpf && (s.has_cnpj || s.quer_abrir_mei == Some(true))
-        }
         "recusar_lead" => !s.recusado && s.has_cpf,
 
         // gov.br: equivalentes diretos dos predicados originais.

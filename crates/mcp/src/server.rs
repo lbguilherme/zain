@@ -31,7 +31,7 @@ impl ZainMcpServer {
 #[tool_router]
 impl ZainMcpServer {
     #[tool(
-        description = "Devolve o estado atual do cliente: contato (chat_id, telefone, nome), dados coletados (CPF, CNPJ, intent de MEI, pagamento solicitado, recusa), estado da sessão gov.br (autenticado / aguardando OTP / sessão expirada / não autenticado, nível, nome), situação MEI (já tem MEI ativo / impedido de abrir + motivo / elegível a abrir / não verificada) e situação DAS (meses em atraso com valores, próximo vencimento) e situação DASN (declaração anual: anos em atraso/a declarar/entregues, já cruzados com a vigência do MEI). Leitura barata — situação MEI/DAS/DASN são mantidas frescas por workers de background; pra forçar reconsulta ao vivo use `consultar_das` (cliente disse que pagou) ou `consultar_dasn` (disse que declarou). Use no início de cada turno pra entender onde o lead parou.",
+        description = "Devolve o estado atual do cliente: contato (chat_id, telefone, nome), dados coletados (CPF, CNPJ, intent de MEI, recusa), estado da sessão gov.br (autenticado / aguardando OTP / sessão expirada / não autenticado, nível, nome), situação MEI (já tem MEI ativo / impedido de abrir + motivo / elegível a abrir / não verificada) e situação DAS (meses em atraso com valores, próximo vencimento) e situação DASN (declaração anual: anos em atraso/a declarar/entregues, já cruzados com a vigência do MEI). Leitura barata — situação MEI/DAS/DASN são mantidas frescas por workers de background; pra forçar reconsulta ao vivo use `consultar_das` (cliente disse que pagou) ou `consultar_dasn` (disse que declarou). Use no início de cada turno pra entender onde o lead parou.",
         annotations(
             title = "Obter estado do cliente",
             read_only_hint = true,
@@ -133,27 +133,6 @@ impl ZainMcpServer {
         Ok(CallToolResult::structured(value))
     }
 
-    #[tool(
-        description = "Sinaliza que o lead está pronto pro cadastro de cartão de crédito. Requer CPF salvo e que o lead esteja qualificado — já tem CNPJ MEI salvo ou declarou que quer abrir um MEI novo.",
-        annotations(
-            title = "Iniciar pagamento",
-            read_only_hint = false,
-            idempotent_hint = true,
-            open_world_hint = false,
-        )
-    )]
-    async fn iniciar_pagamento(
-        &self,
-        Parameters(args): Parameters<tools::iniciar_pagamento::Args>,
-        ctx: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let client_id = extract_and_ensure_client_id(&self.state.pool, &ctx.meta).await?;
-        if let Some(err) = require_enabled(&self.state, "iniciar_pagamento", client_id).await {
-            return Ok(err);
-        }
-        let value = tools::iniciar_pagamento::run(&self.state, client_id, args).await;
-        Ok(CallToolResult::structured(value))
-    }
 
     #[tool(
         description = "Marca o lead como recusado — decisão PERMANENTE e irreversível: encerra o caso pra sempre e o lead nunca mais será atendido pela Zain. Use APENAS com sinal claro de impedimento definitivo do próprio cliente (ex: tool retornou pedindo pra recusar, atividade não permitida pra MEI, outro regime empresarial). NUNCA use por falha de sistema/integração (SIMEI fora do ar, gov.br instável, consulta sem resultado, timeout) — nesses casos agende uma retentativa. Na dúvida, NÃO recuse. Antes de chamar, comunique o motivo ao cliente de forma gentil.",

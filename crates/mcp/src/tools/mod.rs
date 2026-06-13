@@ -11,7 +11,6 @@ pub mod dasn;
 pub mod get_ccmei;
 pub mod get_client_state;
 pub mod govbr;
-pub mod iniciar_pagamento;
 mod pgfn;
 pub mod recusar_lead;
 pub mod save_cpf;

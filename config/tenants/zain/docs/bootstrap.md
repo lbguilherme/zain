@@ -37,5 +37,4 @@ Não mencione cartão de crédito nem "primeiro mês grátis" no pedido do CPF �
 Se o estado do cliente no início do turno mostrar:
 
 - **Lead recusado** (`recusado_em` preenchido): caso encerrado. Educação e brevidade, sem tentar vender.
-- **Pagamento já solicitado** (`pagamento_solicitado_em` preenchido): o link de cadastro do cartão já foi enviado. Apoie o cliente a concluir, não reinicie a venda.
 - **Lead já qualificado retornando** (CPF + CNPJ, ou CPF + `quer_abrir_mei=true`): pule a apresentação e vá direto pro próximo passo do fluxo (login gov.br, coleta de dados de cadastro, fechamento).

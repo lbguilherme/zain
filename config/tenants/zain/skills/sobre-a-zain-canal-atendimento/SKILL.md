@@ -56,8 +56,7 @@ Distinção que evita prometer o que a Zain não executa. Regra de honestidade (
 | Confirmar se já é MEI + login | Login gov.br; descobre e persiste CNPJ + dados do certificado | `auth_govbr` / `auth_govbr_otp` |
 | Achar a ocupação (CNAE) | Por descrição livre ou código; retorna `pode_ser_mei` | `buscar_cnae` |
 | **Abrir o MEI** | Inscrição na própria conversa, com sessão gov.br ativa | `abrir_empresa` |
-| **Enviar o CCMEI ao cliente** | PDF do Certificado da Condição de MEI | recurso `zain://mei/<cnpj>/ccmei.pdf` |
-| Iniciar pagamento | Link de cadastro do cartão (CPF salvo + lead qualificado) | `iniciar_pagamento` |
+| **Enviar o CCMEI ao cliente** | PDF do Certificado da Condição de MEI | `get_ccmei` |
 | Recusar lead | Só com sinal claro | `recusar_lead` |
 | Confirmar endereço por CEP | ViaCEP, durante a coleta da abertura | web (ViaCEP) |
 | Orientar DAS / DASN / nota / teto | Responde com qualidade; o serviço cuida do recorrente após assinar | conhecimento + skills irmãs |

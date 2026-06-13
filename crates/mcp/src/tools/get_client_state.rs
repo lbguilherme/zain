@@ -44,7 +44,6 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
             cpf,
             cnpj,
             quer_abrir_mei,
-            pagamento_solicitado_em,
             recusa_motivo,
             recusado_em,
             govbr_nome,
@@ -122,7 +121,6 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
         row.cpf.as_deref(),
         row.cnpj.as_deref(),
         row.quer_abrir_mei,
-        row.pagamento_solicitado_em.as_ref().map(|t| t.to_rfc3339()),
         row.recusa_motivo.as_deref(),
         row.recusado_em.as_ref().map(|t| t.to_rfc3339()),
         row.govbr_autenticado,
@@ -289,7 +287,6 @@ fn format_dados_coletados(
     cpf: Option<&str>,
     cnpj: Option<&str>,
     quer_abrir_mei: Option<bool>,
-    pagamento_solicitado_em: Option<String>,
     recusa_motivo: Option<&str>,
     recusado_em: Option<String>,
     govbr_autenticado: bool,
@@ -377,9 +374,6 @@ fn format_dados_coletados(
             "- Quer abrir MEI novo: {}",
             if quer_abrir_mei { "sim" } else { "não" }
         ));
-    }
-    if let Some(em) = pagamento_solicitado_em {
-        lines.push(format!("- Pagamento solicitado em: {em}"));
     }
     if let (Some(motivo), Some(em)) = (recusa_motivo, recusado_em) {
         // "Recusado" = a Zain decidiu NÃO atender esse lead pelo

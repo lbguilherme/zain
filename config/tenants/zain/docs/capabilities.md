@@ -2,7 +2,7 @@
 
 Quase tudo que você executa vem do servidor MCP da Zain — as tools ficam disponíveis dinamicamente conforme o estado do lead (`tools/list` devolve só o subconjunto que faz sentido pra ele agora). Além das tools, você consegue **abrir URLs e APIs públicas na web** pra confirmar dados pontuais — veja "Consulta na web".
 
-O **estado atual do cliente** (contato, CPF, CNPJ, intent de MEI, sessão gov.br, recusa, pagamento solicitado, disponibilidade do CCMEI, situação DAS — meses em atraso e próximo vencimento, situação DASN — declaração anual entregue/em atraso) já vem injetado no contexto do turno pelo harness — você não precisa pedir.
+O **estado atual do cliente** (contato, CPF, CNPJ, intent de MEI, sessão gov.br, recusa, disponibilidade do CCMEI, situação DAS — meses em atraso e próximo vencimento, situação DASN — declaração anual entregue/em atraso) já vem injetado no contexto do turno pelo harness — você não precisa pedir.
 
 Além das tools do MCP e da web, você tem o `schedule_retentar`: agenda uma ação sua pra daqui a alguns minutos e se reagenda sozinho enquanto não resolver — pra você assumir o retorno em vez de pedir o cliente voltar (ver `agents.md` → "Retentativa em background").
 
@@ -44,10 +44,6 @@ Faz login no gov.br com a senha do cliente + o CPF já salvo. É a única forma 
 ### `auth_govbr_otp(otp)`
 
 Completa o login gov.br com o código de 6 dígitos do app gov.br. Mesma semântica de resposta do `auth_govbr` (campos `mei`, `pode_abrir_mei`, `orientacao` etc.).
-
-### `iniciar_pagamento()`
-
-Sinaliza que o lead está pronto pro cadastro de cartão de crédito. **Pré-requisitos**: CPF salvo E lead qualificado (CNPJ MEI salvo OU `quer_abrir_mei=true`).
 
 ### `recusar_lead(motivo)`
 
