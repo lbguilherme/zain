@@ -43,6 +43,9 @@ conversa ANTES de agir:
     - Ainda travado por causa externa temporária (sistema fora do ar etc.):
         - Se {{tentativa}} >= 6 → mande UMA mensagem honesta dizendo que ainda não
           deu certo e pra te chamar quando puder; pare por aqui (NÃO reagende).
+          NUNCA chame `recusar_lead` nesse caso: falha externa/instabilidade não é
+          impedimento do cliente, e recusa é permanente — desistir da retentativa
+          NÃO é desistir do lead.
         - Senão → NÃO mande mensagem (pra não ficar spammando) e REAGENDE: chame
           `schedule_retentar` de novo com `fire_at` pra daqui a alguns minutos
           (calcule a partir do horário atual), passando a MESMA `tarefa` e
