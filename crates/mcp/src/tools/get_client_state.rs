@@ -168,7 +168,8 @@ async fn load_das_lines(
 ) -> anyhow::Result<Vec<String>> {
     let rows = sql!(
         &state.pool,
-        "SELECT competencia, situacao, total_cents, vencimento
+        "SELECT competencia, situacao, total_cents, vencimento,
+                (parcelado_em IS NOT NULL AND parcelado_em > now() - interval '30 days') AS parcelado
          FROM zain.das_mensal
          WHERE client_id = $client_id
          ORDER BY periodo"
@@ -202,15 +203,31 @@ async fn load_das_lines(
             situacao: r.situacao,
             total_cents: r.total_cents,
             vencimento: r.vencimento,
+            parcelado: r.parcelado.unwrap_or(false),
         })
         .collect();
 
     let mut lines = Vec::new();
 
+    // Meses confirmados em PARCELAMENTO (detectado ao emitir) — pagam pela
+    // parcela, não por guia. Saem das listas de atraso/em-aberto.
+    let parcelados: Vec<String> = das_rows
+        .iter()
+        .filter(|r| r.parcelado)
+        .map(|r| r.competencia.clone())
+        .collect();
+    if !parcelados.is_empty() {
+        lines.push(format!(
+            "- DAS em PARCELAMENTO ({}): {} — pague a parcela pelo app de parcelamento do MEI/Simples Nacional, NÃO por guia normal. Não ofereça `emitir_das` pra esses meses.",
+            parcelados.len(),
+            parcelados.join("; ")
+        ));
+    }
+
     // `devedor` = ano corrente, atraso confirmado (paga a guia normal).
     let devedores: Vec<String> = das_rows
         .iter()
-        .filter(|r| r.situacao == "devedor")
+        .filter(|r| r.situacao == "devedor" && !r.parcelado)
         .map(&descrever)
         .collect();
     if devedores.is_empty() {
@@ -223,12 +240,12 @@ async fn load_das_lines(
         ));
     }
 
-    // `em_aberto` = anos anteriores com valor a regularizar. NÃO afirme
-    // "atraso/devedor" — pode estar em PARCELAMENTO (só dá pra saber ao
-    // emitir). Sumariza (podem ser muitos meses).
+    // `em_aberto` = anos anteriores com valor a regularizar (excluindo os já
+    // confirmados parcelados). NÃO afirme "atraso/devedor" — os que ainda
+    // não tentamos emitir podem estar parcelados. Sumariza.
     let abertos: Vec<&_DasRow> = das_rows
         .iter()
-        .filter(|r| r.situacao == "em_aberto")
+        .filter(|r| r.situacao == "em_aberto" && !r.parcelado)
         .collect();
     if !abertos.is_empty() {
         let total: i64 = abertos.iter().filter_map(|r| r.total_cents).sum();
@@ -264,6 +281,7 @@ struct _DasRow {
     situacao: String,
     total_cents: Option<i64>,
     vencimento: Option<chrono::NaiveDate>,
+    parcelado: bool,
 }
 
 #[allow(clippy::too_many_arguments)]

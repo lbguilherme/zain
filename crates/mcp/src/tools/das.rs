@@ -165,6 +165,13 @@ async fn upsert_meses(
                  total_cents     = EXCLUDED.total_cents,
                  vencimento      = EXCLUDED.vencimento,
                  acolhimento     = EXCLUDED.acolhimento,
+                 -- Preserva o cache de parcelado enquanto o mês segue em
+                 -- aberto; zera quando vira liquidado/não-optante (parcela
+                 -- quitada / não mais aplicável).
+                 parcelado_em    = CASE
+                     WHEN EXCLUDED.situacao IN ('liquidado', 'nao_optante') THEN NULL
+                     ELSE zain.das_mensal.parcelado_em
+                 END,
                  consultado_em   = now()"
         )
         .execute()
@@ -269,6 +276,21 @@ pub async fn run_emitir(state: &AppState, client_id: Uuid, args: EmitirArgs) -> 
         Err(resp) => return resp,
     };
 
+    // Já sabemos que este mês está parcelado? Corta o circuito — não vale
+    // reabrir o browser e tentar gerar (o portal só recusaria de novo e
+    // ainda gastaria o limite diário). TTL de 30 dias: depois disso,
+    // re-verifica ao vivo (o parcelamento pode ter mudado).
+    match parcelado_recente(&state.pool, client_id, &periodo).await {
+        Ok(true) => {
+            tracing::info!(%client_id, %periodo, "emitir_das: cache parcelado — devolve sem RPA");
+            return resposta_parcelado(&periodo);
+        }
+        Ok(false) => {}
+        Err(e) => {
+            tracing::warn!(%client_id, %periodo, error = %errlog::anyhow_chain(&e), "emitir_das: falha ao ler cache de parcelado (seguindo)");
+        }
+    }
+
     // Cache same-day: o valor de uma competência não muda dentro do mesmo
     // dia, e o PGMEI tem limite diário de gerações por CNPJ. Se já emitimos
     // esta competência hoje, serve o PDF cacheado — guia idêntica, sem
@@ -302,13 +324,13 @@ pub async fn run_emitir(state: &AppState, client_id: Uuid, args: EmitirArgs) -> 
             }
             // Mês em PARCELAMENTO: o portal até gera uma guia, mas ela NÃO
             // deve ser paga — a dívida foi negociada e a parcela se paga
-            // pelo app de parcelamento. Não entregamos essa guia.
+            // pelo app de parcelamento. Não entregamos essa guia E cacheamos
+            // o status (best-effort) pra não reabrir o browser toda vez.
             if msg.contains("parcelad") {
-                return CallToolResult::structured_error(serde_json::json!({
-                    "status": "erro",
-                    "motivo": "periodo_parcelado",
-                    "mensagem": format!("Este mês ({periodo}) está num PARCELAMENTO — a dívida já foi negociada em parcelas. A guia normal do DAS NÃO serve (pagar por ela não quita a parcela). Explique ao cliente que esse mês se paga pelo aplicativo de parcelamento do MEI/Simples Nacional, não por essa guia. Os meses que NÃO estão parcelados continuam sendo emitidos normalmente."),
-                }));
+                if let Err(e) = marcar_parcelado(&state.pool, client_id, &periodo).await {
+                    tracing::warn!(%client_id, %periodo, error = %errlog::anyhow_chain(&e), "emitir_das: falha ao cachear parcelado");
+                }
+                return resposta_parcelado(&periodo);
             }
             // Limite diário de geração de DAS por CNPJ (código 23998 do
             // PGMEI). É transitório, mas reseta só no dia seguinte —
@@ -387,6 +409,43 @@ fn montar_resposta(cnpj: &str, periodo: &str, g: &GuiaCache) -> CallToolResult {
     let blob = BASE64_STANDARD.encode(&g.pdf);
     let contents = ResourceContents::blob(blob, &uri).with_mime_type("application/pdf");
     CallToolResult::success(vec![Content::text(texto), Content::resource(contents)])
+}
+
+/// Resposta padrão pra mês em parcelamento — mesma do short-circuit (cache)
+/// e da detecção ao vivo (toast do portal).
+fn resposta_parcelado(periodo: &str) -> CallToolResult {
+    CallToolResult::structured_error(serde_json::json!({
+        "status": "erro",
+        "motivo": "periodo_parcelado",
+        "mensagem": format!("Este mês ({periodo}) está num PARCELAMENTO — a dívida já foi negociada em parcelas. A guia normal do DAS NÃO serve (pagar por ela não quita a parcela). Explique ao cliente que esse mês se paga pelo aplicativo de parcelamento do MEI/Simples Nacional, não por essa guia. Os meses que NÃO estão parcelados continuam sendo emitidos normalmente."),
+    }))
+}
+
+/// `true` se o mês está marcado como parcelado e a marca é recente (≤30d).
+/// Passado disso, re-verifica ao vivo (o parcelamento pode ter mudado).
+async fn parcelado_recente(pool: &Pool, client_id: Uuid, periodo: &str) -> anyhow::Result<bool> {
+    let row = sql!(
+        pool,
+        "SELECT parcelado_em FROM zain.das_mensal
+         WHERE client_id = $client_id AND periodo = $periodo"
+    )
+    .fetch_optional()
+    .await?;
+    let limite = chrono::Utc::now() - chrono::Duration::days(30);
+    Ok(row.and_then(|r| r.parcelado_em).is_some_and(|t| t > limite))
+}
+
+/// Marca o mês como parcelado (no-op se a linha ainda não existe — o
+/// `das_refresh` a cria; aí a próxima detecção grava).
+async fn marcar_parcelado(pool: &Pool, client_id: Uuid, periodo: &str) -> anyhow::Result<()> {
+    sql!(
+        pool,
+        "UPDATE zain.das_mensal SET parcelado_em = now()
+         WHERE client_id = $client_id AND periodo = $periodo"
+    )
+    .execute()
+    .await?;
+    Ok(())
 }
 
 /// Lê a guia cacheada SE foi gerada no mesmo dia (fuso America/Sao_Paulo,
