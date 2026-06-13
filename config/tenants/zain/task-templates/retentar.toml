@@ -14,16 +14,10 @@ Capriche no `tarefa`: na hora que isto disparar, é ele que te orienta — você
 ter o contexto da conversa fresco na cabeça. Descreva de forma COMPLETA e
 autossuficiente: o que precisa ser feito, o contexto necessário (o que já rolou, qual
 etapa/tool retomar, dados relevantes do lead) e como saber que já resolveu. Texto raso
-aqui vira retomada perdida; quanto mais completo e específico, melhor a retomada.
-"""
+aqui vira retomada perdida; quanto mais completo e específico, melhor a retomada."""
 agent_slug = "zain"
-
-# Disparo único; o próprio agente reagenda quando ainda não resolveu (one-shot + re-arm).
-# default_cron_expr = ""
-# caller_can_schedule = true            # você escolhe daqui a quanto tempo dispara
-timezone = "America/Sao_Paulo"
-min_period_minutes = 5                   # piso: não dá pra reagendar pra antes de 5 min
-
+trigger_source = "agent_tool"
+schedule_shape = "one_off"
 prompt_template = """
 Tarefa agendada que você mesmo marcou pra fazer agora. Tentativa {{tentativa}}.
 
@@ -54,11 +48,13 @@ conversa ANTES de agir:
 A regra de Honestidade vale integralmente: só afirme que fez algo se você chamou a
 tool correspondente NESTE turno E recebeu status: ok.
 """
-
-[[parameters]]
-name = "tarefa"
-description = "O que você quer fazer quando isto disparar, e como saber se já resolveu (ex: 'retentar a etapa que tinha falhado por indisponibilidade do sistema e seguir o cadastro; resolvido quando a tool voltar com sucesso')"
+allow_self_cancel = false
+max_active_runs_per_user = 0
 
 [[parameters]]
 name = "tentativa"
 description = "Número desta tentativa. Passe 1 ao agendar pela primeira vez; ao reagendar, some 1 ao valor que veio"
+
+[[parameters]]
+name = "tarefa"
+description = "O que você quer fazer quando isto disparar, e como saber se já resolveu (ex: 'retentar a etapa que tinha falhado por indisponibilidade do sistema e seguir o cadastro; resolvido quando a tool voltar com sucesso')"
