@@ -108,8 +108,9 @@ pub async fn check_govbr_profile(
         }
     }
 
-    // 2. Login do zero.
-    let (profile, session) = do_fresh_login(cpf, password, otp).await?;
+    // 2. Login do zero — passando a sessão salva (se houver) pra restaurar o
+    //    cookie de "navegador confiável" antes de logar (pula o 2FA).
+    let (profile, session) = do_fresh_login(cpf, password, otp, saved).await?;
     Ok(CheckOutcome {
         profile,
         session,
@@ -179,6 +180,7 @@ async fn do_fresh_login(
     cpf: &str,
     password: &str,
     otp: Option<&str>,
+    saved: Option<&SavedSession>,
 ) -> Result<(Profile, SavedSession), GovbrError> {
     let opts = launch::options_with_extensions().await?;
     let (mut process, browser) = chromium_driver::launch(opts)
@@ -192,6 +194,15 @@ async fn do_fresh_login(
         page.enable().await?;
         // Lifecycle events power the `wait_for_network_idle` settles below.
         page.set_lifecycle_events_enabled(true).await.ok();
+
+        // Restaura os cookies salvos ANTES de logar. O cookie de "navegador
+        // confiável" (separado do cookie de sessão, e bem mais longevo) faz o
+        // gov.br PULAR o 2FA mesmo quando a sessão expirou — o login do zero
+        // conclui só com CPF+senha. Sem isso, todo relogin caía no 2FA e
+        // deslogava o cliente (o browser limpo não tinha o cookie confiável).
+        if let Some(saved) = saved {
+            let _ = session::restore(&browser, &page, saved).await;
+        }
 
         // Vai direto pro perfil — o SSO redireciona pro login automaticamente.
         page.navigate(&profile_url(cpf)).await?;

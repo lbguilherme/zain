@@ -528,17 +528,22 @@ async fn save_success(pool: &Pool, client_id: Uuid, outcome: &CheckOutcome) -> a
     Ok(())
 }
 
-/// Marca "OTP pendente" e descarta a sessão: o último login fresco parou
-/// num 2FA que ainda não foi resolvido. Os cookies salvos (se houver) já
-/// não servem — limpamos. A flag faz o worker de background parar de
-/// tentar relogar sozinho; só o fluxo interativo (com o cliente pra
-/// digitar o código) religa. `save_success` zera tudo de volta.
+/// Marca "OTP pendente": o último login fresco parou num 2FA ainda não
+/// resolvido. A flag faz o worker de background parar de tentar relogar
+/// sozinho; só o fluxo interativo (com o cliente pra digitar o código)
+/// religa. `save_success` zera a flag de volta.
+///
+/// **NÃO zera `govbr_session`**: o cookie de "navegador confiável" (que
+/// vive na sessão salva, separado do cookie de sessão e bem mais longevo)
+/// pode ainda valer — jogar o bag inteiro fora forçaria 2FA na próxima e é
+/// justamente o que deslogava o cliente. Mantemos o bag; se o cookie
+/// confiável estiver bom, o `do_fresh_login` o reusa e pula o 2FA. Se
+/// estiver morto, o próximo `save_success` o sobrescreve.
 async fn mark_otp_pendente(pool: &Pool, client_id: Uuid) -> anyhow::Result<()> {
     sql!(
         pool,
         "UPDATE zain.clients
-         SET govbr_session      = NULL,
-             govbr_otp_pendente = true,
+         SET govbr_otp_pendente = true,
              updated_at         = now()
          WHERE id = $client_id"
     )
