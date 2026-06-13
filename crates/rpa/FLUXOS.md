@@ -4,162 +4,180 @@ Mapa das automações de portal do governo que a Zain faz (ou vai fazer) pelo
 MEI. Cada "fluxo" é, no fundo, dirigir um portal via `chromium-driver` +
 `crate::sanity`, com hCaptcha resolvido pela extensão NopeCHA.
 
-Padrão de acesso dos portais:
-- **Público por CNPJ** (PGMEI, DASN-SIMEI): só CNPJ + hCaptcha invisível, sem
-  gov.br. Barato, sem depender de sessão.
-- **Autenticado (gov.br)**: precisa da sessão gov.br do cliente (temos via
-  `rpa::govbr::session` / `ensure_valid_session`).
+## Tipos de autenticação
 
-Convenção de status abaixo: ✅ implementado · 🟡 parcialmente mapeado · 🔴 não
-explorado.
+- **Público** — só CNPJ + hCaptcha invisível, sem login (PGMEI, DASN-SIMEI).
+  Barato, não depende de sessão.
+- **gov.br** — precisa da sessão gov.br do cliente (temos via
+  `rpa::govbr::session` / `ensure_valid_session`).
+- **gov.br ou código de acesso** — alguns serviços da Receita aceitam o código
+  de acesso do Simples Nacional como alternativa ao gov.br.
+- **Certificado digital / login municipal** — emissão de NF estadual/municipal;
+  varia por ente (o Emissor Nacional NFS-e, porém, usa gov.br).
+- **— (interno)** — não tem portal; é cálculo/derivação nossa.
+
+Status: ✅ implementado · 🟡 parcialmente mapeado · 🔴 não explorado.
 
 ---
 
 ## ✅ Já implementado
 
-| Fluxo | Onde | Acesso |
+| Fluxo | Onde | Autenticação |
 |---|---|---|
 | Login gov.br (+ 2FA) e captura de sessão | `rpa::govbr` / tools `auth_govbr*` | gov.br |
 | Consulta CCMEI + elegibilidade MEI | `rpa::mei::certificado` / `refresh_mei_status` | gov.br |
 | Abertura de MEI (inscrição) | `rpa::mei::inscricao` / tool `abrir_empresa` | gov.br |
 | CCMEI inline (PDF) | tool `get_ccmei` | — (banco) |
 | Consulta de dívida PGFN | `rpa::pgfn` | público |
-| DAS mensal: consulta situação (histórico denso) | `rpa::pgmei::consultar_das_anos` / worker `das_refresh` | público CNPJ |
-| DAS mensal: emitir guia (boleto + PIX) | `rpa::pgmei::emitir_das` / tool `emitir_das` | público CNPJ |
-| DASN: consulta status anual (entregue/não) | `rpa::dasn::consultar_dasn` / worker `dasn_refresh` | público CNPJ |
+| DAS mensal: consulta situação (histórico denso) | `rpa::pgmei::consultar_das_anos` / `das_refresh` | público |
+| DAS mensal: emitir guia (boleto + PIX) | `rpa::pgmei::emitir_das` / tool `emitir_das` | público |
+| DASN: consulta status anual (entregue/não) | `rpa::dasn::consultar_dasn` / `dasn_refresh` | público |
 
 ---
 
-## Pendências
+## Pendências (ordenadas por complexidade crescente)
 
-### 1. 🟡 Preencher/transmitir a Declaração Anual (DASN-SIMEI)
+### 1. 🔴 2ª via de DAS / comprovante de pagamento — **complexidade baixa**
+
+- **Autenticação**: **público** (reimprimir a guia no PGMEI) · **gov.br** (puxar
+  o *comprovante de pagamento* no e-CAC).
+- **O que sabemos**: reimprimir uma guia é praticamente o `emitir_das` que já
+  temos. O comprovante de pagamento (prova de que pagou) fica no e-CAC e exige
+  gov.br.
+- **A fazer**: reaproveitar `emitir_das` para reimpressão; explorar o
+  comprovante no e-CAC se houver demanda.
+
+### 2. 🔴 Consultar regularidade / pendências fiscais — **complexidade baixa**
+
+- **Autenticação**: **público** (PGFN, já temos parcial) · **gov.br** (situação
+  fiscal completa / CND no e-CAC).
+- **O que sabemos**: já consultamos PGFN (`rpa::pgfn`). A visão completa
+  (Receita + situação cadastral) sai do e-CAC autenticado.
+- **A fazer**: consolidar "está regular?" cruzando PGFN + DAS em aberto;
+  e-CAC só se precisarmos da CND oficial.
+
+### 3. 🔴 Consultar contribuição previdenciária / CNIS — **complexidade baixa-média**
+
+- **Autenticação**: **gov.br** (Meu INSS).
+- **O que sabemos**: o DAS pago conta como contribuição pra aposentadoria; o
+  cliente pode querer ver tempo/contribuições. É leitura.
+- **A fazer**: explorar o Meu INSS (extrato CNIS) — leitura, sem efeito.
+
+### 4. 🟡 Declarar / transmitir a DASN-SIMEI (declaração anual) — **complexidade média**
 
 A leitura já existe (`consultar_dasn`); falta o **preenchimento + transmissão**.
 
-- **Sistema**: `dasnsimei.app` (Simples Nacional). **Público por CNPJ** +
-  hCaptcha — sem gov.br. `rpa::dasn::identificar` já serve.
+- **Autenticação**: **público** (CNPJ + hCaptcha; `rpa::dasn::identificar` já serve).
 - **O que já mapeamos** (sonda `dasn_probe` com `DASN_PEEK=1`): wizard
   **Iniciar → Preencher → Resumo → Conclusão**.
-  - Iniciar: seleciona o ano no radio `input[name=opcao][value=AAAA]`, clica
-    `#iniciar-continuar`. O tipo (Original/Retificadora) é automático.
+  - Iniciar: ano no radio `input[name=opcao][value=AAAA]` + `#iniciar-continuar`
+    (tipo Original/Retificadora é automático).
   - Preencher (**form mapeado**): `#input-rbt-icms` (receita de comércio e
     indústria — inclui transporte intermunicipal/interestadual e refeições),
     `#input-rbt-iss` (receita de serviços — locação e demais sem ICMS/ISS),
-    receita bruta total (auto-soma, read-only), `#input-empregado-sim` /
-    `#input-empregado-nao` (radio `name=informacao-empregado`),
-    `#preencher-continuar`.
-- **O que falta mapear**: **Resumo** e **Conclusão** — só aparecem
-  transmitindo de verdade. Não dá pra mapear sem transmitir uma declaração
-  real (não fazemos isso com CNPJ de terceiro). Precisa de um **cliente real
-  consentindo** com declaração a entregar. É onde sai o **recibo (PDF)**.
-- **Dados do cliente**: receita bruta do ano-calendário (idealmente separada
-  comércio/indústria vs. serviços; o total é a soma), teve empregado no
-  período (sim/não).
-- **Riscos**: transmite declaração fiscal federal — ato com efeito legal,
-  exige consentimento explícito. Entrega em atraso gera multa mínima de R$ 50.
-  O portal mostra "Sistema SIMEI indisponível" em alguns casos (ex.: ano fora
-  da vigência do MEI).
-- **A fazer**: `rpa::dasn::declarar(cnpj, ano, receita_*, empregado)` + tool
-  `declarar_dasn` (recibo PDF inline). O `identificar` já está estruturado pra
-  encaixar.
+    receita bruta total (auto, read-only), `#input-empregado-sim` /
+    `#input-empregado-nao`, `#preencher-continuar`.
+- **O que falta mapear**: **Resumo** e **Conclusão** (onde sai o **recibo PDF**)
+  — só aparecem transmitindo de verdade. Precisa de um **cliente real
+  consentindo** com declaração a entregar.
+- **Dados do cliente**: receita bruta do ano (comércio/indústria vs. serviços),
+  teve empregado (sim/não).
+- **Riscos**: transmite declaração fiscal federal (ato legal) — consentimento
+  explícito. Atraso = multa mínima R$ 50.
+- **A fazer**: `rpa::dasn::declarar(...)` + tool `declarar_dasn` (recibo inline).
 
-### 2. 🔴 Dar baixa do MEI (encerramento do CNPJ)
+### 5. 🔴 Alteração cadastral do MEI — **complexidade média**
 
-- **Sistema**: Portal do Empreendedor (gov.br) — "Baixa do MEI".
-  **Autenticado (gov.br)**.
-- **O que sabemos**:
-  - É o inverso da abertura (`rpa::mei::inscricao`); temos a sessão gov.br.
-  - A baixa **exige a entrega de uma DASN de extinção** (declaração anual
-    especial do ano da baixa) — conecta com o atributo
-    `data-situacao-especial-eventobaixa` que aparece nos radios da DASN.
-  - **Dívidas pendentes NÃO somem com a baixa** — continuam cobráveis (e podem
-    ir pra dívida ativa). Importante deixar isso claro ao cliente.
-- **Riscos**: **altíssimo** — encerra o CNPJ. Reabrir é possível mas
-  burocrático. Exige consentimento forte e dupla confirmação. Não fazer por
-  suposição.
-- **A fazer**: explorar o portal de baixa (sonda), mapear o fluxo (incluindo a
-  DASN de extinção), `rpa::mei::baixar` + tool.
+- **Autenticação**: **gov.br** (Portal do Empreendedor).
+- **O que sabemos**: mudar atividades (CNAE), endereço, nome fantasia, forma de
+  atuação. O agente já tem a skill `alteracao-cadastral-mei` (sem RPA). Temos os
+  dados estruturados do cliente pra preencher.
+- **Riscos**: muda o cadastro oficial — consentimento; confirmar antes.
+- **A fazer**: explorar o fluxo de alteração no Portal do Empreendedor.
 
-### 3. 🔴 Consultar e fazer parcelamento de dívida
+### 6. 🔴 Parcelamento de dívida (consultar → parcela → formalizar) — **complexidade média→alta**
 
-- **Dois sistemas**, conforme onde a dívida está:
-  - **Parcelamento do Simples Nacional / MEI** (Receita) — para débitos de DAS
-    **ainda não inscritos em dívida ativa**. gov.br **ou** código de acesso. É
-    o "aplicativo de parcelamento" que o toast do PGMEI cita quando um mês está
-    parcelado.
-  - **PGFN** (`regularize.pgfn.gov.br`) — para débitos **já em dívida ativa da
-    União**. gov.br.
-- **O que já temos relacionado**: o `emitir_das` detecta `periodo_parcelado`;
-  o estado `em_aberto` (anos anteriores) deliberadamente **não afirma
-  "devedor"** justamente porque pode estar parcelado. Temos sessão gov.br.
-- **Operações** (ordem valor × risco):
-  1. **Consultar parcelamento ativo** (leitura, baixo risco): parcelas pagas /
-     em aberto, saldo. **Resolve a ambiguidade do `em_aberto`/`periodo_parcelado`.**
-  2. **Emitir o DAS da parcela** (geração): hoje só sabemos dizer "vá no app".
-  3. **Formalizar um parcelamento** (escrita, ato legal): negocia a dívida em
-     até 60 parcelas (mín. R$ 50/parcela). Consentimento explícito.
-  4. Desistir do parcelamento.
+Sub-operações que **escalam em complexidade/risco**:
+
+- **Consultar parcelamento ativo** (leitura, baixo risco) — **resolve a
+  ambiguidade do `em_aberto`/`periodo_parcelado`** que já existe no código.
+- **Emitir o DAS da parcela** (geração) — hoje só sabemos dizer "vá no app".
+- **Formalizar um parcelamento** (escrita, ato legal: até 60 parcelas, mín.
+  R$ 50/parcela) — consentimento explícito.
+- **Autenticação**: **gov.br ou código de acesso** (Parcelamento do Simples
+  Nacional, para débito corrente) · **gov.br** (PGFN `regularize.pgfn.gov.br`,
+  para dívida ativa). São **dois sistemas** conforme onde a dívida está.
 - **Não explorado**: falta um CNPJ com parcelamento ativo **E** sessão gov.br
-  no mesmo cliente (a IVONE `33.987.037/0001-04` tem parcelamento mas não é
-  cliente).
-- **A fazer**: explorar os dois portais; implementar ao menos **consultar
-  status + emitir DAS da parcela** (casam direto com `em_aberto` /
-  `periodo_parcelado`).
+  (a IVONE `33.987.037/0001-04` tem parcelamento mas não é cliente).
+- **A fazer**: explorar ambos; implementar pelo menos **consultar status +
+  emitir DAS da parcela**.
 
-### 4. 🔴 Emitir nota fiscal
+### 7. 🔴 Desenquadramento do SIMEI — **complexidade alta**
+
+- **Autenticação**: **gov.br** (Portal do Simples Nacional / Empreendedor).
+- **O que sabemos**: sair do MEI por ultrapassar o teto (R$ 81k) ou virar ME —
+  **diferente da baixa** (a empresa continua, muda de regime). Tem efeito
+  tributário relevante (passa a ter contador, outros impostos).
+- **Riscos**: alto — muda o regime da empresa. Consentimento + orientação clara.
+- **A fazer**: explorar; provavelmente só executar com forte confirmação.
+
+### 8. 🔴 Baixa do MEI (encerramento do CNPJ) — **complexidade alta**
+
+- **Autenticação**: **gov.br** (Portal do Empreendedor).
+- **O que sabemos**: inverso da abertura (`rpa::mei::inscricao`). **Exige a
+  entrega de uma DASN de extinção** (declaração especial do ano da baixa —
+  conecta com o `data-situacao-especial-eventobaixa` dos radios da DASN), então
+  **depende do fluxo #4**. **Dívidas pendentes NÃO somem** com a baixa.
+- **Riscos**: **altíssimo** — encerra o CNPJ. Reabrir é burocrático.
+  Consentimento forte + dupla confirmação.
+- **A fazer**: explorar o portal de baixa, mapear (incluindo a DASN de
+  extinção), `rpa::mei::baixar` + tool.
+
+### 9. 🔴 Empregado do MEI (eSocial) — **complexidade muito alta**
+
+- **Autenticação**: **gov.br** (eSocial — sistema à parte).
+- **O que sabemos**: o MEI pode ter **1 empregado**; envolve registro, folha,
+  FGTS e INSS pelo eSocial (sistema separado e complexo). O agente já tem a
+  skill `empregado-do-mei`.
+- **Riscos**: obrigações trabalhistas com efeito legal recorrente.
+- **A fazer**: avaliar viabilidade; é um subprojeto próprio.
+
+### 10. 🔴 Emitir nota fiscal — **complexidade muito alta**
 
 O fluxo **mais fragmentado** — não há um portal único.
 
-- **NFS-e (serviços)**: é **municipal** (cada cidade tem seu sistema). Mas
-  existe o **Emissor Nacional NFS-e** (padrão nacional, gov.br) que o MEI de
-  serviços pode usar — **alvo único mais tratável** e cobre boa parte dos
-  MEIs. Recomendação: **começar por aqui**.
-- **NF-e / NFC-e (produtos/comércio)**: **estadual** (SEFAZ de cada estado).
-  MEI que vende a consumidor final (PF) costuma ser dispensado; obrigatório em
-  venda a PJ. Varia muito por estado.
-- **NFA-e (avulsa)**: para quem não tem emissor próprio.
-- **O que sabemos do cliente que ajuda**: o CNAE e a forma de atuação (sabemos
-  se é serviço/comércio/indústria) permitem rotear NFS-e vs. NF-e.
-- **Dados**: tomador (CPF/CNPJ, nome), descrição do serviço/produto, valor;
-  para NFS-e, o código de serviço/atividade (o ISS do MEI é fixo no DAS, então
-  a NFS-e geralmente sai sem ISS destacado, conforme regra do município).
-- **Riscos**: documento fiscal com efeito legal — consentimento; e a
-  fragmentação municipal/estadual é o maior obstáculo técnico.
-- **A fazer**: decidir escopo (proposta: **Emissor Nacional NFS-e** primeiro,
-  serviços), explorar, implementar.
+- **Autenticação**: **varia**. NFS-e via **Emissor Nacional NFS-e** → **gov.br**
+  (nacional, recomendado começar por aqui). NF-e/NFC-e (produtos) → **certificado
+  digital / login da SEFAZ estadual**. NFS-e municipal "legada" → **login do
+  município**.
+- **O que sabemos**: NFS-e (serviços) é municipal, mas o **Emissor Nacional**
+  unifica e cobre boa parte dos MEIs de serviço. NF-e (comércio/indústria) é
+  estadual; MEI a consumidor final (PF) costuma ser dispensado, obrigatório a
+  PJ. O CNAE/forma de atuação do cliente roteia serviço vs. produto.
+- **Dados**: tomador (CPF/CNPJ, nome), descrição, valor; código de serviço
+  (NFS-e). ISS do MEI é fixo no DAS → NFS-e geralmente sem ISS destacado.
+- **Riscos**: documento fiscal (efeito legal) + fragmentação técnica enorme.
+- **A fazer**: escopo (**Emissor Nacional NFS-e** primeiro), explorar, implementar.
 
-### 5. 🔴 Cancelar nota fiscal
+### 11. 🔴 Cancelar nota fiscal — **complexidade muito alta**
 
-- **Sistema**: o mesmo emissor usado no #4 (Emissor Nacional NFS-e / SEFAZ).
-- **O que sabemos**: cancelamento só dentro do prazo permitido — NFS-e segue a
-  regra do município / Emissor Nacional; NF-e normalmente até ~24h, depois só
-  carta de correção (não cancela). Depende de identificar a nota emitida.
-- **A fazer**: junto com o emissor escolhido em #4 (depende dele).
+- **Autenticação**: a mesma do #10 (depende do emissor usado).
+- **O que sabemos**: só dentro do prazo permitido — NFS-e segue a regra do
+  município / Emissor Nacional; NF-e normalmente até ~24h (depois só carta de
+  correção). Depende de localizar a nota emitida.
+- **A fazer**: junto com o emissor escolhido em #10 (depende dele).
 
 ---
 
-## Outras operações/consultas que o MEI faz (candidatas)
+## Operações internas (sem portal / sem RPA)
 
-Além das cinco acima, vale ter no radar (ordenado por utilidade aparente):
+Não precisam de automação de portal — são cálculo/derivação nossa. **Autenticação: — (interno)**.
 
-- **Alteração cadastral do MEI** — mudar atividades (CNAE), endereço, nome
-  fantasia, forma de atuação. Portal do Empreendedor, gov.br. Operação comum
-  (o agente já tem a skill `alteracao-cadastral-mei`, mas sem RPA).
-- **Monitoramento do teto de faturamento (R$ 81k/ano)** — não é portal, é
-  cálculo nosso a partir das NFs emitidas / receita declarada. Já é serviço
-  anunciado no README.
-- **Relatório Mensal de Receitas Brutas** — obrigação acessória do MEI
-  (preenche mês a mês e guarda; não transmite). Poderíamos gerar/manter.
-- **2ª via / comprovante de pagamento de DAS** — reimprimir guia paga ou puxar
-  o comprovante.
-- **Empregado do MEI** (1 permitido) — registro, folha, FGTS/INSS, eSocial.
-  Agente já tem a skill `empregado-do-mei`.
-- **Desenquadramento do SIMEI** — sair do MEI por ultrapassar o teto ou virar
-  ME (diferente de baixa).
-- **Certidão de regularidade / pendências (Receita + PGFN)** — consulta de
-  débitos. Já temos parte (PGFN).
-- **Contribuição previdenciária / extrato CNIS (Meu INSS)** — o DAS conta pra
-  aposentadoria; cliente pode querer conferir tempo/contribuições.
+- **Monitoramento do teto de faturamento (R$ 81k/ano)** — acumula a receita
+  (das NFs emitidas / DASN) e alerta ao se aproximar do limite. Já anunciado no
+  README.
+- **Relatório Mensal de Receitas Brutas** — obrigação acessória que o MEI
+  preenche mês a mês e guarda (não transmite). Podemos gerar/manter por ele.
 - **Comprovação de renda** — declaração/extrato derivado da DASN/receita pra
   banco, financiamento, programas sociais.
 
@@ -170,7 +188,7 @@ Além das cinco acima, vale ter no radar (ordenado por utilidade aparente):
 - **hCaptcha**: portais do Simples (PGMEI/DASN) usam hCaptcha invisível
   resolvido pela NopeCHA (`launch::configure_nopecha`). Já validado.
 - **Máscara de CNPJ**: os portais perdem as primeiras teclas se a gente digita
-  antes da máscara anexar — usar o padrão de **digitar + reler + retentar** já
+  antes da máscara anexar — usar o padrão **digitar + reler + retentar** já
   presente em `pgmei`/`dasn`.
 - **Toasts**: ler os toasts pós-ação (não confiar só no "deu certo"
   estrutural). O PGMEI ensinou que um sucesso pode vir junto de um aviso
@@ -180,6 +198,7 @@ Além das cinco acima, vale ter no radar (ordenado por utilidade aparente):
   variações assim em outros portais.
 - **Limite diário de geração** (PGMEI): cachear same-day quando o resultado
   não muda no dia (ver `das_guia_cache`).
-- **Atos com efeito legal** (declarar DASN, dar baixa, formalizar parcelamento,
-  emitir/cancelar NF): exigem **consentimento explícito** do cliente e, em
-  testes, **nunca** transmitir/efetivar com dados de terceiros.
+- **Atos com efeito legal** (declarar DASN, alterar cadastro, formalizar
+  parcelamento, desenquadrar, dar baixa, emitir/cancelar NF): exigem
+  **consentimento explícito** do cliente e, em testes, **nunca**
+  transmitir/efetivar com dados de terceiros.
