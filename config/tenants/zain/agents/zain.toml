@@ -1,7 +1,7 @@
 display_name = "Zain"
 # description = ""
-provider_slug = "gemini"
-model = "gemini-3.1-flash-lite"
+provider_slug = "deepseek"
+model = "deepseek-v4-flash"
 # max_turns = 30
 compaction_threshold_pct = 8
 # code_execution_timeout_seconds = 30

@@ -49,6 +49,11 @@ tool correspondente NESTE turno E recebeu status: ok.
 """
 allow_self_cancel = false
 max_active_runs_per_user = 0
+# tool_choose_time = true
+tool_min_delay_seconds = 300
+tool_max_delay_seconds = 432000
+# tool_choose_cron = true
+tool_min_gap_seconds = 300
 
 [[parameters]]
 name = "tentativa"
