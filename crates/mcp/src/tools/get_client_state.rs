@@ -5,9 +5,7 @@
 //! Espelha o bloco que o agent original construía em
 //! `format_dados_coletados` (`crates/agent/src/prompt.rs`): contato,
 //! dados coletados, estado gov.br, MEI/CCMEI. Se o cliente tem CCMEI
-//! salvo, o texto aponta pra URI do resource MCP
-//! (`zain://mei/<cnpj>/ccmei.pdf`) pra o caller saber que pode baixar
-//! via `resources/read`.
+//! salvo, o texto avisa que o PDF está disponível via tool `get_ccmei`.
 
 use pgsafe::sql;
 use rmcp::model::{CallToolResult, Content};
@@ -16,8 +14,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::{das, dasn};
 use crate::errlog::ErrChain;
-use crate::resources::ccmei;
 use crate::state::AppState;
 
 #[derive(Deserialize, JsonSchema)]
@@ -43,7 +41,10 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
             (mei_ccmei_pdf  IS NOT NULL) AS has_mei_ccmei_pdf,
             mei_pode_abrir,
             mei_impedimento_motivo,
-            mei_consultado_em
+            mei_consultado_em,
+            das_consultado_em,
+            dasn_consultado_em,
+            mei_ccmei
          FROM zain.clients
          WHERE id = $client_id"
     )
@@ -67,6 +68,40 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
         }
     };
 
+    // Situação DAS consolidada pelo worker `jobs::das_refresh`. Só faz
+    // sentido pra quem tem CNPJ; sem linhas = ainda não consultado.
+    let das_lines = if row.cnpj.is_some() {
+        match load_das_lines(state, client_id, row.das_consultado_em.as_ref()).await {
+            Ok(lines) => lines,
+            Err(e) => {
+                tracing::warn!(%client_id, error = %e.chain_string(), "get_client_state: falha ao ler situação DAS");
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
+    // Situação DASN (declaração anual) consolidada pelo `jobs::dasn_refresh`,
+    // cruzada com a vigência do MEI (do certificado) pra só marcar atraso em
+    // ano realmente devido.
+    let dasn_lines = if row.cnpj.is_some() {
+        match dasn::load_dasn_rows(&state.pool, client_id).await {
+            Ok(rows) => dasn::resumo_lines(
+                &rows,
+                row.mei_ccmei.as_ref(),
+                row.dasn_consultado_em.as_ref(),
+                chrono::Utc::now().date_naive(),
+            ),
+            Err(e) => {
+                tracing::warn!(%client_id, error = %e.chain_string(), "get_client_state: falha ao ler situação DASN");
+                Vec::new()
+            }
+        }
+    } else {
+        Vec::new()
+    };
+
     let contact_name = row.name.as_deref().unwrap_or("(desconhecido)");
     let contact_phone = row.phone.as_deref().unwrap_or("(desconhecido)");
     let dados_coletados = format_dados_coletados(
@@ -87,7 +122,7 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
         row.mei_consultado_em.as_ref().map(|t| t.to_rfc3339()),
     );
 
-    let text = format!(
+    let mut text = format!(
         "Informações do contato:\n\
          - Nome no WhatsApp: {contact_name}\n\
          - Telefone: {contact_phone}\n\
@@ -95,8 +130,126 @@ pub async fn run(state: &AppState, client_id: Uuid, _args: Args) -> CallToolResu
          Dados coletados até agora:\n\
          {dados_coletados}"
     );
+    if !das_lines.is_empty() {
+        text.push('\n');
+        text.push_str(&das_lines.join("\n"));
+    }
+    if !dasn_lines.is_empty() {
+        text.push('\n');
+        text.push_str(&dasn_lines.join("\n"));
+    }
 
     CallToolResult::success(vec![Content::text(text)])
+}
+
+/// Resumo da situação DAS (consolidada em `zain.das_mensal` pelo worker
+/// `jobs::das_refresh`): meses em atraso, próximo vencimento e quando a
+/// consulta foi feita. Vazio no banco = ainda não consultado — e isso é
+/// dito explicitamente, pra o agente não interpretar silêncio como
+/// problema (nem recusar lead por isso).
+async fn load_das_lines(
+    state: &AppState,
+    client_id: Uuid,
+    das_consultado_em: Option<&chrono::DateTime<chrono::Utc>>,
+) -> anyhow::Result<Vec<String>> {
+    let rows = sql!(
+        &state.pool,
+        "SELECT competencia, situacao, total_cents, vencimento
+         FROM zain.das_mensal
+         WHERE client_id = $client_id
+         ORDER BY periodo"
+    )
+    .fetch_all()
+    .await?;
+
+    if rows.is_empty() {
+        return Ok(vec![
+            "- DAS (mensalidade do MEI): situação ainda não consultada — será verificada automaticamente em background. NÃO é sinal de problema nem motivo de recusa.".into(),
+        ]);
+    }
+
+    let descrever = |r: &_DasRow| -> String {
+        let mut s = r.competencia.clone();
+        if let Some(total) = r.total_cents {
+            s.push_str(&format!(" ({}", das::fmt_cents(total)));
+            if let Some(v) = r.vencimento {
+                s.push_str(&format!(", vence {}", v.format("%d/%m/%Y")));
+            }
+            s.push(')');
+        } else if let Some(v) = r.vencimento {
+            s.push_str(&format!(" (vence {})", v.format("%d/%m/%Y")));
+        }
+        s
+    };
+    let das_rows: Vec<_DasRow> = rows
+        .into_iter()
+        .map(|r| _DasRow {
+            competencia: r.competencia,
+            situacao: r.situacao,
+            total_cents: r.total_cents,
+            vencimento: r.vencimento,
+        })
+        .collect();
+
+    let mut lines = Vec::new();
+
+    // `devedor` = ano corrente, atraso confirmado (paga a guia normal).
+    let devedores: Vec<String> = das_rows
+        .iter()
+        .filter(|r| r.situacao == "devedor")
+        .map(&descrever)
+        .collect();
+    if devedores.is_empty() {
+        lines.push("- DAS (mensalidade do MEI): nenhum mês em atraso no ano corrente".into());
+    } else {
+        lines.push(format!(
+            "- DAS em atraso ({}): {} — ofereça a guia atualizada com a tool `emitir_das` (multa/juros já recalculados)",
+            devedores.len(),
+            devedores.join("; ")
+        ));
+    }
+
+    // `em_aberto` = anos anteriores com valor a regularizar. NÃO afirme
+    // "atraso/devedor" — pode estar em PARCELAMENTO (só dá pra saber ao
+    // emitir). Sumariza (podem ser muitos meses).
+    let abertos: Vec<&_DasRow> = das_rows
+        .iter()
+        .filter(|r| r.situacao == "em_aberto")
+        .collect();
+    if !abertos.is_empty() {
+        let total: i64 = abertos.iter().filter_map(|r| r.total_cents).sum();
+        let mut anos: Vec<&str> = abertos
+            .iter()
+            .filter_map(|r| r.competencia.rsplit('/').next())
+            .collect();
+        anos.sort_unstable();
+        anos.dedup();
+        let faixa = match (anos.first(), anos.last()) {
+            (Some(a), Some(b)) if a != b => format!("{a}–{b}"),
+            (Some(a), _) => a.to_string(),
+            _ => String::new(),
+        };
+        lines.push(format!(
+            "- DAS em aberto de anos anteriores: {} mês(es) somando ~{} ({faixa}). Pode incluir meses já em PARCELAMENTO — não dá pra saber pela consulta, só ao emitir. Pra regularizar, chame `emitir_das` com o `periodo` (YYYYMM) do mês: ele devolve a guia OU avisa se está parcelado (aí o pagamento é pelo app de parcelamento). NÃO afirme que é atraso simples.",
+            abertos.len(),
+            das::fmt_cents(total)
+        ));
+    }
+
+    if let Some(prox) = das_rows.iter().find(|r| r.situacao == "a_vencer") {
+        lines.push(format!("- Próximo DAS: {}", descrever(prox)));
+    }
+    if let Some(em) = das_consultado_em {
+        lines.push(format!("- Situação DAS consultada em: {}", em.to_rfc3339()));
+    }
+    Ok(lines)
+}
+
+struct _DasRow {
+    competencia: String,
+    situacao: String,
+    total_cents: Option<i64>,
+    vencimento: Option<chrono::NaiveDate>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -161,16 +314,7 @@ fn format_dados_coletados(
     // Situação MEI (mantida fresca pelo worker `jobs::mei_refresh`).
     if has_mei_ccmei_pdf {
         lines.push("- MEI: já tem MEI ativo".into());
-        // O CCMEI fica disponível como MCP resource indexado por CNPJ.
-        // Aviso o caller sobre a URI exata pra baixar via `resources/read`.
-        if let Some(cnpj) = cnpj {
-            lines.push(format!(
-                "- CCMEI disponível em `{}` (use `resources/read`)",
-                ccmei::uri(cnpj)
-            ));
-        } else {
-            lines.push("- CCMEI disponível (resource MCP)".into());
-        }
+        lines.push("- CCMEI disponível (PDF — chame a tool `get_ccmei` pra receber inline)".into());
     } else if mei_pode_abrir == Some(false) {
         let motivo = mei_impedimento_motivo.unwrap_or("(motivo não informado)");
         lines.push(format!(
@@ -181,6 +325,14 @@ fn format_dados_coletados(
     } else if mei_consultado_em.is_some() {
         lines.push(
             "- MEI: sem MEI ativo; elegibilidade ainda não verificada (precisa de login gov.br)"
+                .into(),
+        );
+    } else if govbr_autenticado {
+        // Logado mas a consulta MEI ainda não concluiu (tipicamente SIMEI
+        // instável). Sem esta linha o estado fica mudo sobre MEI e o agente
+        // já interpretou o silêncio como impedimento, recusando lead bom.
+        lines.push(
+            "- MEI: situação ainda NÃO verificada — a consulta ao SIMEI não concluiu (sistema do governo possivelmente instável); será retentada automaticamente. Isso NÃO é impedimento nem motivo de recusa."
                 .into(),
         );
     }

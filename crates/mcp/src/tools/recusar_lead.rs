@@ -26,7 +26,10 @@ pub async fn run(state: &AppState, client_id: Uuid, args: Args) -> Value {
     .execute()
     .await
     {
-        Ok(_) => json!({ "status": "ok", "recusado": true }),
+        Ok(_) => {
+            tracing::info!(%client_id, motivo = %motivo, "recusar_lead: lead recusado");
+            json!({ "status": "ok", "recusado": true })
+        }
         Err(e) => {
             tracing::warn!(%client_id, error = %e.chain_string(), "recusar_lead: falha ao salvar");
             json!({ "status": "erro", "mensagem": "Não consegui salvar no banco agora. Tente de novo em instantes." })

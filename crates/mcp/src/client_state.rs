@@ -24,6 +24,7 @@ use crate::state::AppState;
 pub struct ClientSnapshot {
     pub has_cpf: bool,
     pub has_cnpj: bool,
+    pub has_ccmei: bool,
     pub quer_abrir_mei: Option<bool>,
     pub govbr_autenticado: bool,
     pub govbr_has_password: bool,
@@ -36,6 +37,7 @@ pub async fn load_snapshot(pool: &Pool, client_id: Uuid) -> anyhow::Result<Optio
         "SELECT
             (cpf            IS NOT NULL) AS has_cpf,
             (cnpj           IS NOT NULL) AS has_cnpj,
+            (mei_ccmei_pdf  IS NOT NULL) AS has_ccmei,
             quer_abrir_mei,
             (govbr_session  IS NOT NULL) AS govbr_autenticado,
             (govbr_password IS NOT NULL) AS govbr_has_password,
@@ -48,6 +50,7 @@ pub async fn load_snapshot(pool: &Pool, client_id: Uuid) -> anyhow::Result<Optio
     Ok(row.map(|r| ClientSnapshot {
         has_cpf: r.has_cpf,
         has_cnpj: r.has_cnpj,
+        has_ccmei: r.has_ccmei,
         quer_abrir_mei: r.quer_abrir_mei,
         govbr_autenticado: r.govbr_autenticado,
         govbr_has_password: r.govbr_has_password,
@@ -63,6 +66,14 @@ pub fn tool_enabled(name: &str, s: &ClientSnapshot) -> bool {
     match name {
         // Sempre disponíveis.
         "get_client_state" | "save_cpf" | "buscar_cnae" => true,
+
+        // Só quando o PDF do certificado já está salvo (MEI ativo
+        // encontrado pelo auth_govbr ou inscrição via abrir_empresa).
+        "get_ccmei" => s.has_ccmei,
+
+        // DAS/DASN só existem pra quem já tem MEI (CNPJ salvo); lead
+        // recusado não recebe guia nem reconsulta.
+        "emitir_das" | "consultar_das" | "consultar_dasn" => !s.recusado && s.has_cnpj,
 
         // Só faz sentido enquanto o lead não foi recusado.
         "save_quer_abrir_mei" => !s.recusado && !s.has_cnpj,

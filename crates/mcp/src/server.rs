@@ -6,15 +6,14 @@ use std::sync::Arc;
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
-    CallToolResult, Implementation, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
-    ReadResourceRequestParams, ReadResourceResult, ServerCapabilities, ServerInfo,
+    CallToolResult, Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities,
+    ServerInfo,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
 
 use crate::client_state::{self, ClientSnapshot, require_enabled};
 use crate::meta::{extract_and_ensure_client_id, extract_client_id_opt};
-use crate::resources;
 use crate::state::AppState;
 use crate::tools;
 
@@ -32,7 +31,7 @@ impl ZainMcpServer {
 #[tool_router]
 impl ZainMcpServer {
     #[tool(
-        description = "Devolve o estado atual do cliente: contato (chat_id, telefone, nome), dados coletados (CPF, CNPJ, intent de MEI, pagamento solicitado, recusa), estado da sessão gov.br (autenticado / aguardando OTP / sessão expirada / não autenticado, nível, nome), situação MEI (já tem MEI ativo / impedido de abrir + motivo / elegível a abrir / não verificada) e a `memory` JSONB livre. Leitura barata — a situação MEI é mantida fresca por um worker de background. Use no início de cada turno pra entender onde o lead parou.",
+        description = "Devolve o estado atual do cliente: contato (chat_id, telefone, nome), dados coletados (CPF, CNPJ, intent de MEI, pagamento solicitado, recusa), estado da sessão gov.br (autenticado / aguardando OTP / sessão expirada / não autenticado, nível, nome), situação MEI (já tem MEI ativo / impedido de abrir + motivo / elegível a abrir / não verificada) e situação DAS (meses em atraso com valores, próximo vencimento) e situação DASN (declaração anual: anos em atraso/a declarar/entregues, já cruzados com a vigência do MEI). Leitura barata — situação MEI/DAS/DASN são mantidas frescas por workers de background; pra forçar reconsulta ao vivo use `consultar_das` (cliente disse que pagou) ou `consultar_dasn` (disse que declarou). Use no início de cada turno pra entender onde o lead parou.",
         annotations(
             title = "Obter estado do cliente",
             read_only_hint = true,
@@ -157,7 +156,7 @@ impl ZainMcpServer {
     }
 
     #[tool(
-        description = "Marca o lead como recusado. Use apenas quando você tiver sinal claro de que a Zain não vai atender esse lead (ex: alguma tool retornou pedindo pra recusar, ou a atividade não é permitida pra MEI). Antes de chamar, comunique o motivo ao cliente de forma gentil.",
+        description = "Marca o lead como recusado — decisão PERMANENTE e irreversível: encerra o caso pra sempre e o lead nunca mais será atendido pela Zain. Use APENAS com sinal claro de impedimento definitivo do próprio cliente (ex: tool retornou pedindo pra recusar, atividade não permitida pra MEI, outro regime empresarial). NUNCA use por falha de sistema/integração (SIMEI fora do ar, gov.br instável, consulta sem resultado, timeout) — nesses casos agende uma retentativa. Na dúvida, NÃO recuse. Antes de chamar, comunique o motivo ao cliente de forma gentil.",
         annotations(
             title = "Recusar lead",
             read_only_hint = false,
@@ -177,6 +176,90 @@ impl ZainMcpServer {
         }
         let value = tools::recusar_lead::run(&self.state, client_id, args).await;
         Ok(CallToolResult::structured(value))
+    }
+
+    #[tool(
+        description = "Devolve o PDF do Certificado da Condição de MEI (CCMEI) do lead como resource inline no resultado (mime application/pdf). Disponível quando o lead já tem MEI ativo confirmado (via `auth_govbr`) ou recém-aberto (via `abrir_empresa`). Use pra anexar o certificado pro cliente na rodada de confirmação inicial.",
+        annotations(
+            title = "Obter PDF do CCMEI",
+            read_only_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
+    async fn get_ccmei(
+        &self,
+        Parameters(args): Parameters<tools::get_ccmei::Args>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let client_id = extract_and_ensure_client_id(&self.state.pool, &ctx.meta).await?;
+        if let Some(err) = require_enabled(&self.state, "get_ccmei", client_id).await {
+            return Ok(err);
+        }
+        Ok(tools::get_ccmei::run(&self.state, client_id, args).await)
+    }
+
+    #[tool(
+        description = "Emite a guia mensal do MEI (DAS) no PGMEI e devolve o PDF como resource inline — o documento traz código de barras (boleto) e QR code PIX. `periodo` é a competência YYYYMM (ex: '202604' = abril/2026); omita pra emitir o mês mais antigo em atraso (ou, sem atraso, o próximo a vencer). A guia é sempre emitida na hora, com multa/juros recalculados — nunca reaproveite um PDF antigo. Pode demorar ~30-60s (automação no portal do governo).",
+        annotations(
+            title = "Emitir guia DAS (boleto/PIX)",
+            read_only_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true,
+        )
+    )]
+    async fn emitir_das(
+        &self,
+        Parameters(args): Parameters<tools::das::EmitirArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let client_id = extract_and_ensure_client_id(&self.state.pool, &ctx.meta).await?;
+        if let Some(err) = require_enabled(&self.state, "emitir_das", client_id).await {
+            return Ok(err);
+        }
+        Ok(tools::das::run_emitir(&self.state, client_id, args).await)
+    }
+
+    #[tool(
+        description = "Reconsulta AO VIVO a situação do DAS (mensalidade do MEI) no portal e atualiza o estado do cliente — devolve meses em atraso e o próximo vencimento, já frescos. Use quando o cliente disser que pagou (pra confirmar se já consta) ou quando quiser o valor mais atual de um mês em atraso. É uma operação cara (sobe browser + captcha, ~30-60s): chame só sob pedido/contexto explícito, NÃO a cada turno — o estado já vem atualizado em background. Atenção: pagamento leva 1-2 dias úteis pra compensar, então logo após pagar o mês ainda pode constar em atraso (é normal).",
+        annotations(
+            title = "Consultar situação do DAS",
+            read_only_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true,
+        )
+    )]
+    async fn consultar_das(
+        &self,
+        Parameters(args): Parameters<tools::das::ConsultarArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let client_id = extract_and_ensure_client_id(&self.state.pool, &ctx.meta).await?;
+        if let Some(err) = require_enabled(&self.state, "consultar_das", client_id).await {
+            return Ok(err);
+        }
+        Ok(tools::das::run_consultar(&self.state, client_id, args).await)
+    }
+
+    #[tool(
+        description = "Reconsulta AO VIVO o status da declaração anual do MEI (DASN-SIMEI) no portal e atualiza o estado — devolve os anos em atraso, a declarar e já entregues. A DASN é o relatório anual de faturamento (vence 31/05 do ano seguinte). Use quando o cliente disser que entregou a declaração (pra confirmar) ou pedir a situação atualizada. Caro (~30-60s, browser + captcha): chame só sob pedido explícito — o estado já vem atualizado em background (a DASN muda raríssimo). Só marca atraso em ano dentro da vigência do MEI.",
+        annotations(
+            title = "Consultar declaração anual (DASN)",
+            read_only_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true,
+        )
+    )]
+    async fn consultar_dasn(
+        &self,
+        Parameters(args): Parameters<tools::dasn::ConsultarArgs>,
+        ctx: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let client_id = extract_and_ensure_client_id(&self.state.pool, &ctx.meta).await?;
+        if let Some(err) = require_enabled(&self.state, "consultar_dasn", client_id).await {
+            return Ok(err);
+        }
+        Ok(tools::dasn::run_consultar(&self.state, client_id, args).await)
     }
 
     #[tool(
@@ -239,13 +322,8 @@ Dados opcionais:\n\n\
 #[tool_handler]
 impl ServerHandler for ZainMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .enable_resources()
-                .build(),
-        )
-        .with_server_info(Implementation::from_build_env())
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::from_build_env())
     }
 
     async fn list_tools(
@@ -290,40 +368,5 @@ impl ServerHandler for ZainMcpServer {
             next_cursor: None,
             meta: None,
         })
-    }
-
-    async fn list_resources(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        context: RequestContext<RoleServer>,
-    ) -> Result<ListResourcesResult, ErrorData> {
-        // Sem `_meta.client_id` não tem como filtrar — devolve vazio.
-        // Resources deste servidor são privados por cliente; clientes
-        // genéricos sem identidade não veem nada.
-        let Some(client_id) = extract_client_id_opt(&context.meta) else {
-            return Ok(ListResourcesResult::default());
-        };
-        let resources = resources::ccmei::list_for_client(&self.state, client_id).await?;
-        Ok(ListResourcesResult {
-            resources,
-            next_cursor: None,
-            meta: None,
-        })
-    }
-
-    async fn read_resource(
-        &self,
-        request: ReadResourceRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, ErrorData> {
-        let uri = request.uri;
-        if let Some(cnpj) = resources::ccmei::parse_uri(&uri) {
-            let client_id = extract_and_ensure_client_id(&self.state.pool, &context.meta).await?;
-            return resources::ccmei::read(&self.state, client_id, &cnpj).await;
-        }
-        Err(ErrorData::invalid_params(
-            format!("URI de resource desconhecida: {uri}"),
-            None,
-        ))
     }
 }

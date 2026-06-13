@@ -6,6 +6,9 @@
 
 pub mod abrir_empresa;
 pub mod buscar_cnae;
+pub mod das;
+pub mod dasn;
+pub mod get_ccmei;
 pub mod get_client_state;
 pub mod govbr;
 pub mod iniciar_pagamento;
