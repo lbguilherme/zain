@@ -130,6 +130,10 @@ pub struct GuiaDas {
     pub total_cents: Option<i64>,
     /// Linha digitável do código de barras (48 dígitos), do PDF.
     pub linha_digitavel: Option<String>,
+    /// "PIX copia e cola" (payload EMV/BR Code), decodificado do QR code do
+    /// PDF. É a MESMA string que o QR codifica — serve pro cliente colar no
+    /// banco em vez de escanear. `None` se não deu pra decodificar o QR.
+    pub pix_copia_cola: Option<String>,
     /// PDF da guia — código de barras + QR code PIX.
     pub pdf: Vec<u8>,
 }
@@ -249,6 +253,7 @@ pub async fn emitir_das(cnpj: &str, periodo: &str) -> anyhow::Result<GuiaDas> {
         // PDF via fetch in-page (mesma sessão/cookies do browser).
         let pdf = baixar_pdf(&page).await?;
         let (pagar_ate, linha_digitavel) = parse_pdf_info(&pdf);
+        let pix_copia_cola = extrair_pix_copia_cola(&pdf);
 
         Ok(GuiaDas {
             periodo: periodo.clone(),
@@ -258,6 +263,7 @@ pub async fn emitir_das(cnpj: &str, periodo: &str) -> anyhow::Result<GuiaDas> {
             pagar_ate,
             total_cents: mes.total_cents,
             linha_digitavel,
+            pix_copia_cola,
             pdf,
         })
     }
@@ -792,6 +798,78 @@ fn parse_pdf_info(pdf: &[u8]) -> (Option<String>, Option<String>) {
     (extrair_pagar_ate(&texto), extrair_linha_digitavel(&texto))
 }
 
+/// Extrai o "PIX copia e cola" (payload EMV/BR Code) da guia. O payload NÃO
+/// aparece no texto do PDF — só existe como QR code (imagem). Esta função
+/// varre as imagens embutidas, decodifica cada QR e devolve o primeiro
+/// payload que (a) começa com "000201" e (b) tem o CRC16 correto — o que o
+/// distingue de qualquer outra imagem (logo, código de barras). O texto do
+/// QR É o copia-e-cola: a mesma string que o app do banco lê ao escanear.
+///
+/// Best-effort (o PDF anexado já resolve o cliente): qualquer falha de
+/// decode vira `None`. Só lida com QR em imagem raster JPEG/PNG embutida —
+/// que é o formato do PGMEI (o QR é um JPEG `DCTDecode`).
+fn extrair_pix_copia_cola(pdf: &[u8]) -> Option<String> {
+    let doc = lopdf::Document::load_mem(pdf).ok()?;
+    for obj in doc.objects.values() {
+        let lopdf::Object::Stream(stream) = obj else {
+            continue;
+        };
+        // `stream.content` são os bytes como armazenados (o filtro de imagem
+        // DCTDecode/JPXDecode NÃO é desfeito pelo lopdf), então pra um QR em
+        // JPEG isso já é um JPEG válido. Streams que não são imagem (texto,
+        // FlateDecode cru) simplesmente falham o decode e são pulados.
+        let Ok(img) = image::load_from_memory(&stream.content) else {
+            continue;
+        };
+        let luma = img.to_luma8();
+        let (w, h) = luma.dimensions();
+        if w == 0 || h == 0 {
+            continue;
+        }
+        let mut prepared =
+            rqrr::PreparedImage::prepare_from_greyscale(w as usize, h as usize, |x, y| {
+                luma.get_pixel(x as u32, y as u32)[0]
+            });
+        for grid in prepared.detect_grids() {
+            if let Ok((_meta, conteudo)) = grid.decode()
+                && conteudo.starts_with("000201")
+                && pix_crc_ok(&conteudo)
+            {
+                return Some(conteudo);
+            }
+        }
+    }
+    None
+}
+
+/// Valida o CRC16-CCITT (poly 0x1021, init 0xFFFF) de um payload EMV do PIX.
+/// O campo 63 (CRC) é sempre o último: "6304" + 4 dígitos hex calculados
+/// sobre todo o resto da string (incluindo o "6304"). Confere ⇒ payload
+/// íntegro e é mesmo um BR Code — não uma imagem qualquer que virou string.
+fn pix_crc_ok(s: &str) -> bool {
+    // Em bytes (o BR Code é ASCII): evita panic de char boundary caso o QR
+    // decodifique algo que não seja um payload limpo.
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    if n < 8 || &bytes[n - 8..n - 4] != b"6304" {
+        return false;
+    }
+    let mut crc: u16 = 0xFFFF;
+    for &b in &bytes[..n - 4] {
+        crc ^= (b as u16) << 8;
+        for _ in 0..8 {
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
+        }
+    }
+    format!("{crc:04X}")
+        .as_bytes()
+        .eq_ignore_ascii_case(&bytes[n - 4..])
+}
+
 /// Procura "Pagar este documento até" (ou "Pagar até") e devolve a
 /// primeira data DD/MM/YYYY logo em seguida, em ISO. A varredura é por
 /// bytes (datas são ASCII puro) — slicing por índice de char quebraria
@@ -932,6 +1010,41 @@ mod tests {
             Some("858000000003934403282618630708261639394685651263")
         );
         assert_eq!(extrair_linha_digitavel("nada aqui 123"), None);
+    }
+
+    /// Verificação manual do caminho real (lopdf → image → rqrr) contra um
+    /// PDF de DAS de verdade. Não roda no CI (precisa de um PDF local, que é
+    /// dado de cliente): `PIX_PDF=/tmp/das.pdf cargo test -p rpa pix_extrai_de_pdf -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "precisa de um PDF de DAS local (PIX_PDF=<caminho>)"]
+    fn pix_extrai_de_pdf_local() {
+        let path = std::env::var("PIX_PDF").expect("set PIX_PDF=<caminho do pdf>");
+        let pdf = std::fs::read(&path).expect("ler PDF");
+        let pix = extrair_pix_copia_cola(&pdf).expect("não extraiu o PIX copia-e-cola");
+        assert!(pix.starts_with("000201"));
+        assert!(pix_crc_ok(&pix));
+        // Mascara no output pra não vazar a cobrança real.
+        eprintln!(
+            "PIX extraído OK: {} chars, {}...{}",
+            pix.len(),
+            &pix[..18.min(pix.len())],
+            &pix[pix.len().saturating_sub(8)..]
+        );
+    }
+
+    #[test]
+    fn pix_crc_valida() {
+        // Payload EMV sintético (sem dados reais); CRC calculado pelo mesmo
+        // algoritmo CRC16-CCITT que o portal usa.
+        let base = "00020126360014BR.GOV.BCB.PIX0114teste@zain.com.br5204000053039865802BR5913FULANO DE TAL6008BRASILIA62070503***6304";
+        assert!(pix_crc_ok(&format!("{base}6A66")));
+        // CRC errado → rejeita.
+        assert!(!pix_crc_ok(&format!("{base}0000")));
+        // Sem campo CRC / curto demais → rejeita (não entra em pânico).
+        assert!(!pix_crc_ok("000201"));
+        assert!(!pix_crc_ok(""));
+        // Texto qualquer que por acaso termina em 8 chars, mas sem "6304".
+        assert!(!pix_crc_ok("abcdefghij"));
     }
 
     #[test]

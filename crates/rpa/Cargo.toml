@@ -21,6 +21,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 base64 = "0.22"
 lopdf = "0.41"
+# Extração do PIX copia-e-cola da guia DAS: o payload só existe como QR
+# embutido no PDF (não no texto). `image` decodifica o JPEG do QR e `rqrr`
+# lê o QR de volta pra string EMV. Ver `pgmei::extrair_pix_copia_cola`.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+rqrr = "0.9"
 
 [package.metadata.pgsafe.database]
 migrations = "../../migrations"

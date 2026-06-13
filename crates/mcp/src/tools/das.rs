@@ -357,6 +357,7 @@ pub async fn run_emitir(state: &AppState, client_id: Uuid, args: EmitirArgs) -> 
         vencimento: guia.vencimento.as_deref().and_then(parse_iso),
         pagar_ate: guia.pagar_ate.as_deref().and_then(parse_iso),
         linha_digitavel: guia.linha_digitavel,
+        pix_copia_cola: guia.pix_copia_cola,
         pdf: guia.pdf,
     };
     tracing::info!(%client_id, %periodo, pdf_bytes = cache.pdf.len(), "emitir_das: guia emitida");
@@ -375,6 +376,7 @@ struct GuiaCache {
     vencimento: Option<NaiveDate>,
     pagar_ate: Option<NaiveDate>,
     linha_digitavel: Option<String>,
+    pix_copia_cola: Option<String>,
     pdf: Vec<u8>,
 }
 
@@ -398,11 +400,30 @@ fn montar_resposta(cnpj: &str, periodo: &str, g: &GuiaCache) -> CallToolResult {
     if let Some(p) = g.pagar_ate {
         texto.push_str(&format!(" Pagar até: {}.", p.format("%d/%m/%Y")));
     }
-    if let Some(l) = &g.linha_digitavel {
-        texto.push_str(&format!("\nLinha digitável (código de barras): {l}"));
+
+    // Valores copiáveis pro pagamento — o agente tem em mãos, mas a forma de
+    // ENVIAR segue as regras abaixo (oferecer; nunca despejar; isolar cada
+    // número na própria mensagem).
+    texto.push_str("\n\nFormas de pagamento (o PDF anexado já traz as duas):");
+    texto.push_str("\n- Boleto: o PDF tem o código de barras.");
+    match &g.linha_digitavel {
+        Some(l) => texto.push_str(&format!("\n  Linha digitável: {l}")),
+        None => {
+            texto.push_str("\n  (linha digitável não extraída — use o código de barras do PDF)")
+        }
     }
+    match &g.pix_copia_cola {
+        Some(pix) => texto.push_str(&format!("\n- PIX copia e cola: {pix}")),
+        None => texto.push_str(
+            "\n- PIX: disponível só pelo QR code do PDF (copia-e-cola não extraído desta vez).",
+        ),
+    }
+
     texto.push_str(
-        "\nO PDF anexado tem o código de barras e o QR code PIX — envie pro cliente escolher como pagar.",
+        "\n\nCOMO REPASSAR PRO CLIENTE:\n\
+         - Mande o PDF anexado (ele resolve sozinho: tem o código de barras do boleto e o QR code do PIX).\n\
+         - NÃO despeje o PIX copia-e-cola nem a linha digitável sem o cliente pedir. OFEREÇA (ex.: \"quer que eu te mande o código do PIX pra colar, ou a linha digitável do boleto?\") e só envie o que ele escolher.\n\
+         - Ao enviar a linha digitável OU o PIX copia-e-cola, mande CADA UM numa mensagem SEPARADA, sozinho, só com o número/código — sem texto junto. No WhatsApp o cliente copia a mensagem inteira, então qualquer palavra no mesmo balão estraga o copia-e-cola. Você pode mandar várias mensagens seguidas (uma explicando e a próxima só com o código).",
     );
 
     let uri = format!("zain://mei/{cnpj}/das/{periodo}.pdf");
@@ -457,7 +478,7 @@ async fn load_guia_cache(
 ) -> anyhow::Result<Option<GuiaCache>> {
     let row = sql!(
         pool,
-        "SELECT competencia, numero_das, total_cents, vencimento, pagar_ate, linha_digitavel, pdf
+        "SELECT competencia, numero_das, total_cents, vencimento, pagar_ate, linha_digitavel, pix_copia_cola, pdf
          FROM zain.das_guia_cache
          WHERE client_id = $client_id
            AND periodo   = $periodo
@@ -473,6 +494,7 @@ async fn load_guia_cache(
         vencimento: r.vencimento,
         pagar_ate: r.pagar_ate,
         linha_digitavel: r.linha_digitavel,
+        pix_copia_cola: r.pix_copia_cola,
         pdf: r.pdf,
     }))
 }
@@ -489,14 +511,15 @@ async fn store_guia_cache(
     let vencimento = g.vencimento;
     let pagar_ate = g.pagar_ate;
     let linha_digitavel = g.linha_digitavel.as_deref();
+    let pix_copia_cola = g.pix_copia_cola.as_deref();
     let pdf = g.pdf.as_slice();
     sql!(
         pool,
         "INSERT INTO zain.das_guia_cache
             (client_id, periodo, gerado_em, competencia, numero_das, total_cents,
-             vencimento, pagar_ate, linha_digitavel, pdf)
+             vencimento, pagar_ate, linha_digitavel, pix_copia_cola, pdf)
          VALUES ($client_id, $periodo, now(), $competencia, $numero_das, $total_cents,
-             $vencimento, $pagar_ate, $linha_digitavel, $pdf)
+             $vencimento, $pagar_ate, $linha_digitavel, $pix_copia_cola, $pdf)
          ON CONFLICT (client_id, periodo) DO UPDATE
          SET gerado_em       = now(),
              competencia     = EXCLUDED.competencia,
@@ -505,6 +528,7 @@ async fn store_guia_cache(
              vencimento      = EXCLUDED.vencimento,
              pagar_ate       = EXCLUDED.pagar_ate,
              linha_digitavel = EXCLUDED.linha_digitavel,
+             pix_copia_cola  = EXCLUDED.pix_copia_cola,
              pdf             = EXCLUDED.pdf"
     )
     .execute()
@@ -838,6 +862,7 @@ mod manual_tests {
             vencimento: parse_iso("2026-05-20"),
             pagar_ate: parse_iso("2026-06-12"),
             linha_digitavel: Some("85800000000".into()),
+            pix_copia_cola: Some("00020101021226...6304TEST".into()),
             pdf,
         };
         store_guia_cache(&state.pool, client_id, &periodo, &cache)

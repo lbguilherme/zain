@@ -94,7 +94,8 @@ Emite a guia mensal do MEI (DAS) no portal do Simples Nacional e devolve o **PDF
 
 - `periodo` é a competência `YYYYMM` (ex: `202604` = abril/2026). **Omita** pra emitir o mês mais antigo em atraso (ou, sem atraso, o próximo a vencer).
 - A guia é **sempre emitida na hora**: pra mês em atraso, multa e juros são recalculados por dia e a validade ("pagar até") costuma ser o próprio dia. Nunca reaproveite um PDF emitido antes — emita de novo.
-- A resposta traz valor, vencimento, "pagar até" e a linha digitável em texto (pro cliente que prefere copiar/colar no internet banking).
+- A resposta traz valor, vencimento, "pagar até" e, **em texto pro cliente colar**, a **linha digitável** do boleto e o **PIX copia e cola** (mesma coisa que o QR do PDF, só que como texto — ver `agents.md` → "DAS").
+- **Como repassar** (a `mensagem` da tool repete isso): mande o PDF; **ofereça** os códigos copiáveis e só envie o que o cliente pedir; e mande **cada código numa mensagem separada, sozinho** (no WhatsApp se copia o balão inteiro). Detalhe em `agents.md`.
 - Pode demorar ~30–60s (automação no portal). Erro de instabilidade → siga a `mensagem` (agendar `schedule_retentar`).
 
 A **situação mensal** (meses em atraso, valores, próximo vencimento) já chega consolidada no estado do cliente (bloco "DAS"), atualizada em background — você não precisa consultar pra saber como está. Estado sem o bloco DAS preenchido = ainda não consultado, **não é sinal de problema**.
